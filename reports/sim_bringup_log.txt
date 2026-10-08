@@ -1,0 +1,36 @@
+# vsim -do {run -all; quit -f} -c work.tb_dmz_eg4s20_bringup 
+# Loading work.tb_dmz_eg4s20_bringup
+# Loading work.dmz_eg4s20_bringup_top
+# Loading work.key_matrix_4x4
+# Loading work.player_ctrl
+# Loading work.video_timing_gen
+# Loading work.test_pattern_gen
+# Loading work.seg_decoder
+# Loading work.seg_scan4
+# Loading work.buzzer_tone
+# ** Warning: (vsim-3015) D:/FPGA_Compelate/SmartCampusMedia/rtl/top/dmz_eg4s20_bringup_top.v(147): [PCDPC] - Port size (24 or 24) does not match connection size (14) for port 'user_color'. The port definition is at: D:/FPGA_Compelate/SmartCampusMedia/rtl/video/test_pattern_gen.v(21).
+# 
+#         Region: /tb_dmz_eg4s20_bringup/dut/u_pat
+# ** Warning: (vsim-3015) D:/FPGA_Compelate/SmartCampusMedia/rtl/top/dmz_eg4s20_bringup_top.v(162): [PCDPC] - Port size (4 or 4) does not match connection size (3) for port 'bin_data'. The port definition is at: D:/FPGA_Compelate/SmartCampusMedia/rtl/common/seg_decoder.v(4).
+# 
+#         Region: /tb_dmz_eg4s20_bringup/dut/u_dec_mode
+# run -all 
+# === tb_dmz_eg4s20_bringup start ===
+# [1000000] T0 reset released
+# [70001000000] T1 vs_cnt=5 hs_period=32000000 ns
+# [PASS] T1 帧时序 (~59.5Hz)
+# [PASS] T2 bar0 WHITE @(40,240) = (ff,ff,ff)
+# [PASS] T2 bar1 YELLOW @(120,240) = (ff,ff,00)
+# [PASS] T2 bar4 MAGENTA @(360,240) = (ff,00,ff)
+# [PASS] T2 bar7 BLACK @(600,240) = (00,00,00)
+# [PASS] T2 blanking: 消隐期 RGB 全零
+# [117280390000] PPM dumped: sim_out_colorbar.ppm
+# [207280390000] T3 pattern_sel=1 img_index=1 led=10 mode=0
+# [PASS] T3 按键→图案切换
+# [PASS] T4 grid line (0,0) @(0,0) = (ff,ff,ff)
+# [PASS] T4 grid cell (32,32) @(32,32) = (00,00,00)
+# [268480390000] PPM dumped: sim_out_grid.ppm
+# === tb done, errors = 0 ===
+# *** ALL CHECKS PASSED ***
+# ** Note: $finish    : D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_dmz_eg4s20_bringup.v(247)
+#    Time: 268480390 ns  Iteration: 3  Instance: /tb_dmz_eg4s20_bringup

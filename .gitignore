@@ -1,0 +1,48 @@
+# =============================================================================
+# SmartCampusMedia .gitignore
+# 原则: 只跟踪"我们编写/编写生成"的文本资产; 排除官方参考资料与 EDA 生成物
+# =============================================================================
+
+# ---------- 官方参考资料（本地保留, 不入库: 体积大且版权归官方）----------
+project/reference/
+ip/reference/
+
+# ---------- 安路 TD 工程生成物 ----------
+project/*_Runs/
+project/log/
+project/.lock.f
+project/.stop.f
+*.db
+*.log
+*.bit
+*.bid
+*.area
+*.timing
+*.tsm
+*.tcl.bak
+*.prj
+*.ipc.orig
+*.info
+*.rpt
+*.status
+*.f
+
+# ---------- ModelSim 仿真工作库 ----------
+sim/msim_work/
+work/
+transcript
+*.wlf
+*.vcd
+# 仿真导出的图像保留 PPM/PNG 小图证据; 大体积中间文件忽略
+sim/msim_work/*.ppm
+
+# ---------- 临时文件 ----------
+reports/_*.png
+*.bak
+*~
+~$*
+.DS_Store
+Thumbs.db
+# VIDE 编辑器工程配置（非项目内容）
+vide.toml
+.vide/

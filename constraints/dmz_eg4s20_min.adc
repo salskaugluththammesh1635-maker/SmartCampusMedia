@@ -1,0 +1,67 @@
+# =============================================================================
+# dmz_eg4s20_min.adc — DMZ-EG4S20 最小系统管脚约束（TD 6.2.1）
+# -----------------------------------------------------------------------------
+# 状态: 【可上板】全部端口管脚来自已核实资料, 无 TODO
+# 顶层: rtl/top/dmz_eg4s20_min_top.v
+# 来源: 走近FPGA 表1.1~1.6 + 核心板原理图 p2/p4
+#       （对照表见 docs/pending_confirmations.md 第 1/2/6 节）
+# 语法: 与官方 DEMO（31_HDMI 例程）输出格式一致
+# 说明: 视频/HDMI/SD 相关管脚不在此文件（依赖 MO 底板原理图, 见
+#       constraints/dmz_eg4s20_bringup.adc 的 TODO 分组）
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. 时钟与复位
+#    注: RSTn 板上已有 10k 上拉（R100）, 按下接地 → 低有效
+# ---------------------------------------------------------------------------
+set_pin_assignment { clk }       { LOCATION = R7; IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+set_pin_assignment { rst_n_btn } { LOCATION = E3; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+
+# ---------------------------------------------------------------------------
+# 2. 4x4 矩阵键盘
+#    行: FPGA 输出扫描（低选通）, 串 100Ω
+#    列: FPGA 输入（行网络 10k 上拉）, 串 100Ω
+# ---------------------------------------------------------------------------
+set_pin_assignment { key_row[0] } { LOCATION = E10; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_row[1] } { LOCATION = C10; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_row[2] } { LOCATION = F9;  IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_row[3] } { LOCATION = D9;  IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_col[0] } { LOCATION = E11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { key_col[1] } { LOCATION = D11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { key_col[2] } { LOCATION = C11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { key_col[3] } { LOCATION = F10; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+
+# ---------------------------------------------------------------------------
+# 3. LED（高电平点亮, 串 2.21k; 与 R-2R DAC 复用同一组引脚）
+# ---------------------------------------------------------------------------
+set_pin_assignment { led[0] } { LOCATION = B14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[1] } { LOCATION = B15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[2] } { LOCATION = B16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[3] } { LOCATION = C15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[4] } { LOCATION = C16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[5] } { LOCATION = E13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[6] } { LOCATION = E16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[7] } { LOCATION = F16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 4. 四位共阴数码管
+#    段序: seg_data[0]=A, [1]=B, [2]=C, [3]=D, [4]=E, [5]=F, [6]=G, [7]=DP（高亮）
+#    位序: seg_cs[0]=COM0(最右), [1]=COM1, [2]=COM2, [3]=COM3(最左)（低选通）
+# ---------------------------------------------------------------------------
+set_pin_assignment { seg_data[0] } { LOCATION = A4; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[1] } { LOCATION = A6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[2] } { LOCATION = B8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[3] } { LOCATION = E8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[4] } { LOCATION = A7; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[5] } { LOCATION = B5; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[6] } { LOCATION = A8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[7] } { LOCATION = C8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[0]   } { LOCATION = C9; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[1]   } { LOCATION = B6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[2]   } { LOCATION = A5; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[3]   } { LOCATION = A3; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 5. 蜂鸣器（无源, PNP MMBT3906 驱动, 低电平响）
+# ---------------------------------------------------------------------------
+set_pin_assignment { buzzer } { LOCATION = H11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }

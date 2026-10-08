@@ -1,0 +1,179 @@
+# =============================================================================
+# dmz_eg4s20_bringup.adc — DMZ-EG4S20（核心板 + MO 综合底板）管脚约束
+# TD 6.2.1 格式
+# -----------------------------------------------------------------------------
+# 状态【已全部核实】—— 来源:
+#   [底板引脚说明] = EG4S20/微处理器原理综合设计底板/板卡和引脚说明.pdf（权威文档）
+#   [底板例程]     = 同目录 M0_Borad/M0_Borad/<例程>/xxx.adc（厂商实测通过）
+#   [核心板原理图] = EG4S20/EG4S20BG256核心板 - 2023.pdf
+#   [走近FPGA]     = EG4S20/实验系列二：走近FPGA/【走近FPGA】安路FPGA版本.pdf
+#   [底板原理图]   = EG4S20/微处理器原理综合设计底板/EG4S20_综合底板.pdf
+#
+# ⚠️ 两个待上板实测确认项（见文末 §12）
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. 时钟与复位
+#    clk=R7（50MHz 有源晶振）; RSTn=E3（低有效, 板载 10k 上拉）
+#    注: 底板例程多用 A9（sw0/拨码）作 rst_n, 本工程用自己的 RSTn=E3
+# ---------------------------------------------------------------------------
+set_pin_assignment { clk }        { LOCATION = R7; IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+set_pin_assignment { rst_n_btn }  { LOCATION = E3; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+
+# ---------------------------------------------------------------------------
+# 2. 4x4 矩阵键盘
+#    列（FPGA 输入, 上拉）: E11,D11,C11,F10 —— [走近FPGA 表1.1] + [底板例程] 一致 ✓
+#    行（FPGA 输出扫描）: 两个来源顺序相反, 见 §12 待实测项
+#       [走近FPGA 表1.1] Key_Row[0..3] = E10,C10,F9,D9
+#       [底板例程]       row[0..3]     = D9,F9,C10,E10
+#    本约束采用【走近FPGA】顺序（与文档正文一致）
+# ---------------------------------------------------------------------------
+set_pin_assignment { key_row[0] } { LOCATION = E10; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_row[1] } { LOCATION = C10; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_row[2] } { LOCATION = F9;  IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_row[3] } { LOCATION = D9;  IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_col[0] } { LOCATION = E11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { key_col[1] } { LOCATION = D11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { key_col[2] } { LOCATION = C11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { key_col[3] } { LOCATION = F10; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+
+# ---------------------------------------------------------------------------
+# 3. LED（高电平点亮, 串 2.21k; 与 R-2R DAC 复用）
+#    [走近FPGA 表1.3]; [底板 hdmi.adc: LED=B14] ✓ 交叉验证一致
+# ---------------------------------------------------------------------------
+set_pin_assignment { led[0] } { LOCATION = B14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[1] } { LOCATION = B15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[2] } { LOCATION = B16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[3] } { LOCATION = C15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[4] } { LOCATION = C16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[5] } { LOCATION = E13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[6] } { LOCATION = E16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[7] } { LOCATION = F16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 4. 四位七段数码管（低电平点亮 / 位选低电平选通）
+#    段序 [7:0] = {DP,G,F,E,D,C,B,A}
+#    [走近FPGA 表1.4]; 底板 audioadc.adc / spi_flash.adc 完全一致 ✓（三源交叉验证）
+# ---------------------------------------------------------------------------
+set_pin_assignment { seg_data[0] } { LOCATION = A4; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[1] } { LOCATION = A6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[2] } { LOCATION = B8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[3] } { LOCATION = E8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[4] } { LOCATION = A7; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[5] } { LOCATION = B5; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[6] } { LOCATION = A8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[7] } { LOCATION = C8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[0]   } { LOCATION = C9; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[1]   } { LOCATION = B6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[2]   } { LOCATION = A5; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[3]   } { LOCATION = A3; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 5. 蜂鸣器（无源, PNP 驱动, 低电平响）
+#    [走近FPGA 表1.5] H11
+# ---------------------------------------------------------------------------
+set_pin_assignment { buzzer } { LOCATION = H11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ===========================================================================
+# 以下为 MO 综合底板外设（新核实, 来源: 板卡和引脚说明.pdf 3.1~3.7 + 底板例程 adc）
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# 6. HDMI 输出（TMDS 直出, 底板载 HDMI-019S 座 J2 + AZ1045-04F ESD 阵列）
+#    [引脚说明 3.3] 与 [底板例程 hdmi.adc] 完全一致 ✓
+#    IOSTANDARD 必须为 LVDS33（差分）；官方 HX4S20C 例程同样用 LVDS33 直出 TMDS
+#    注: 底板未把 DDC/EDID（I2C）引到 FPGA → 不实现 EDID, 直接输出固定分辨率
+#    ⚠️ 顶层信号名建议用 tmds_clk_p / tmds_d0_p / tmds_d1_p / tmds_d2_p
+# ---------------------------------------------------------------------------
+set_pin_assignment { tmds_clk_p } { LOCATION = P1; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
+set_pin_assignment { tmds_d0_p  } { LOCATION = N1; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
+set_pin_assignment { tmds_d1_p  } { LOCATION = P4; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
+set_pin_assignment { tmds_d2_p  } { LOCATION = J3; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 7. VGA 输出 / RGB565 液晶屏（两组功能复用同一批引脚 —— [引脚说明 3.1]）
+#    数据共 16 位: R[4:0] + G[5:0] + B[4:0] = RGB565
+#    顶层若用 RGB888, 需裁剪为 565（取高位）后再输出
+#    VGA 需要行/场同步 + 像素时钟; LCD 需要 DE/CLK/BL
+# ---------------------------------------------------------------------------
+# --- 红 R[4:0]（高→低）---
+set_pin_assignment { vga_r[4] } { LOCATION = H15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_r[3] } { LOCATION = G16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_r[2] } { LOCATION = H16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_r[1] } { LOCATION = H13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_r[0] } { LOCATION = H14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+# --- 绿 G[5:0] ---
+set_pin_assignment { vga_g[5] } { LOCATION = J14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_g[4] } { LOCATION = J16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_g[3] } { LOCATION = K15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_g[2] } { LOCATION = K16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_g[1] } { LOCATION = J11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_g[0] } { LOCATION = G11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+# --- 蓝 B[4:0] ---
+set_pin_assignment { vga_b[4] } { LOCATION = L14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_b[3] } { LOCATION = K12; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_b[2] } { LOCATION = J12; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_b[1] } { LOCATION = K14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_b[0] } { LOCATION = J13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+# --- 同步与时钟 ---
+set_pin_assignment { vga_hs    } { LOCATION = M14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { vga_vs    } { LOCATION = P14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { lcd_clk   } { LOCATION = L13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { lcd_de    } { LOCATION = L16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; SLEWRATE = FAST; PULLTYPE = NONE; }
+set_pin_assignment { lcd_bl    } { LOCATION = M16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 8. SD 卡（板载卡槽, SPI 模式 —— [引脚说明 3.6]）
+#    ⚠️ MOSI/MISO 存在来源冲突, 见 §12 待实测项
+#    本约束采用【引脚说明】映射（符合 SD SPI 标准: CMD=DI 主机输出, D0=DO 主机输入）
+# ---------------------------------------------------------------------------
+set_pin_assignment { sd_sck  } { LOCATION = F15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { sd_cs   } { LOCATION = F13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { sd_mosi } { LOCATION = F14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { sd_miso } { LOCATION = D14; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+
+# ---------------------------------------------------------------------------
+# 9. 音频输出（PWM + 板载低通滤波 + 功放 → 3.5mm / 喇叭 —— [引脚说明 3.5]）
+#    FPGA 输出 PWM, 占空比/频率调制出模拟音频
+# ---------------------------------------------------------------------------
+set_pin_assignment { audio_pwm } { LOCATION = F3; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 10. 音频输入（麦克风 → 调理 → 板载 ADC, SPI 读 —— [引脚说明 3.4]）
+#     可选功能（音频可视化/电平检测用）
+# ---------------------------------------------------------------------------
+set_pin_assignment { adc_cs   } { LOCATION = J6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { adc_sck  } { LOCATION = H3; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { adc_miso } { LOCATION = K5; IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+set_pin_assignment { adc_rstn } { LOCATION = G6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 11. 拨码开关（8 位, UP=高 DOWN=低）
+#     ⚠️ 与 ES8388 声卡占用同组球（A9~A14/B10/B12），插声卡时禁用拨码
+# ---------------------------------------------------------------------------
+set_pin_assignment { sw_in[0] } { LOCATION = A9;  IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+set_pin_assignment { sw_in[1] } { LOCATION = A10; IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+set_pin_assignment { sw_in[2] } { LOCATION = B10; IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+set_pin_assignment { sw_in[3] } { LOCATION = A11; IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+set_pin_assignment { sw_in[4] } { LOCATION = A12; IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+set_pin_assignment { sw_in[5] } { LOCATION = B12; IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+set_pin_assignment { sw_in[6] } { LOCATION = A13; IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+set_pin_assignment { sw_in[7] } { LOCATION = A14; IOSTANDARD = LVCMOS33; PULLTYPE = NONE; }
+
+# ===========================================================================
+# 12. 待上板实测确认项（两处来源冲突, 已如实标注, 未凭猜测）
+# ---------------------------------------------------------------------------
+# (1) 矩阵键盘"行"顺序:
+#       [走近FPGA 表1.1] Key_Row[0..3] = E10, C10, F9, D9
+#       [底板例程 spi_flash.adc] row[0..3] = D9, F9, C10, E10   ← 完全相反
+#     → 两者都能扫描出按键, 但键号与物理按键位置的对应关系相反。
+#       实测方法: 下载最小系统, 按"左上角"按键, 观察数码管/LED 显示键号,
+#       即可判定哪一组映射符合物理布局, 然后据实修正本文件与 key_matrix_4x4.v 注释。
+#
+# (2) SD 卡 SPI 的 MOSI/MISO:
+#       [引脚说明 3.6] F14 = SPI_MOSI（主机输出）, D14 = SPI_MISO（主机输入）
+#       [底板例程 sd_card.adc] SD_dataout = D14（主机输出）, SD_datain = F14
+#     → 本文件采用【引脚说明】（符合 SD 卡 SPI 标准接线）。
+#       若上板后 SD 卡初始化失败（CMD0/CMD8 无响应）, 将 F14/D14 对调再试。
+#       建议: RTL 中将 mosi/miso 保持在顶层端口, 改动仅需替换约束两行。
+# ===========================================================================
