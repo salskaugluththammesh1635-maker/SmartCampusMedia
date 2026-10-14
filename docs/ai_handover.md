@@ -41,7 +41,17 @@
      （ModelSim 只警告，易漏过）；混用时 NBA 会在时间步末覆盖阻塞赋值，还会造成
      隐藏功能缺陷（已发生：seg_scan4 位选恒全 1 → 数码管全灭）；
    - **严禁同一变量被多个 always 块驱动**（多驱动）；
-   - 提交 TD 前必跑：`python scripts/lint_verilog.py rtl project/src`（E1/E2 均须为 0）。
+   - 提交 TD 前必跑：`python scripts/lint_verilog.py rtl project/src`（E0/E1/E2 均须为 0）。
+
+0b. **【接口规范·强制】**（2026-10-06 全 RTL 复审新增，详见 progress.md 代码审查记录）：
+   - **同一按键不得被两个模块同时用作功能触发** —— 新增按键功能前先查
+     `rtl/top/dmz_eg4s20_bringup_top.v` 顶部的键位分配表（已发生：KEY0/KEY1 曾被
+     播放控制与图案切换同时占用，一次按键触发两种行为；TB 已加 T3b 防回归）；
+   - **一个模块一个职责，不留死端口** —— 不为"将来可能用到"预留输出
+     （已发生：`player_ctrl.seg_status` 16 位无人使用，且注释/实现/位定义三方不一致）；
+   - **端口注释必须与实现一致**（位序、极性、位宽三项），复审会逐条核对；
+   - **同步命令**：改完 `rtl/` 后执行 `scripts/sync_src.ps1`（增量同步到
+     `project/src/` 并自动 lint 双查），**不要手工复制**。
 
 1. 系统必须基于安路 EG4S 系列 FPGA（EG4S20BG256）。
 2. 所有算法、控制逻辑和数据处理流程必须在 FPGA 中自主实现。

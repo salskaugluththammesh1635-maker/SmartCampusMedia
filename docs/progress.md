@@ -58,7 +58,7 @@
 | 任务 | 状态 | 交付物 |
 |---|---|---|
 | 时钟/复位验证（PLL 锁定指示） | 🔶 | 顶层以 50M/2 分频产生像素时钟（仿真与 RGB 目检阶段）；上板 PLL 待 TD 工程添加 |
-| LED 流水/闪烁测试 | ✅（仿真级） | rtl/top/dmz_eg4s20_bringup_top.v: led = {pattern_sel, status_led} |
+| LED 流水/闪烁测试 | ✅（仿真级） | rtl/top/dmz_eg4s20_bringup_top.v: `led = {1'b0, pattern_sel, status_led}`（8 位） |
 | 按键消抖与事件测试 | ✅（仿真级） | rtl/input/key_matrix_4x4.v（逐键消抖 + 按下沿事件 + 低位优先编码） |
 | 数码管显示测试 | ✅（仿真级） | rtl/display/seg_scan4.v + rtl/common/seg_decoder.v（官方移植） |
 | 拨码开关读取测试 | ⬜ | 待底板/声卡冲突决策后实施（注意与 ES8388 同球互斥） |
@@ -77,13 +77,12 @@
 | T1 帧时序 | 640x480@60（≈59.5Hz） | 70ms 内 5 帧，hs 周期 32µs | ✅ PASS |
 | T2 彩条色带 | 白/黄/青/绿/品红/红/蓝/黑各 80px | x=40 白、x=120 黄、x=360 品红、x=600 黑 | ✅ PASS |
 | T2 消隐期 | RGB 全零 | 全零 | ✅ PASS |
-| T3 按键→图案切换 | KEY1 按下后 pattern_sel 0→1 | pattern_sel=1, img_index=1, led=0x10 | ✅ PASS |
+| T3a 按键→图案切换 | KEY5 按下后 pattern_sel 0→1 | pattern_sel=1, img_index=0, led=0x10 | ✅ PASS |
+| T3b 按键→切图（防误触发） | KEY1 按下后 img_index 0→1 且图案不变 | img_index=1, pattern_sel 保持 1 | ✅ PASS |
 | T4 网格图案 | 64px 白线黑底 | (0,0) 白线、(32,32) 黑格心 | ✅ PASS |
 | T5 图像导出 | 2 帧 PPM（640×480） | 彩条帧 2.93MB / 网格帧 2.11MB，PNG 目检合格 | ✅ PASS |
 
 图像证据：`reports/sim_out_colorbar.png`、`reports/sim_out_grid.png`（由 PPM 转出，肉眼看图确认渲染正确）
-
-## 阶段二：最小系统验证 🔶（无板卡：以仿真替代上板）
 
 ## 阶段三预演：视频链路（无 SDRAM 版）
 
@@ -92,7 +91,7 @@
 | 640x480@60 时序发生器 | ✅（仿真级） | rtl/video/video_timing_gen.v（参数与官方 VIDEO_640_480 一致） |
 | 测试图发生器（8 模式） | ✅（仿真级） | rtl/video/test_pattern_gen.v（彩条/网格/渐变/纯色/移动方块/棋盘） |
 | 帧图像 dump 复核 | 🔶 | sim/testbench/tb_dmz_eg4s20_bringup.v 输出 PPM，可转 PNG 目检 |
-| HDMI TMDS 输出（APUG092 + PHY） | ⬜ | 待底板 P3 脚位核实；TD 内集成官方加密 IP |
+| HDMI TMDS 输出（APUG092 + PHY） | ⬜ | 管脚已核实（CLK=P1/D0=N1/D1=P4/D2=J3, LVDS33；**板载 HDMI 座, 无需转接板**）；实现可选底板例程 `hdmi_tx` 或官方 APUG092 |
 | SDRAM 帧缓存 | ⬜ | 官方 sdram IP + frame_read_write 移植（阶段四） |
 
 ## 阶段三：HDMI 视频输出 ⬜
@@ -165,6 +164,33 @@
 | 最终打包提交 | ⬜ | 提交包 |
 
 ---
+
+## 代码审查记录（第四轮 · 全 RTL 复审，2026-10-06）
+
+**范围**：`rtl/` 全部 11 个 .v + 2 个 testbench（逐行复审，非抽查）
+**回归结果**：lint E0/E1/E2 全 0 → 11 模块 ModelSim 编译零错误零警告 → `tb_seg_scan4` 全 PASS → `tb_dmz_eg4s20_bringup` 全 PASS（含新增 T3b 防误触发检查）
+
+| 编号 | 级别 | 位置 | 问题与修复 |
+|---|---|---|---|
+| R1 | 🔴 blocker | bringup_top | LED 拼接仅 7 位 `{pattern_sel, status_led}` 赋给 8 位端口 → `led[7]` 恒 0 + 位宽告警。改为 `{1'b0, pattern_sel, status_led}` |
+| R2 | 🔴 blocker | bringup_top | **一键双功能**：`player_ctrl` 用 KEY0/KEY1 切图，顶层又用其切图案 → 一次按键触发两种行为。图案切换改用 **KEY4/KEY5**；TB 新增 T3b 专门验证 KEY1 不再误触发图案 |
+| R3 | 🟠 major | player_ctrl | `img_index` 越界：SD 重扫描后 `gallery_count` 变小，旧索引可能 ≥ 图数。在主控 else-if 链末新增最低优先级分支：越界时回绕到 0 并重发切图请求 |
+| R4 | 🟠 major | video_timing_gen | `frame_start` 在 `v_cnt == V_ACT_START` 的行末发出 = 有效区**第一行末尾**（晚一整行），与"有效区首行前"注释语义不符。改为 `V_ACT_START - 1` 的行末 |
+| R5 | 🟠 major | player_ctrl | `seg_status[15:0]` 为死信号（bringup_top 未使用），且位定义/注释/实现三方不一致。移除该端口（YAGNI）；将来 SD 状态显示时改加 4 位 `sd_status` |
+| R6 | 🟡 minor | player_ctrl | `status_led` 注释称 bit0=auto / bit1=应急，实现却是 bit1=auto / bit2=应急。实现改为 `{2'b00, emerg, auto}`，与注释一致 |
+| R7 | 🟡 minor | 4 处 | 数码管注释仍写"段高亮"，实为**低电平点亮**。min_top ×2 / bringup_top ×1 / seg_scan4 ×1 全部更正 |
+| R8 | 🟡 minor | seg_scan4 | `SCAN_HZ` 注释写"每位刷新率"，实为整轮刷新率（每位 = SCAN_HZ/4）。注释更正 |
+| R9 | 🔧 改进 | scripts/ | rtl→src 手工同步的技术债：新增 **`scripts/sync_src.ps1`**（MD5 增量比对 + 同步后自动 lint 双查；UTF-8 BOM 确保 Windows PowerShell 5.1 可执行）。首次运行即发现 `key_matrix_4x4.v` 两边本已不一致——印证该债务真实存在 |
+
+**有意保留未改（附理由）**：
+
+- `bringup_top` 中 `img_switch_req` / `auto_play_en` / `key_state` 暂未使用 → 属**预留接口**（阶段四接帧缓存、阶段六接 OSD），综合器会自动优化掉，已加注释说明；
+- `test_pattern_gen` 渐变亮度范围仅 0~79（偏暗）→ 视觉优化项，不影响功能，阶段三美化时再调；
+- 复位未做同步释放 → 注释已说明原因，上板若发现抖动问题再补。
+
+**新增协作规范**（已同步写入 `ai_handover.md` 硬性约束）：
+
+> 同一按键不得被两个模块同时用作功能触发；新增按键功能前先查 `bringup_top` 顶部的键位分配表。
 
 ## 问题记录
 

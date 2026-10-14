@@ -85,7 +85,10 @@ module video_timing_gen #(
             de          <= de_c;
             active_x    <= de_c ? (h_cnt - H_ACT_START) : 11'd0;
             active_y    <= de_c ? (v_cnt - V_ACT_START) : 10'd0;
-            frame_start <= (v_cnt == V_ACT_START) && (h_cnt == H_TOTAL - 1);
+            // 帧起始脉冲: 在"有效区首行开始前"的最后一个像素位置发出
+            // （即 v_cnt = V_ACT_START-1 的行末）。修复前用 V_ACT_START,
+            //  实际落在有效区第一行的行末 —— 晚了一整行, 与注释语义不符。
+            frame_start <= (v_cnt == V_ACT_START - 10'd1) && (h_cnt == H_TOTAL - 1);
         end
     end
 

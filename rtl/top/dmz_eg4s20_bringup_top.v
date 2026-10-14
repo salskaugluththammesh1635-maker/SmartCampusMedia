@@ -3,10 +3,14 @@
 // 功能: DMZ-EG4S20 最小系统验证顶层（阶段二）+ 视频通路自检（阶段三预演）
 // 组成:
 //   1. 时钟/复位: 50M 输入直驱（PLL 在 TD 工程中添加, 仿真用 50M 直通验证逻辑）
-//   2. 4x4 矩阵键盘扫描 → 播放控制
-//   3. 视频时序 → 测试图（8 模式, KEY0/KEY1 切换）→ RGB 输出
-//   4. 数码管: 显示模式/图案号; LED: 状态
+//   2. 4x4 矩阵键盘扫描 → 播放控制 + 测试图切换
+//   3. 视频时序 → 测试图（8 模式）→ RGB888 输出
+//   4. 数码管: 显示 模式/图案号/图号; LED: 图案号 + 控制状态
 //   5. 蜂鸣器: 按键音/应急音
+// 键位分配（同一按键不得被两个功能复用 —— 修复前 KEY0/KEY1 同时驱动
+//           播放控制与图案切换, 导致一次按键触发两种行为）:
+//   KEY0 = 上一张      KEY1 = 下一张      KEY2 = 播放/暂停    KEY3 = 模式循环
+//   KEY4 = 上一图案    KEY5 = 下一图案    KEY15 = 应急直达
 // 板级事实（全部已核实, 见 pending_confirmations.md）:
 //   clk=R7(50M)  rst=RSTn(E3,低有效)  LED0~7=B14,B15,B16,C15,C16,E13,E16,F16(高亮)
 //   Key_Row=E10,C10,F9,D9  Key_Col=E11,D11,C11,F10  数码管/蜂鸣器见各模块头
@@ -28,7 +32,7 @@ module dmz_eg4s20_bringup_top (
     // LED（高亮）, 板上与 R-2R DAC 复用
     output wire [7:0]  led,            // B14,B15,B16,C15,C16,E13,E16,F16
     // 数码管
-    output wire [7:0]  seg_data,       // 段选（高亮）
+    output wire [7:0]  seg_data,       // 段选（低电平点亮, 与 seg_decoder 段码极性一致）
     output wire [3:0]  seg_cs,         // 位选（低选通）
     // 蜂鸣器
     output wire        buzzer,         // H11, 低响
@@ -52,7 +56,7 @@ module dmz_eg4s20_bringup_top (
     // ============================ 按键 ============================
     wire       key_event;
     wire [3:0] key_code;
-    wire [15:0] key_state;
+    wire [15:0] key_state;         // 键状态位图（当前顶层未使用, 综合会自动优化）
 
     key_matrix_4x4 #(
         .CLK_FREQ_HZ (50_000_000),
@@ -69,11 +73,10 @@ module dmz_eg4s20_bringup_top (
 
     // ============================ 播放控制 ============================
     wire [4:0]  img_index;
-    wire        img_switch_req;
-    wire        auto_play_en;
+    wire        img_switch_req;    // 预留接口: 阶段四接 SDRAM 帧缓存控制器
+    wire        auto_play_en;      // 预留接口: 阶段六接 OSD/状态显示
     wire [1:0]  mode;
     wire [3:0]  status_led;
-    wire [15:0] seg_status;
 
     player_ctrl #(
         .IMG_COUNT   (8),
@@ -90,8 +93,7 @@ module dmz_eg4s20_bringup_top (
         .img_switch_req (img_switch_req),
         .auto_play_en   (auto_play_en),
         .mode           (mode),
-        .status_led     (status_led),
-        .seg_status     (seg_status)
+        .status_led     (status_led)
     );
 
     // ============================ 视频 ============================
@@ -118,15 +120,15 @@ module dmz_eg4s20_bringup_top (
         .frame_start (frame_start)
     );
 
-    // 图案选择: KEY0/KEY1 增减（借用 img_index 低 3 位直观化: 本最小系统直接用按键步进）
+    // 图案选择: KEY4/KEY5 增减（独立于 player_ctrl 占用的 KEY0~KEY3）
     reg [2:0] pattern_sel;
     always @(posedge clk50 or negedge rst_n) begin
         if (!rst_n)
             pattern_sel <= 3'd0;
-        else if (key_event && (key_code == 4'd0))
-            pattern_sel <= pattern_sel - 3'd1;      // KEY0 上一图案
-        else if (key_event && (key_code == 4'd1))
-            pattern_sel <= pattern_sel + 3'd1;      // KEY1 下一图案
+        else if (key_event && (key_code == 4'd4))
+            pattern_sel <= pattern_sel - 3'd1;      // KEY4 上一图案
+        else if (key_event && (key_code == 4'd5))
+            pattern_sel <= pattern_sel + 3'd1;      // KEY5 下一图案
     end
 
     wire [7:0] pr, pg, pb;
@@ -190,8 +192,10 @@ module dmz_eg4s20_bringup_top (
     );
 
     // ============================ LED ============================
-    // LED7~0: 高 4 位 = pattern_sel, 低 4 位 = status_led(auto/应急等)
-    assign led = {pattern_sel, status_led};
+    // LED7~0: bit7 预留(0), bit6~4 = pattern_sel, bit3~0 = status_led
+    // 注: 拼接总宽必须等于 8 —— 修复前 {pattern_sel, status_led} 仅 7 位,
+    //     导致 led[7] 恒 0 且产生位宽不匹配告警
+    assign led = {1'b0, pattern_sel, status_led};
 
     // ============================ 蜂鸣器 ============================
     // 应急模式 → 急促音（250ms 响/停循环）; 其余时刻 → 按键音模式（trig 开启 100ms 窗口）

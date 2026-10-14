@@ -6,7 +6,7 @@
 //   clk=R7(50MHz)  rst_n_btn=E3(RSTn, 按下为低)  buzzer=H11(PNP, 低响)
 //   矩阵键盘 行 E10/C10/F9/D9（输出扫描）, 列 E11/D11/C11/F10（输入, 上拉）
 //   LED0~7 = B14/B15/B16/C15/C16/E13/E16/F16（高电平点亮）
-//   数码管 段 A4/A6/B8/E8/A7/B5/A8/C8, 位选 C9/B6/A5/A3（段高亮, 位低选通）
+//   数码管 段 A4/A6/B8/E8/A7/B5/A8/C8, 位选 C9/B6/A5/A3（段低电平点亮, 位低电平选通）
 // 上板可验证项:
 //   1) 时钟与复位（数码管千位小数点 1Hz 闪烁 = 系统活着）
 //   2) 4x4 矩阵键盘扫描 + 20ms 消抖（按键计数递增）
@@ -25,8 +25,8 @@ module dmz_eg4s20_min_top (
     input  wire [3:0]  key_col,       // E11,D11,C11,F10（上拉, 按下为低）
     // LED（高电平点亮）
     output wire [7:0]  led,           // B14,B15,B16,C15,C16,E13,E16,F16
-    // 数码管（段高亮 / 位低选通）
-    output wire [7:0]  seg_data,      // A4,A6,B8,E8,A7,B5,A8,C8
+    // 数码管（段低电平点亮 / 位低电平选通）
+    output wire [7:0]  seg_data,      // A4,A6,B8,E8,A7,B5,A8,C8（字节序 {DP,G,F,E,D,C,B,A}）
     output wire [3:0]  seg_cs,        // C9,B6,A5,A3
     // 蜂鸣器（低电平响）
     output wire        buzzer         // H11

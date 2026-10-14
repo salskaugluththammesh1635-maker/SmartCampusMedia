@@ -30,8 +30,7 @@ module player_ctrl #(
     output reg        img_switch_req,      // 单拍: 请求加载新图（切图脉冲）
     output reg        auto_play_en,        // 自动轮播使能
     output reg  [1:0] mode,                // 0=日常 1=科普 2=应急 3=保留
-    output reg  [3:0] status_led,          // 状态指示（LED 低 4 位: bit0=auto, bit1=应急）
-    output reg  [15:0] seg_status          // 数码管状态: [15:12]模式 [11:8]图号十位 [7:4]图号个位 [3:0]SD状态
+    output reg  [3:0] status_led           // 状态指示: bit0=自动轮播中, bit1=应急模式
 );
 
     // ---- 模式编码 ----
@@ -81,7 +80,6 @@ module player_ctrl #(
             auto_play_en   <= 1'b0;
             mode           <= MODE_NORMAL;
             status_led     <= 4'b0000;
-            seg_status     <= 16'd0;
             auto_rst_req   <= 1'b0;
         end
         else begin
@@ -122,11 +120,14 @@ module player_ctrl #(
                 img_index      <= next_idx(img_index, gallery_count);
                 img_switch_req <= 1'b1;
             end
+            else if (gallery_valid && (img_index >= gallery_count)) begin
+                // 图库收缩保护: SD 卡重新扫描后图数变少时, 索引可能越界 → 回绕到首图
+                img_index      <= 5'd0;
+                img_switch_req <= 1'b1;
+            end
 
-            // 状态指示
-            status_led <= {1'b0, (mode == MODE_EMERG), auto_play_en, 1'b0};
-            // 数码管状态字（16bit）: [15:14]保留 [13:12]模式 [11:7]图号 [6:4]保留 [3:0]SD状态占位
-            seg_status <= {2'b00, mode, img_index, 3'b000, 4'hA};
+            // 状态指示: bit0=自动轮播中, bit1=应急模式（与端口注释一致）
+            status_led <= {2'b00, (mode == MODE_EMERG), auto_play_en};
         end
     end
 

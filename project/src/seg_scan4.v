@@ -15,7 +15,7 @@
 
 module seg_scan4 #(
     parameter CLK_FREQ_HZ = 50_000_000,
-    parameter SCAN_HZ     = 1000          // 每位刷新率
+    parameter SCAN_HZ     = 1000          // 整轮刷新率（每位 = SCAN_HZ/4 = 250Hz）
 )(
     input  wire       clk,
     input  wire       rst_n,
@@ -23,7 +23,7 @@ module seg_scan4 #(
     input  wire [7:0] dig1,
     input  wire [7:0] dig2,
     input  wire [7:0] dig3,              // 最左位
-    output reg  [7:0] seg_data,          // 段选输出（高亮）
+    output reg  [7:0] seg_data,          // 段选输出（低电平点亮: 0=亮, 1=灭）
     output reg  [3:0] seg_cs             // 位选输出（低选通）: seg_cs[0]=COM0(最右)
 );
     localparam SCAN_DIV = CLK_FREQ_HZ / (SCAN_HZ * 4) - 1;  // 4 位轮转

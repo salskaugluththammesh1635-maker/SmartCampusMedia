@@ -5,7 +5,8 @@
 // 验证项:
 //   T1 复位后 640x480@60 时序（帧率≈59.5Hz, 行周期≈31.75us）
 //   T2 彩条 8 色关键坐标（白/黄/品红/黑）
-//   T3 KEY1 按键 → 消抖 → 图案切换（0→1）+ LED 更新
+//   T3a KEY5 按键 → 消抖 → 图案切换（pattern_sel 0→1）
+//   T3b KEY1 按键 → 切图（img_index 0→1）, 并验证其不再误触发图案切换
 //   T4 网格图案关键点（白线 / 黑格心）
 //   T5 帧图像 dump 为 PPM（肉眼复核仿真渲染结果）
 // 采样时钟: video_clk_out 下降沿（25MHz, 半周期处稳定）
@@ -220,17 +221,33 @@ module tb_dmz_eg4s20_bringup;
         // T5a dump 彩条帧
         dump_frame("sim_out_colorbar.ppm");
 
-        // T3 按键: KEY1 按下 60ms（> 消抖 20ms）
-        press_key(1, 60);
+        // T3a 图案切换: KEY5 按下 60ms（> 消抖 20ms）
+        press_key(5, 60);
         #30_000_000;
-        $display("[%0t] T3 pattern_sel=%0d img_index=%0d led=%02h mode=%0d",
+        $display("[%0t] T3a pattern_sel=%0d img_index=%0d led=%02h mode=%0d",
                  $time, dbg_pattern_sel, dbg_img_index, led, dbg_mode);
         if (dbg_pattern_sel !== 3'd1) begin
             errors = errors + 1;
-            $display("[FAIL] T3 按键后 pattern_sel 应为 1, 实际 %0d", dbg_pattern_sel);
+            $display("[FAIL] T3a KEY5 后 pattern_sel 应为 1, 实际 %0d", dbg_pattern_sel);
         end
         else
-            $display("[PASS] T3 按键→图案切换");
+            $display("[PASS] T3a KEY5 → 图案切换 (pattern_sel=1)");
+
+        // T3b 播放控制: KEY1 按下 60ms → img_index 0→1, 且不得改变 pattern_sel
+        press_key(1, 60);
+        #30_000_000;
+        $display("[%0t] T3b img_index=%0d pattern_sel=%0d（图案应仍为 1）",
+                 $time, dbg_img_index, dbg_pattern_sel);
+        if (dbg_img_index !== 5'd1) begin
+            errors = errors + 1;
+            $display("[FAIL] T3b KEY1 后 img_index 应为 1, 实际 %0d", dbg_img_index);
+        end
+        else if (dbg_pattern_sel !== 3'd1) begin
+            errors = errors + 1;
+            $display("[FAIL] T3b KEY1 误触发图案切换, pattern_sel=%0d", dbg_pattern_sel);
+        end
+        else
+            $display("[PASS] T3b KEY1 → 切图 (img_index=1, 未误触发图案)");
 
         // T4 网格关键点（64 像素网格: 行列线为白）
         check_pixel(11'd0,  10'd0,  8'hFF, 8'hFF, 8'hFF, "T4 grid line (0,0)");
