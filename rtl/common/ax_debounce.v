@@ -27,10 +27,16 @@ module  ax_debounce
     output reg  button_out
 );
 //// ---------------- internal constants --------------
-parameter N = 32 ;           // debounce timer bitwidth
-parameter FREQ = 50;         //model clock :Mhz
-parameter MAX_TIME = 20;     //ms
+parameter N = 32 ;           // 消抖计数器的位宽。作用: 决定计数器能表示的最大值
+                             //   32 位足以容纳 MAX_TIME × 1000 × FREQ 的任意合理组合
+parameter FREQ = 50;         // 时钟频率，单位 **MHz**（注意单位！）
+                             //   ⚠️ 本项目自研模块用的是 CLK_FREQ_HZ（单位 Hz），
+                             //      两者差 100 万倍，移植时务必换算，否则消抖时间会错得离谱
+parameter MAX_TIME = 20;     // 消抖时长(ms)。机械触点抖动约 5~10ms，取 20ms 有 2 倍余量
 localparam TIMER_MAX_VAL =   MAX_TIME * 1000 * FREQ;
+                             // ↑ 作用: 计数目标值 = 消抖时长(ms) × 1000 × 时钟频率(MHz)
+                             //   例: 20 × 1000 × 50 = 1_000_000 个时钟周期 = 20ms @50MHz
+                             //   计数器数到这个值才认可按键状态变化
 ////---------------- internal variables ---------------
 reg  [N-1 : 0]  q_reg;      // timing regs
 reg  [N-1 : 0]  q_next;
