@@ -10,6 +10,19 @@
 //   T4 网格图案关键点（白线 / 黑格心）
 //   T5 帧图像 dump 为 PPM（肉眼复核仿真渲染结果）
 // 采样时钟: video_clk_out 下降沿（25MHz, 半周期处稳定）
+// -----------------------------------------------------------------------------
+// 【仿真原理】
+//   1) DUT 例化真实的 dmz_eg4s20_bringup_top，输入时钟 50MHz（周期 20ns）
+//   2) 键盘用"行为模型"模拟：testbench 维护 key_pressed 位图表示哪些键被按下，
+//      再根据 DUT 输出的 key_row 反推 key_col 电平 —— 等价于板上的行列矩阵
+//      物理连接（某行为低 + 该键按下 → 对应列被拉低）
+//   3) 像素检查采用"轮询"方式：一直等到 de=1 且坐标命中目标点时才采样 RGB
+//      并比对（纯 Verilog-2001 写法，不使用 fork/join、disable 等 SV 构造）
+//   4) 帧图像导出为 PPM 文本格式，可转 PNG 肉眼复核渲染结果
+//   5) 直接读取 DUT 内部信号（dut.pattern_sel 等）做断言，省去引出调试端口
+// 【运行】sim\scripts\run_sim.bat
+//        或 vsim -c -do "run -all; quit -f" work.tb_dmz_eg4s20_bringup
+// 【预期】全部 PASS、errors = 0，并生成 sim_out_colorbar.ppm / sim_out_grid.ppm
 // =============================================================================
 `timescale 1ns / 1ps
 
@@ -78,13 +91,17 @@ module tb_dmz_eg4s20_bringup;
     end
 
     // ---- 矩阵键盘行为模型 ----
-    // 板级: 当 FPGA 将某行驱动为低且该键按下时, 对应列被拉低
-    reg [15:0] key_pressed = 16'd0;
+    // 板级物理事实：某一行被 FPGA 拉低时，若该行上的某键被按下，则该键所在列
+    // 会被拉低（其余列因 10k 上拉保持高）。本段用组合逻辑复现这一行为：
+    //   输入 key_row（DUT 输出的行扫描） + key_pressed（"用户按了哪些键"）
+    //   → 输出 key_col（回送给 DUT 的列电平）
+    reg [15:0] key_pressed = 16'd0;     // 位图: bit k = 1 表示键 k 正被按住
     integer    i;
     always @(*) begin
-        key_col = 4'hF;
+        key_col = 4'hF;                 // 默认全高（无键按下）
         for (i = 0; i < 4; i = i + 1) begin
-            if (!key_row[i]) begin
+            if (!key_row[i]) begin      // 该行正被扫描（拉低）
+                // 键号 = 4*行 + 列 → 据此把对应列拉低
                 if (key_pressed[i*4 + 0]) key_col[0] = 1'b0;
                 if (key_pressed[i*4 + 1]) key_col[1] = 1'b0;
                 if (key_pressed[i*4 + 2]) key_col[2] = 1'b0;
@@ -93,15 +110,18 @@ module tb_dmz_eg4s20_bringup;
         end
     end
 
-    // 按键按下（保持 hold_ms 后释放）
+    // ---- 模拟按下某个键 ----
+    // 注意 hold_ms 必须 **大于消抖阈值（20ms）**，否则 DUT 还没确认按键就松开了，
+    // 自然不会有 key_event。本测试用 60ms（3 倍余量）。
+    // 每次调用前先清空 key_pressed，避免多键同时按下的干扰。
     task press_key;
         input integer keycode;
         input integer hold_ms;
         begin
             key_pressed = 16'd0;
             key_pressed[keycode] = 1'b1;
-            #(hold_ms * 1_000_000);
-            key_pressed = 16'd0;
+            #(hold_ms * 1_000_000);     // 保持按住（单位 ns）
+            key_pressed = 16'd0;        // 释放
         end
     endtask
 
