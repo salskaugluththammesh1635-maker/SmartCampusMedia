@@ -8,12 +8,17 @@ project/reference/
 ip/reference/
 
 # ---------- 安路 TD 工程生成物 ----------
+# .al 工程文件: 只保留 bringup_td.al（正式工程定义）
+# 其余 .al 视为重复/临时工程（已发生: 用户于 project/src/ 下另建 SmartCampusMedia.al）
+*.al
+!project/bringup_td.al
 project/*_Runs/
-project/log/
+log/
+*.log
+*.logw
 project/.lock.f
 project/.stop.f
 *.db
-*.log
 *.bit
 *.bid
 *.area
