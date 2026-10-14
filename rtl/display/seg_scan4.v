@@ -97,20 +97,20 @@ module seg_scan4 #(
     reg [1:0]  dig_idx;     // 【当前点亮的位序号】0~3 循环
                             //   0 = 最右位 COM0，3 = 最左位 COM3
                             //   作用: 决定本拍送出哪一位的段码、以及把哪个位选拉低
-    wire       scan_tick = (div_cnt == SCAN_DIV);
-                            // 【单拍节拍脉冲】每位停留时间到时出现一个时钟周期的高电平
-                            //   作用: 触发位切换（dig_idx+1）与计数器复位
 
     // ================= always 块 ① / 共 3 块: 扫描节拍与位序号 =================
-    // 功能: ① div_cnt 分频计数，数满一位的停留时间就归零
-    //       ② dig_idx 在每个节拍时加一（0→1→2→3→0），实现"轮询点亮"
-    // 输入: clk, rst_n, scan_tick        输出: div_cnt, dig_idx
+    // 功能: ① div_cnt 分频计数，数满一位的停留时间（SCAN_DIV）就归零
+    //       ② dig_idx 在每次节拍时加一（0→1→2→3→0），实现"轮询点亮"
+    // 输入: clk, rst_n, div_cnt          输出: div_cnt, dig_idx
+    // 说明: 节拍判定直接写成 `div_cnt == SCAN_DIV` 比较，未单独引出 tick 信号
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+        if (!rst_n) 
+        begin
             div_cnt <= 24'd0;
             dig_idx <= 2'd0;
         end
-        else if (scan_tick) begin
+        else if (div_cnt == SCAN_DIV) 
+        begin
             div_cnt <= 24'd0;
             dig_idx <= dig_idx + 2'd1;
         end
@@ -141,10 +141,14 @@ module seg_scan4 #(
         seg_cs_nxt   = 4'b1111;            // 默认: 全部位选不选通
         seg_data_nxt = 8'hFF;              // 默认: 段全灭（低电平点亮 → 全 1 才是灭; 消影防重影）
         case (dig_idx)
-            2'd0: begin seg_cs_nxt[0] = 1'b0; seg_data_nxt = dig0; end
-            2'd1: begin seg_cs_nxt[1] = 1'b0; seg_data_nxt = dig1; end
-            2'd2: begin seg_cs_nxt[2] = 1'b0; seg_data_nxt = dig2; end
-            2'd3: begin seg_cs_nxt[3] = 1'b0; seg_data_nxt = dig3; end
+            2'd0: 
+                begin seg_cs_nxt[0] = 1'b0; seg_data_nxt = dig0; end
+            2'd1: 
+                begin seg_cs_nxt[1] = 1'b0; seg_data_nxt = dig1; end
+            2'd2: 
+                begin seg_cs_nxt[2] = 1'b0; seg_data_nxt = dig2; end
+            2'd3: 
+                begin seg_cs_nxt[3] = 1'b0; seg_data_nxt = dig3; end
             default: ;
         endcase
     end
