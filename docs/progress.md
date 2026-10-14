@@ -100,12 +100,23 @@
 
 | 任务 | 状态 | 交付物 |
 |---|---|---|
-| 跑通官方 HDMI 例程 | ⬜ | 运行记录 |
-| 纯色/彩条测试图输出 | ⬜ | rtl/video, hdmi_test |
-| 静态图片输出（片上 RAM 直读） | ⬜ | 静图测试记录 |
+| **HDMI 实现路径选型** | ✅ | 确认两条路径：①官方 DVITransmitter 加密核（阶段三采用，底板例程同源）②自研 TMDS（已确认 `SF2_LOGIC_HS_OSERDES` 原语可用 + `sim_release/eg4` 提供仿真库，留作后续替换以提升自主性） |
+| **PLL 时钟设计** | ✅ | `rtl/video/hdmi/hdmi_pll.v`：50MHz → 25MHz 像素 + **125MHz 串化（严格 5 倍）**。参数依据官方 tx_pll.v 结构推导：VCO = 25×40 = 1000MHz，C0=1000/40=25MHz（BUFG 反馈+像素），C2=1000/8=125MHz |
+| **HDMI 顶层** | ✅ | `rtl/top/dmz_eg4s20_hdmi_top.v`：全系统**单一时钟域**（25MHz 像素时钟），含 PLL/复位同步器/键盘/测试图/数码管/LED/蜂鸣器，PLL 锁定指示输出到 LED[4] |
+| **HDMI 约束** | ✅ | `constraints/dmz_eg4s20_hdmi.adc`：35 个 IO，含 HDMI 四对差分 `CLK=P1/D0=N1/D1=P4/D2=J3`（LVDS33） |
+| **TD 工程搭建** | ✅ | `project/hdmi_td.al`（手写工程文件）：8 Verilog + 5 VHDL（含 4 个官方加密核）+ 1 ADC，CompileOrder 按依赖排序 |
+| **工程同步机制** | ✅ | `scripts/sync_src.ps1` 升级为**双工程同步**（bringup_td + hdmi_td），带 MD5 增量比对与同步后 lint 双查 |
+| 静态检查 | ✅ | lint 26 文件：E0/E1/E2 全 0；ModelSim 语法检查：新增 2 模块编译通过 |
+| **TD 综合布线（进行中）** | 🔶 | 待用户在 TD 中打开 `hdmi_td.al` 跑 Read Design，验证：①加密核 license ②VHDL/Verilog 混合编译 ③PLL 配置可综合 |
+| 上板点亮 | ⬜ | 显示器稳定锁定 ≥30 分钟无异常 |
 | 记录分辨率与时序参数 | ⬜ | reports/hdmi_timing_report.md |
 
 **阶段出口准则**：显示器稳定锁定 ≥30 分钟无异常。
+
+**技术风险与备选方案**：
+1. **加密核 license**：若 TD 报 license 错误 → 改走自研 TMDS（OSERDES + 自写 8b/10b 编码器）
+2. **PLL 不锁定**：若 LED[4] 不亮 → 用 TD IP Generator 重新生成 PLL（GUI 自动计算环路参数）
+3. **25MHz vs 25.175MHz**：偏差 0.7%（场频 59.58Hz），绝大多数显示器可接受；若某显示器不锁定，改用 PLL 生成 25.175MHz 近似值
 
 ## 阶段四：资源读取与帧缓存 ⬜
 

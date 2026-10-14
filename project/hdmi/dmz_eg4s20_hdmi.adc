@@ -1,0 +1,77 @@
+# =============================================================================
+# dmz_eg4s20_hdmi.adc — 阶段三 HDMI 工程管脚约束
+# -----------------------------------------------------------------------------
+# 来源（全部已核实，详见 docs/pending_confirmations.md）:
+#   [底板引脚说明] = 板卡和引脚说明.pdf（3.1 VGA/RGB565、3.3 HDMI、3.5 音频）
+#   [底板例程]     = M0_Borad/.../10_VGA_hdmi_tx_display_MB/source_code/adc_sdc/hdmi.adc
+#   [核心板原理图] = EG4S20BG256核心板 - 2023.pdf
+#   [走近FPGA]     = 实验系列二：走近FPGA（表1.1~1.6）
+# 本工程 IO 合计 35 个: 系统 2 + 键盘 8 + LED 8 + 数码管 12 + 蜂鸣器 1 + HDMI 4
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. 时钟与复位
+# ---------------------------------------------------------------------------
+set_pin_assignment { clk }       { LOCATION = R7; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { rst_n_btn } { LOCATION = E3; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+
+# ---------------------------------------------------------------------------
+# 2. 4x4 矩阵键盘
+#    行（输出扫描）: [走近FPGA 表1.1] Key_Row[0..3] = E10,C10,F9,D9
+#    列（输入上拉）: 三源一致 E11,D11,C11,F10
+#    ⚠️ 行序存在来源冲突（底板例程为反序），本约束采用走近FPGA 顺序，
+#       上板实测后如需修正只改这四行
+# ---------------------------------------------------------------------------
+set_pin_assignment { key_row[0] } { LOCATION = E10; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_row[1] } { LOCATION = C10; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_row[2] } { LOCATION = F9;  IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_row[3] } { LOCATION = D9;  IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { key_col[0] } { LOCATION = E11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { key_col[1] } { LOCATION = D11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { key_col[2] } { LOCATION = C11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { key_col[3] } { LOCATION = F10; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+
+# ---------------------------------------------------------------------------
+# 3. LED ×8（高电平点亮；与 R-2R DAC 复用）
+# ---------------------------------------------------------------------------
+set_pin_assignment { led[0] } { LOCATION = B14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[1] } { LOCATION = B15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[2] } { LOCATION = B16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[3] } { LOCATION = C15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[4] } { LOCATION = C16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[5] } { LOCATION = E13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[6] } { LOCATION = E16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[7] } { LOCATION = F16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 4. 数码管（段低电平点亮 / 位低电平选通；字节序 {DP,G,F,E,D,C,B,A}）
+# ---------------------------------------------------------------------------
+set_pin_assignment { seg_data[0] } { LOCATION = A4; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[1] } { LOCATION = A6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[2] } { LOCATION = B8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[3] } { LOCATION = E8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[4] } { LOCATION = A7; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[5] } { LOCATION = B5; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[6] } { LOCATION = A8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_data[7] } { LOCATION = C8; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[0]   } { LOCATION = C9; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[1]   } { LOCATION = B6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[2]   } { LOCATION = A5; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { seg_cs[3]   } { LOCATION = A3; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 5. 蜂鸣器（无源, PNP 驱动, 低电平响）
+# ---------------------------------------------------------------------------
+set_pin_assignment { buzzer } { LOCATION = H11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 6. HDMI TMDS 差分输出【阶段三核心】
+#    来源: [底板引脚说明 3.3] 与 [底板例程 hdmi.adc] 完全一致 ✓
+#    IOSTANDARD 必须为 LVDS33（差分）
+#    只约束差分正端；负端由 TD 按差分对自动配对
+#    底板已载 HDMI-019S 座 + AZ1045-04F ESD 阵列, 无需转接板
+# ---------------------------------------------------------------------------
+set_pin_assignment { HDMI_CLK_P } { LOCATION = P1; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
+set_pin_assignment { HDMI_D0_P  } { LOCATION = N1; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
+set_pin_assignment { HDMI_D1_P  } { LOCATION = P4; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
+set_pin_assignment { HDMI_D2_P  } { LOCATION = J3; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
