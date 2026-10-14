@@ -12,10 +12,13 @@ project/reference/
 ip/reference/
 
 # ---------- 安路 TD 工程生成物 ----------
-# .al 工程文件: 只保留 bringup_td.al（正式工程定义）
+# .al 工程文件: 只保留两个**正式工程定义**
+#   - project/bringup_td.al : 最小系统工程（阶段二，已在板卡上验证通过）
+#   - project/hdmi_td.al    : HDMI 视频工程（阶段三）
 # 其余 .al 视为重复/临时工程（已发生: 用户于 project/src/ 下另建 SmartCampusMedia.al）
 *.al
 !project/bringup_td.al
+!project/hdmi_td.al
 project/*_Runs/
 log/
 *.log
