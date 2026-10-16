@@ -17,18 +17,41 @@
 // 【来源】官方示例（安路 FPGA 随板例程），未做任何修改。
 // 【状态】未参与任何 TD 工程编译（仅作参考资料保留）。
 // =============================================================================
-module  ax_debounce 
+// 【学习注释版 · 阅读指南】（追加注释, 逻辑零改动）
+//   消抖核心思想: 不判断"按键现在是什么电平", 而是判断"电平是否已
+//   连续稳定 20ms"。任何一次电平变化都把计时器清零重来 —— 抖动期电平
+//   乱跳, 计数器被反复清零永远数不满; 直到电平安静下来, 计数器第一次
+//   爬满 20ms, 才把当前电平采纳为真实输出。
+//   这在数字设计中称为"可重触发定时器"（每次事件都重新计时）,
+//   与软件里的"看门狗"思路同源。
+//
+//   全模块结构速览（数据从左到右流过三站）:
+//     button_in ──→ [①打拍同步站] ──→ [②计数裁判站] ──→ [③采纳+边沿站] ──→ 输出
+//                  DFF1/DFF2 两级     assign 两条指挥棒      计满才采纳输出
+//                  采样并探测变化      +组合算 q_next         +打拍比对出单拍脉冲
+//
+//   设计思维归类: 不是教科书 FSM（没有状态编码）, 也不是线性序列机
+//   （计数器是"有条件清零"而非无条件轮转）—— 准确说是三个经典原语的串联:
+//     ① 两级同步器（打拍防亚稳态）
+//     ② 异或边沿哨兵 + 可重触发定时器（本模块的灵魂）
+//     ③ 打拍边沿检测（输出单拍脉冲, 供下游当"按键事件"用）
+// =============================================================================
+`timescale 1ns / 1ps
+
+module  ax_debounce
 (
-    input       clk, 
-    input       rst, 
-    input       button_in,
-    output reg  button_posedge,
-    output reg  button_negedge,
-    output reg  button_out
+    input       clk,
+    input       rst,                    // ⚠️ 高有效复位! 与本项目统一的低有效 rst_n 相反,
+                                        //     移植时必须先统一极性, 否则复位逻辑整个反向
+    input       button_in,              // 原始按键电平（未经消抖, 抖动期会乱跳）
+    output reg  button_posedge,         // 消抖后电平的"上升沿"单拍脉冲（1 个时钟周期宽）
+    output reg  button_negedge,         // 消抖后电平的"下降沿"单拍脉冲（1 个时钟周期宽）
+    output reg  button_out              // 消抖后的稳定电平（这才是"真实按键状态"）
 );
-//// ---------------- internal constants --------------
+//// ---------------- 内部常数 --------------
 parameter N = 32 ;           // 消抖计数器的位宽。作用: 决定计数器能表示的最大值
-                             //   32 位足以容纳 MAX_TIME × 1000 × FREQ 的任意合理组合
+                             //   32 位可表示 0 ~ 2^32-1 ≈ 42.9 亿, 远超 TIMER_MAX_VAL
+                             //   的 100 万, 位宽余量充足（太小会提前溢出回绕, 消抖失灵）
 parameter FREQ = 50;         // 时钟频率，单位 **MHz**（注意单位！）
                              //   ⚠️ 本项目自研模块用的是 CLK_FREQ_HZ（单位 Hz），
                              //      两者差 100 万倍，移植时务必换算，否则消抖时间会错得离谱
@@ -36,76 +59,109 @@ parameter MAX_TIME = 20;     // 消抖时长(ms)。机械触点抖动约 5~10ms�
 localparam TIMER_MAX_VAL =   MAX_TIME * 1000 * FREQ;
                              // ↑ 作用: 计数目标值 = 消抖时长(ms) × 1000 × 时钟频率(MHz)
                              //   例: 20 × 1000 × 50 = 1_000_000 个时钟周期 = 20ms @50MHz
+                             //   （50MHz 时每个时钟周期 20ns, 100 万拍 × 20ns = 20ms）
                              //   计数器数到这个值才认可按键状态变化
-////---------------- internal variables ---------------
-reg  [N-1 : 0]  q_reg;      // timing regs
-reg  [N-1 : 0]  q_next;
-reg DFF1, DFF2;             // input flip-flops
-wire q_add;                 // control flags
-wire q_reset;
-reg button_out_d0;
+////---------------- 内部变量 ---------------
+reg  [N-1 : 0]  q_reg;      // 时序寄存器：当前计数值（真正的"稳定计时秒表"）
+reg  [N-1 : 0]  q_next;     // 下一拍计数值：由下方组合 always 块算出,
+                            //   本身不存数据, 只等时序块"锁存"（组合算 next + 时序寄存范式）
+reg DFF1, DFF2;             // 输入两级打拍触发器：
+                            //   DFF1 = button_in 的上一拍快照（同步第一级）
+                            //   DFF2 = DFF1 的再上一拍快照（同步第二级, 比 DFF1 晚一拍）
+                            //   作用①: 异步输入先打两拍再进内部逻辑 = 亚稳态防护
+                            //   作用②: DFF1/DFF2 构成"相邻两拍快照对", 供异或探测电平变化
+wire q_add;                 // 控制标志：允许加计数（=1: 还没数满, 继续计时）
+wire q_reset;               // 控制标志：电平变化则清零（=1: 最近一拍内电平跳变过）
+reg button_out_d0;          // button_out 打一拍（供沿检测用）
 //// ------------------------------------------------------
 
-////contenious assignment for counter control
-assign q_reset = (DFF1  ^ DFF2);          // xor input flip flops to look for level chage to reset counter
-assign q_add = ~(q_reg == TIMER_MAX_VAL); // add to counter when q_reg msb is equal to 0
-    
-//// combo counter to manage q_next 
+//// 计数器控制的连续赋值
+// ---- 指挥棒 1: 抖动探测器（全模块最聪明的一笔）----
+// 异或真值表: 0^0=0(两拍同低,稳定)  1^1=0(两拍同高,稳定)  0^1/1^0=1(两拍不同,在变)
+// 因为 DFF2 比 DFF1 晚一拍, 两者不同 ⇔ 最近一个时钟沿电平发生过跳变
+// → 抖动期的每一次乱跳都会让 q_reset=1, 把计数器打回零重新计时
+assign q_reset = (DFF1  ^ DFF2);          // 异或两级触发器，检测电平变化以复位计数器
+// ---- 指挥棒 2: 计满锁存 ----
+// 没数到 1,000,000 就允许 +1; 数满后 q_add=0, 计数器停在满值
+// （防止继续 +1 溢出回绕到 0, 把"已数满 20ms"这个状态悄悄洗掉）
+assign q_add = ~(q_reg == TIMER_MAX_VAL); // 计数器未计满时继续加计数
+
+//// 组合逻辑：计算下一拍计数值 q_next
+// 纯组合块: 敏感列表里的 q_reset/q_add/q_reg 任一变化, q_next 立即重新求值
+// 把两条指挥棒拼成 2 位选择子 {q_reset, q_add}, 译码出三种计数器命运:
 always @ ( q_reset, q_add, q_reg)
 begin
     case( {q_reset , q_add})
-        2'b00 :
-                q_next <= q_reg;
-        2'b01 :
-                q_next <= q_reg + 1;
-        default :
-                q_next <= { N {1'b0} };
-    endcase     
+        2'b00 :                            // 电平稳定 + 已数满 → 原地保持
+                q_next <= q_reg;           //   停在满值等下游采纳（不归零, 也不溢出）
+        2'b01 :                            // 电平稳定 + 未数满 → 唯一允许计数的情形
+                q_next <= q_reg + 1;       //   秒表 +1, 向 20ms 目标推进
+        default :                          // {q_reset,q_add}=2'b1x → 电平正在变（抖动!）
+                q_next <= { N {1'b0} };    //   秒表清零, 重新计时 —— 消抖的核心动作
+    endcase
+    // ⚠️ 规范提示: 本块是组合逻辑, 项目编码规范要求用阻塞赋值"=",
+    //    此处官方原样保留的"<="属不规范写法, 恰好充当反面教材
+    //    （对照 rtl/display/seg_scan4.v 的"组合块仅用 ="）
 end
 
-//// Flip flop inputs and q_reg update
+//// 输入打拍与 q_reg 更新
+// 时序站 ①+②: 每个时钟上升沿干两件事
 always @ ( posedge clk or posedge rst)
 begin
-    if(rst == 1'b1)
+    if(rst == 1'b1)                        // ⚠️ 再次强调: 高有效复位（rst=1 才复位）
     begin
-        DFF1 <= 1'b0;
-        DFF2 <= 1'b0;
-        q_reg <= { N {1'b0} };
+        DFF1 <= 1'b0;                      // 复位快照为 0（两快照同值, 释放后 20ms 内
+        DFF2 <= 1'b0;                      //   计数器自会爬满, 建立起稳定基准）
+        q_reg <= { N {1'b0} };             // 计时秒表归零
     end
     else
     begin
-        DFF1 <= button_in;
-        DFF2 <= DFF1;
-        q_reg <= q_next;
+        DFF1 <= button_in;                 // 快照今天: 采样原始输入
+        DFF2 <= DFF1;                      // 快照昨天: 拿到 DFF1 的"旧值"（非阻塞赋值
+                                           //   同时执行, DFF2 得到的是上一拍的 DFF1）
+                                           //   → 两行合成两级同步流水线
+        q_reg <= q_next;                   // 把组合块算好的下一拍值锁进计数器
+                                           //   （"组合算 next + 时序统一寄存"的官方原型）
     end
 end
 
-//// counter control
+//// 计数器控制：计满后更新消抖输出
+// 时序站 ③(上): 输出采纳 —— 拥有"一票否决权"
 always @ ( posedge clk or posedge rst)
 begin
 	if(rst == 1'b1)
-		button_out <= 1'b1;
-    else if(q_reg == TIMER_MAX_VAL)
-        button_out <= DFF2;
+		button_out <= 1'b1;                // 复位值=1: 初始视为"未按下"
+                                           //   （与边沿检测块的复位值配对, 防上电假脉冲）
+    else if(q_reg == TIMER_MAX_VAL)        // 只有"恰好数满 20ms"的状态下才放行:
+        button_out <= DFF2;                //   把已稳定的 DFF2 电平采纳为真实按键状态
+                                           //   数满后 q_reg 停在满值, 此分支每拍执行,
+                                           //   但 DFF2 稳定不变, 等效于输出自保持
     else
-        button_out <= button_out;
+        button_out <= button_out;          // 未数满的 20ms 内: 输出纹丝不动（自保持）
+                                           //   —— 抖动期无论电平怎么跳, 下游都看不见
 end
 
+//// 边沿检测：由 button_out 打拍产生按下/释放单拍脉冲
+// 时序站 ③(下): 把"稳定的电平变化"翻译成"1 个时钟周期宽的事件脉冲"
 always @ ( posedge clk or posedge rst)
 begin
 	if(rst == 1'b1)
 	begin
-		button_out_d0 <= 1'b1;
-		button_posedge <= 1'b0;
-		button_negedge <= 1'b0;
+		button_out_d0 <= 1'b1;             // 与 button_out 的复位值 1 配对!
+		button_posedge <= 1'b0;            // 复位后两快照同值 → 两个脉冲都算出 0,
+		button_negedge <= 1'b0;            //   上电瞬间不会冒出假的"按键事件"
 	end
 	else
 	begin
-		button_out_d0 <= button_out;
+		button_out_d0 <= button_out;       // 保存输出上一拍的值
 		button_posedge <= ~button_out_d0 & button_out;
+		                                   // 上拍 0 且本拍 1 → 上升沿 → 本拍为 1, 其余拍为 0
+		                                   //   （对低有效按键 = "按下"事件）
 		button_negedge <= button_out_d0 & ~button_out;
-	end	
+		                                   // 上拍 1 且本拍 0 → 下降沿 → 本拍为 1
+		                                   //   （对低有效按键 = "释放"事件）
+	end
+	// 注意: 两个脉冲都由"寄存后的 button_out"比对产生, 即事件比真实按键
+	//   动作晚约 20ms+2 拍 —— 这是消抖的固有代价, 对人手操作完全无感
 end
 endmodule
-
-
