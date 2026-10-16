@@ -54,6 +54,9 @@ Thumbs.db
 vide.toml
 .vide/
 
-# QoR 璧勬簮鎶ュ憡锛圱D 鐢熸垚鐗╋紝鍙暀 flow_sdc.tcl 娴佺▼鑴氭湰锛?gate.qor
-place.qor
-route.qor
+
+# TD QoR reports (generated)
+*.qor
+
+# Headless bit output (generated)
+*_Runs/
