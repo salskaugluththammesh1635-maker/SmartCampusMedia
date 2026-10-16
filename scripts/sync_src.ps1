@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # sync_src.ps1 — 主源 → TD 工程副本 同步（双工程：bringup_td 最小系统 + hdmi_td 视频）
 # -----------------------------------------------------------------------------
 # 背景: 代码唯一真源在 rtl/ 与 constraints/，而 TD 编译的是 project/ 下的副本。
@@ -24,6 +24,7 @@ $map = [ordered]@{
     'rtl\display\seg_scan4.v'       = @('project\src\seg_scan4.v',        'project\hdmi\seg_scan4.v')
     'rtl\input\key_matrix_4x4.v'    = @('project\src\key_matrix_4x4.v',   'project\hdmi\key_matrix_4x4.v')
     'rtl\audio\buzzer_tone.v'       = @('project\src\buzzer_tone.v',      'project\hdmi\buzzer_tone.v')
+    'rtl\audio\pwm_audio_out.v'     = @('project\hdmi\pwm_audio_out.v')
     # ===== 仅 hdmi_td =====
     'rtl\top\dmz_eg4s20_hdmi_top.v' = @('project\hdmi\dmz_eg4s20_hdmi_top.v')
     'rtl\video\hdmi\hdmi_pll.v'     = @('project\hdmi\hdmi_pll.v')
@@ -35,6 +36,8 @@ $map = [ordered]@{
     # ===== 约束文件 =====
     'constraints\dmz_eg4s20_min.adc'  = @('project\src\dmz_eg4s20_min.adc')
     'constraints\dmz_eg4s20_hdmi.adc' = @('project\hdmi\dmz_eg4s20_hdmi.adc')
+    # ===== 时序约束（SDC，2026-10-17 第五轮审查新增）=====
+    'constraints\dmz_eg4s20_hdmi.sdc' = @('project\hdmi\dmz_eg4s20_hdmi.sdc')
     # ===== 官方加密 IP（仅复制，不参与 lint）=====
     'ip\local\hdmi\enc\DVITransmitter.enc.vhd'         = @('project\hdmi\enc\DVITransmitter.enc.vhd')
     'ip\local\hdmi\enc\SerializerN_1_lvds.enc.vhd'     = @('project\hdmi\enc\SerializerN_1_lvds.enc.vhd')

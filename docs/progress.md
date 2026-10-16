@@ -262,6 +262,26 @@ testbench 膨胀数倍且更难维护。
   `.al` 的 `<LABEL>` 必须留空；headless 跑 TD 时 CWD 必须是工程目录。
 - 待办优先级：A1 音频决策 > A2 ChipWatcher 抓信号 > A3 HDMI 上板 > A4 收尾。
 
+## A1 音频闭环（PWM 快速通路，2026-10-16）
+
+用户拍板"先 PWM 快速闭环"（HDMI 音频/换 APUG092 链列入扩展加分阶段再评审）。
+
+- 新增 `rtl/audio/pwm_audio_out.v`：DDS 相位累加（FTW = FREQ_HZ×2³²/CLK_FREQ_HZ，
+  440Hz→75594）+ 一行三元三角波表（phase_acc[31] 方向位取反 = 下降半周，替代
+  256 点 ROM）+ 8bit PWM 载波（f_clk/256≈97.7kHz 带外）。含四层注释体系。
+- 顶层 `dmz_eg4s20_hdmi_top.v` 新增块 [10] 与端口 `audio_pwm`（球 F3，
+  LVCMOS33，IO 35→36）；`constraints/dmz_eg4s20_hdmi.adc` §5b；`hdmi_td.al`
+  登记 CompileOrder 5（hdmi_pll 8、top 14 顺延）。
+- 仿真 `sim/testbench/tb_pwm_audio_out.v`：T1 复位静音 / T2 音高 20/20 周期 /
+  T3 单调性 0 违例 / T4 占空比跟踪（窗口落波谷跳过）/ T4b 平均占空比 49% /
+  T5 mute —— **全 PASS**；tb 踩坑：ModelSim 10.1d 的 `$sformatf` 结果不能隐式
+  转 packed task 参数，数值统计改 `$display` + chk 传静态文本。
+- headless 重跑全流程 PASS：SWNS 6.421ns / HWNS 0.030ns / **0 违例**
+  （clk_pixel fanout 279、clk_5x fanout 32），音频模块零时序代价。
+- `sync_src.ps1` 补 pwm_audio_out 映射（首轮 headless 报 black box 即此漏项）；
+  SDC 映射上一轮已加，A4 收尾完成。
+- 赛规基础要求③：❌→✅（测试音级，音乐播放待阶段五资源通路）。
+
 ## 问题记录
 
 | 日期 | 问题 | 影响 | 处理 | 状态 |

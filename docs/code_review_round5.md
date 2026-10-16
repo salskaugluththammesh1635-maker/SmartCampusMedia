@@ -68,6 +68,14 @@ read_sdc / optimize_rtl / optimize_gate / place / route / update_timing）：
 
 ### B2. 音频缺失 → 赛规基础要求③空白（记录为 blocker，本轮不实施）
 
+> **【2026-10-16 闭环更新】** 用户已拍板"先 PWM 快速闭环"，B2 已修复：
+> 新增 `rtl/audio/pwm_audio_out.v`（DDS 相位累加 + 三角波表 + 8bit PWM 载波，
+> 440Hz 测试音），顶层新增 `audio_pwm` 端口（球 F3，IO 35→36），ModelSim
+> 6 项检查全 PASS（音高 20/20 周期、单调性 0 违例、平均占空比 49%），
+> headless 全流程 PASS（SWNS 6.421ns / HWNS 0.030ns / 0 违例）。
+> HDMI 音频（换 APUG092 发送链 + I2S）列入扩展加分阶段再评审。
+> 以下为原始决策记录，保留存档。
+
 **问题**：赛规选题一基础要求 4 项（p.15）第③项为"基础音频输出"，当前 RTL 无
 任何音频通路。评委按完成数量/难度综合评分，缺整个基础项是结构性失分。
 
@@ -123,7 +131,7 @@ read_sdc / optimize_rtl / optimize_gate / place / route / update_timing）：
 | 不得带额外处理器 | p.14 | ✅ 满足 | 纯 RTL，无软核 |
 | 基础①核心功能完整性 | p.15 | 🟡 部分 | HDMI 输出+时序+图案已验证（仿真 3 图案）；图片解码/SD 读取未开始 |
 | 基础②显示稳定性与鲁棒性 | p.15 | ✅ 有证据 | 本轮 SDC 修复后：3 时钟域 STA 全分析、0 违例；640×480@60 时序全 parameter 化 |
-| 基础③基础音频输出 | p.15 | ❌ 空白 | **blocker B2**，待 A1 决策 |
+| 基础③基础音频输出 | p.15 | ❌ 空白 | **blocker B2**，待 A1 决策 →【已闭环】PWM 音频已上线（见第二节 B2 闭环更新） |
 | 基础④系统工程规范性 | p.15 | ✅ 良好 | Git 版本管理、注释体系 100%、lint 0 违例、文档齐备 |
 | 扩展①图层叠加字幕 | p.14 | ❌ 未做 | — |
 | 扩展②图片切换转场 | p.14 | 🟡 半做 | img_index 切换无转场效果 |
@@ -161,7 +169,7 @@ read_sdc / optimize_rtl / optimize_gate / place / route / update_timing）：
 
 | # | 事项 | 说明 |
 |---|---|---|
-| A1 | **音频通路决策**（blocker B2） | 两条路：① 官方 `lab_ex5_i2s` 的 I2S+ES8388 路径（符合"HDMI 音频为主"既定架构，但需新增顶层端口，触 Q7 冻结需评审）；② 板载 PWM 音频（`Audio_PWM=F3`，改动最小）。建议下轮 grilling 定夺 |
+| A1 | **音频通路决策**（blocker B2） | 两条路：① 官方 `lab_ex5_i2s` 的 I2S+ES8388 路径（符合"HDMI 音频为主"既定架构，但需新增顶层端口，触 Q7 冻结需评审）；② 板载 PWM 音频（`Audio_PWM=F3`，改动最小）。建议下轮 grilling 定夺 →【已定】用户选 ② PWM 先行，已实施闭环；① 列入扩展加分阶段 |
 | A2 | **ChipWatcher 上板抓信号**（Q15 承诺） | 工具已定位：`D:\TD_6_24_APP\ip\depot\ChipWatcher_1.1\`（TD IP Generator 在线调试 IP，probe0~N + JTAG 抓取，需 GUI 例化）。抓取目标 3 个信号：① `key_matrix_4x4` 内部扫描状态（row_idx/col_stable）② `pattern_sel` ③ `img_index`。上板时例化后挂到对应 net |
 | A3 | HDMI 上板点亮 | GUI 打开 `project/hdmi_td.al`（注意 LABEL 留空版已是当前版），Read Design → Generate Bitstream → 下载 → 看显示器 640×480 图案 |
 | A4 | 阶段三收尾 | `sync_src.ps1` 扩展 HDMI 文件映射；两处硬件存疑（键盘行序、SD MOSI/MISO）上板实测 |

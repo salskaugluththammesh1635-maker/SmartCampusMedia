@@ -25,7 +25,7 @@
 //
 // 【二、本模块功能】
 //   一句话职责: 实现 640×480@60Hz 测试图案 → HDMI TMDS 输出的完整链路，
-//               并支持按键切换 8 种测试图案。
+//               并支持按键切换 8 种测试图案 + PWM 音频测试音输出。
 //   关键特性:
 //     - 全系统单一时钟域（25MHz 像素时钟）：从根上规避跨时钟域（CDC）问题，
 //       键盘/数码管/LED/蜂鸣器/视频全部同域，无需任何同步器
@@ -43,9 +43,10 @@
 //     输出  seg_data[7:0] : 数码管段选（A4/A6/B8/E8/A7/B5/A8/C8，低电平点亮）
 //     输出  seg_cs[3:0]   : 数码管位选（C9/B6/A5/A3，低电平选通）
 //     输出  buzzer        : 蜂鸣器（球 H11，低电平响）
+//     输出  audio_pwm     : PWM 音频（球 F3，板载低通+功放，基础要求③）
 //     输出  HDMI_*_P ×4   : TMDS 差分正端（P1/N1/P4/J3，IOSTANDARD=LVDS33）
 //
-//   内部逻辑块（共 9 块，按信号流顺序）:
+//   内部逻辑块（共 10 块，按信号流顺序）:
 //     [1] PLL 复位延时发生器      always @(posedge clk or negedge rst_n_btn)
 //           功能: 上电后延时约 2.5us 释放 PLL 复位，等 50MHz 参考时钟稳定
 //           输入: clk, rst_n_btn              输出: pll_reset
@@ -76,6 +77,9 @@
 //                 按键时蜂鸣器短鸣 100ms
 //           输入: pattern_sel, key_event, locked
 //           输出: seg_data, seg_cs, led, buzzer
+//     [10] pwm_audio_out         子模块例化
+//           功能: DDS 三角波测试音 → 8bit PWM → 板载音频通路（基础要求③）
+//           输入: clk_pixel, rst_n            输出: audio_pwm
 //
 // 【四、设计思路与范式】
 //   主要范式 : 结构化装配（Structural）—— 顶层只做例化与连线，不含算法逻辑
@@ -121,6 +125,8 @@ module dmz_eg4s20_hdmi_top (
     output wire [3:0]  seg_cs,         // C9,B6,A5,A3
     // ---- 蜂鸣器（低电平响）----
     output wire        buzzer,         // H11
+    // ---- PWM 音频输出（板载低通+功放，赛规基础要求③）----
+    output wire        audio_pwm,      // F3，占空比调制信号
     // ---- HDMI TMDS（只出差分正端；负端由工具按差分对自动配对）----
     output wire        HDMI_CLK_P,     // P1
     output wire        HDMI_D0_P,      // N1
@@ -371,6 +377,23 @@ module dmz_eg4s20_hdmi_top (
         .tone_sel   (2'd1),                 // 按键音模式
         .trig       (key_event),
         .buzzer_out (buzzer)
+    );
+
+    // -------------------------------------------------------------------------
+    // [10] PWM 音频输出 —— 赛规基础要求③（音频通路）
+    //      功能: DDS 合成 440Hz 三角波测试音 → 8bit PWM 调制 → 板载低通+功放
+    //      输入: clk_pixel, rst_n               输出: audio_pwm（球 F3）
+    //      注: 与蜂鸣器分工 —— H11 蜂鸣器出按键提示音（方波），
+    //          F3 音频座出持续测试音（验证音频通路）；驱动不同器件互不冲突
+    // -------------------------------------------------------------------------
+    pwm_audio_out #(
+        .CLK_FREQ_HZ (25_000_000),
+        .FREQ_HZ     (440)
+    ) u_audio (
+        .clk       (clk_pixel),
+        .rst_n     (rst_n),
+        .mute      (1'b0),                  // 现阶段常开；阶段五接播放控制
+        .audio_pwm (audio_pwm)
     );
 
 endmodule
