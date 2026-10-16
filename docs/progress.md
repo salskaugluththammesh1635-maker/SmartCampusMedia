@@ -247,6 +247,21 @@ testbench 膨胀数倍且更难维护。
   - T3b `KEY1 → img_index=1`，且 `pattern_sel` 保持 1、`mode=0` —— 验证内联三元表达式的
     图号推进正确，同时复验"一键双功能"问题未回归。
 
+## 代码审查（第五轮 · 阶段三 HDMI 深度审查，2026-10-17）
+
+完整报告见 **[code_review_round5.md](code_review_round5.md)**。核心结论：
+
+- **blocker×2 全修**：① SDC 缺失 → 新增 `constraints/dmz_eg4s20_hdmi.sdc` 挂进
+  `hdmi_td.al`，时序分析从"50MHz 单域虚假全绿"变为 **3 时钟域全分析、0 违例**
+  （clk_pixel 25MHz / clk_5x 125MHz / clk 50MHz，SWNS 5.895ns，1750 路径）；
+  ② 音频缺失（赛规基础要求③）登记为 blocker，本轮不实施（A1 待决策）。
+- **赛规对照表**落成（5 基础项 + 5 扩展项逐条对标）；"报备自购平台"待办
+  **撤销**（赛规 p.34 明文自购合法）。
+- 工具链沉淀：TD 6.2 的 `rename_clock` 双语法均失效（USR-8124/8125/8130），
+  需用 `create_generated_clock` 命名（USR-6122 override 警告为预期）；手写
+  `.al` 的 `<LABEL>` 必须留空；headless 跑 TD 时 CWD 必须是工程目录。
+- 待办优先级：A1 音频决策 > A2 ChipWatcher 抓信号 > A3 HDMI 上板 > A4 收尾。
+
 ## 问题记录
 
 | 日期 | 问题 | 影响 | 处理 | 状态 |

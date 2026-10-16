@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <Project Version="3" Minor="2" Path="D:/FPGA_Compelate/SmartCampusMedia/project">
     <Project_Created_Time></Project_Created_Time>
     <TD_Version>6.2.168116</TD_Version>
@@ -127,6 +127,16 @@
                 </FileInfo>
             </File>
         </ADC_FILE>
+        <SDC_FILE>
+            <File Path="hdmi/dmz_eg4s20_hdmi.sdc">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="constraint_1"/>
+                    <Attr Name="CompileOrder" Val="2"/>
+                </FileInfo>
+            </File>
+        </SDC_FILE>
     </Source_Files>
     <FileSets>
         <FileSet Name="design_1" Type="DesignFiles">
@@ -135,7 +145,7 @@
         </FileSet>
     </FileSets>
     <TOP_MODULE>
-        <LABEL>dmz_eg4s20_hdmi_top</LABEL>
+        <LABEL></LABEL>
         <MODULE>dmz_eg4s20_hdmi_top</MODULE>
         <CREATEINDEX>auto</CREATEINDEX>
     </TOP_MODULE>
@@ -162,3 +172,4 @@
     <Project_Settings>
     </Project_Settings>
 </Project>
+
