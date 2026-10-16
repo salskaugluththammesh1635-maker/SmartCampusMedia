@@ -53,6 +53,35 @@
    - **同步命令**：改完 `rtl/` 后执行 `scripts/sync_src.ps1`（增量同步到
      `project/src/` 并自动 lint 双查），**不要手工复制**。
 
+0c. **【编码规范·强制】RTL 层不使用 `function` / `task`**（2026-10-16 依用户要求全量清除）：
+   - **为什么**：Verilog 的 `function` 综合后本就是纯组合逻辑（由综合器内联展开），
+     改写成显式 `always @(*)` 块**不改变任何综合结果**；但显式写法让逻辑直接体现在
+     波形里（调试时能看清中间过程），也免去"读代码要跳到函数定义处对照"的认知负担；
+   - **已清除的两处**（原实现 → 现写法）：
+     - `rtl/input/key_matrix_4x4.v`：`prio_code()` 函数 → **块⑥ 组合 `always @(*)`**
+       （中间值 `key_code_nxt`，for 循环展开为并行比较逻辑，块⑦ 再寄存输出）
+     - `rtl/control/player_ctrl.v`：`next_idx()` / `prev_idx()` 函数 → **三个调用点
+       就地内联三元表达式**（KEY1 下一张 / KEY0 上一张 / 轮播到点，回绕规则不变）
+   - **唯一例外**：`sim/testbench/*.v` 中的 `task`（`press_key` / `check_pixel` /
+     `check_blanking` / `dump_frame` / `chk`）**保留** —— 它们只在仿真中使用、不参与
+     综合，封装的是重复的激励与检查序列，展开只会让 testbench 膨胀且更难维护；
+   - **新代码要求**：RTL 中若需要"可复用的一小段运算"，一律就地写表达式，或另起一个
+     组合 `always @(*)` 块，**不再使用 `function`**。
+
+0d. **【工具脚本编码·强制】**（2026-10-16 因 `run_sim.bat` 无法执行新增）：
+   - **判据：谁解析这个文件，就按谁的默认编码保存**；
+   - **`.bat` / `.cmd` → 一律纯 ASCII（英文注释）**：cmd.exe 按控制台代码页（本机 936/GBK）
+     解析批处理，UTF-8 **无 BOM** 的中文会让"每行末位汉字吞掉行尾 CR"，各行粘连、脚本整体
+     失效（实测：`'lSim（默认路径' is not recognized as an internal or external command`）。
+     GBK 虽能被 cmd 正确执行，但在 VS Code / GitHub / read 工具等 UTF-8 环境下显示乱码，
+     故**不采用**；中文说明写进 `docs/` 或 `.do` 文件；
+   - **`.ps1` → UTF-8 *带* BOM**：Windows PowerShell 5.1 按 ANSI 读无 BOM 文件，中文会变
+     乱码并抛 `The string is missing the terminator`（已发生，见 `scripts/sync_src.ps1`）；
+   - **`.v` / `.vhd` / `.md` / `.py` / `.adc` → UTF-8 无 BOM**（现状即如此，保持不变）；
+   - 注意：用 Windows PowerShell 5.1 的 `Get-Content` 读 UTF-8 无 BOM 的中文文件会**显示**
+     乱码（如 `鈥?瀹樻柟`），那是**显示假象而非文件损坏** —— 用 `read` 工具或
+     `[IO.File]::ReadAllText($f,[Text.Encoding]::UTF8)` 复核，不要据此"修文件"。
+
 1. 系统必须基于安路 EG4S 系列 FPGA（EG4S20BG256）。
 2. 所有算法、控制逻辑和数据处理流程必须在 FPGA 中自主实现。
 3. 不得使用额外处理器承担辅助控制、算法预处理或核心数据处理。

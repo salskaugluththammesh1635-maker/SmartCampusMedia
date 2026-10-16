@@ -51,7 +51,7 @@
 //     输出  mode[1:0]          : 工作模式 0=日常 1=科普 2=应急
 //     输出  status_led[3:0]    : 状态指示 bit0=轮播中, bit1=应急模式
 //
-//   内部逻辑块（共 3 块 + 2 个函数）:
+//   内部逻辑块（共 2 块 + 1 处内联表达式）:
 //     [1] 自动轮播定时器      always @(posedge clk or negedge rst_n)
 //           功能: 使能时计数到 5 秒产生 do_switch_frame；收到重置请求立即清零
 //           输入: auto_play_en, auto_rst_req    输出: auto_cnt, do_switch_frame
@@ -61,9 +61,10 @@
 //           输入: key_event, key_code, gallery_valid, do_switch_frame
 //           输出: img_index, img_switch_req, auto_play_en, mode, status_led,
 //                 auto_rst_req
-//     [3] 图号推进函数        function next_idx / prev_idx（组合）
+//     [3] 图号推进规则（内联表达式，无独立块）
 //           功能: 带环绕的索引推进（到末尾回 0；到 0 回到末尾）
-//           输入: 当前索引, 图库张数            输出: 下一个 / 上一个索引
+//           位置: 直接写在块② 的三个赋值右侧，原 next_idx / prev_idx 函数已展开
+//           输入: img_index, gallery_count    输出: 下一拍的 img_index
 //
 // 【四、设计思路与范式】
 //   主要范式 : 有限状态机（FSM）—— **本项目最典型的 FSM 案例**
@@ -169,13 +170,17 @@ module player_ctrl #(
             auto_cnt <= auto_cnt + 32'd1;
     end
 
-    // ---- 图号推进辅助 ----
-    function [4:0] next_idx(input [4:0] cur, input [4:0] max_n);
-        next_idx = (cur >= max_n - 5'd1) ? 5'd0 : cur + 5'd1;
-    endfunction
-    function [4:0] prev_idx(input [4:0] cur, input [4:0] max_n);
-        prev_idx = (cur == 5'd0) ? max_n - 5'd1 : cur - 5'd1;
-    endfunction
+    // ---- 图号推进规则（原为 next_idx / prev_idx 两个 function，现就地内联）----
+    // 【为什么不用 function】两条推进规则各自只有一个三元表达式，很短；
+    //   内联后调用点自身就能读懂"下一张/上一张如何计算"，无需跳到文件别处
+    //   查看函数定义，波形调试时也能直接在赋值右侧看到完整表达式。
+    // 【规则一 · 下一张】已到最后一张（img_index >= gallery_count-1）→ 回绕 0，
+    //   否则 img_index + 1
+    // 【规则二 · 上一张】已在第 0 张 → 回绕到最后一张（gallery_count-1），
+    //   否则 img_index - 1
+    // 【安全前提】两式都用到 gallery_count - 1：若 gallery_count 为 0 会下溢成 31，
+    //   但全部三个调用点都有 gallery_valid 保护（图库为空时根本不会进入这些分支），
+    //   因此不会出现越界索引。
 
     // ================== always 块 ② / 共 2 块: 主控状态转移 ==================
     // 功能: 按**优先级**处理各类输入并更新全部输出（本模块的大脑）:
@@ -225,17 +230,23 @@ module player_ctrl #(
                 auto_rst_req <= 1'b1;
             end
             else if (key_event && (key_code == K_NEXT) && gallery_valid && (mode != MODE_EMERG)) begin
-                img_index      <= next_idx(img_index, gallery_count);
+                // 下一张: 到末尾则回绕到第 0 张（原 next_idx 函数内联）
+                img_index      <= (img_index >= gallery_count - 5'd1)
+                                  ? 5'd0 : img_index + 5'd1;
                 img_switch_req <= 1'b1;
                 auto_rst_req   <= 1'b1;                   // 手动操作重置轮播计时
             end
             else if (key_event && (key_code == K_PREV) && gallery_valid && (mode != MODE_EMERG)) begin
-                img_index      <= prev_idx(img_index, gallery_count);
+                // 上一张: 已在第 0 张则回绕到最后一张（原 prev_idx 函数内联）
+                img_index      <= (img_index == 5'd0)
+                                  ? gallery_count - 5'd1 : img_index - 5'd1;
                 img_switch_req <= 1'b1;
                 auto_rst_req   <= 1'b1;
             end
             else if (do_switch_frame && gallery_valid && (mode != MODE_EMERG)) begin
-                img_index      <= next_idx(img_index, gallery_count);
+                // 轮播到点: 与 KEY1「下一张」同一套回绕规则
+                img_index      <= (img_index >= gallery_count - 5'd1)
+                                  ? 5'd0 : img_index + 5'd1;
                 img_switch_req <= 1'b1;
             end
             else if (gallery_valid && (img_index >= gallery_count)) begin

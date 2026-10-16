@@ -40,7 +40,7 @@
 //     输出  key_code[3:0]  : 被按下的键号 0~15
 //     输出  key_state[15:0]: 16 键的稳定状态位图（调试用）
 //
-//   内部逻辑块（共 6 块，按信号流顺序）:
+//   内部逻辑块（共 7 块，按信号流顺序）:
 //     [1] 1ms 节拍发生器      always @(posedge clk)   计数器 scan_cnt
 //           功能: 产生 scan_tick（每 1ms 一个单拍脉冲）
 //           输入: clk, rst_n                输出: scan_tick
@@ -56,9 +56,13 @@
 //     [5] 逐键消抖            always @(posedge clk)   寄存器组 col_stable/db_cnt
 //           功能: 16 个键各自计数，连续 5 次一致才翻转稳定态
 //           输入: col_pressed, scan_tick, row_idx   输出: col_stable[15:0]
-//     [6] 边沿检测 + 优先级编码  always @(posedge clk) + function
-//           功能: 找 col_stable 的上升沿 → 产生单拍 key_event；编码出最小键号
-//           输入: col_stable                输出: key_event, key_code
+//     [6] 优先级编码          always @(*)（纯组合）
+//           功能: 从 16 位"按下沿"位图中取出键号最小的那一个（低位优先）
+//           输入: press_edge[15:0]          输出: key_code_nxt[3:0]
+//     [7] 按下沿检测 + 键号寄存  always @(posedge clk)
+//           功能: 找 col_stable 的上升沿 → 产生单拍 key_event；寄存键号
+//           输入: col_stable, key_code_nxt   输出: key_event, key_code
+//           说明: 每拍只维持一个周期的 key_event，上层不会误判为"长按"
 //
 //   【板级事实】来源: 走近FPGA 表1.1 + 核心板原理图 p4 KEY 区（已核实）
 //     行 Key_Row[3:0] = E10, C10, F9, D9   （FPGA 输出，低电平选通行）
@@ -71,9 +75,9 @@
 //   主要范式 : 线性序列机（LSM）—— 行扫描部分（row_idx 无条件循环 0→3）
 //   次要范式（本模块是**复合范式的典型**，共 4 种叠加）:
 //     - 计数器分频 : [1] 1ms 节拍发生器
-//     - 打拍/移位  : [4] 两级同步器（防亚稳态）、[6] 上升沿检测
+//     - 打拍/移位  : [4] 两级同步器（防亚稳态）、[7] 上升沿检测
 //     - 并行阵列   : [5] 16 个独立消抖计数器（for 展开为 16 份真实寄存器）
-//     - 组合编码   : [3] 行驱动译码、[6] 优先级编码函数
+//     - 组合编码   : [3] 行驱动译码、[6] 优先级编码（组合块内 for 展开）
 //   为什么这样写（关键认知）:
 //     1) **为什么需要消抖**: 机械触点在按下/松开瞬间会产生 5~10ms 的电平抖动，
 //        不处理的话一次按键会被识别成十几次。硬件消抖（RC 电路）增加成本，
@@ -105,11 +109,11 @@ module key_matrix_4x4 #(
 )(
     input  wire        clk,
     input  wire        rst_n,
-    output wire [3:0]  key_row,
-    input  wire [3:0]  key_col,
-    output reg         key_event,
-    output reg  [3:0]  key_code,
-    output reg  [15:0] key_state
+    output wire [3:0]  key_row,          // 行驱动输出（低电平选通当前行）
+    input  wire [3:0]  key_col,          // 列回读输入（板上 10k 上拉，按下 = 低）   
+    output reg         key_event,        // 单拍脉冲，1 = 有键刚被按下
+    output reg  [3:0]  key_code,         // 被按下的键号 0~15（低位优先，多个同时按下时取最小键号）
+    output reg  [15:0] key_state         // 16 键的稳定状态位图（调试用）
 );
 
     // ---- 扫描节拍派生常量（由上面的 parameter 自动算出，改参数时无需动这里）----
@@ -131,9 +135,7 @@ module key_matrix_4x4 #(
                             //   作用: 所有扫描动作（换行、消抖采样）都在它到来时发生
 
     // ================= always 块 ① / 共 6 块: 1ms 节拍计数器 =================
-    // 功能: scan_cnt 自由运行计数，每数满一个 1ms 周期就归零，从而让
-    //       scan_tick 周期性地产生单拍脉冲（整个模块的时间基准）
-    // 输入: clk, rst_n        输出: scan_cnt（供 scan_tick 比较）
+    //功能scan_cnt 分频计数，数满 1ms（SCAN_DIV）就归零
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             scan_cnt <= 16'd0;
@@ -143,14 +145,8 @@ module key_matrix_4x4 #(
             scan_cnt <= scan_cnt + 16'd1;
     end
 
-    // ---- 行计数 0~3：每个 scan_tick 前进一行，循环扫描 ----
+    // ---- 行计数器：0→1→2→3→0 循环，指明"当前扫描哪一行"----
     reg [1:0] row_idx;      // 【当前扫描行号】0→1→2→3→0 循环
-                            //   作用: ① 决定 key_row 哪一行为低（即选中哪一行）
-                            //         ② 决定本轮该更新哪 4 个键的消抖计数器
-                            //            （见下方 `k[3:2] == row_idx` 的过滤条件）
-    // ================= always 块 ② / 共 6 块: 行扫描推进 =================
-    // 功能: 每个 1ms 节拍把行号加一（0→1→2→3→0），实现"轮流点亮每一行"
-    // 输入: clk, rst_n, scan_tick      输出: row_idx
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             row_idx <= 2'd0;
@@ -176,7 +172,8 @@ module key_matrix_4x4 #(
     // 功能: 把异步的列信号打两拍，消除亚稳态后再交给后续逻辑使用
     //       第一拍 col_s0 直接采 key_col，第二拍 col_s1 采 col_s0
     // 输入: clk, rst_n, key_col        输出: col_s0, col_s1
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) 
+    begin
         if (!rst_n) begin
             col_s0 <= 4'hF;
             col_s1 <= 4'hF;
@@ -251,25 +248,33 @@ module key_matrix_4x4 #(
                                 //   作用: 只对"刚按下"的键产生事件，按住不放不会重复触发
                                 //         （这是"边沿检测"的标准写法：打一拍再比较）
 
-    // ---- 优先级编码：从 16 位按键位图中取出"键号最小"的那一个 ----
-    // 循环从最高位 (15) 遍历到最低位 (0)，每次发现置位就覆盖结果变量，
-    // 因此最终保留的是**最后一次写入** = 最低位的键号 ✓（低位优先）
-    // 例：键 2 与键 10 同时按下 → 返回 2
-    function [3:0] prio_code;
-        input [15:0] v;
-        integer j;
-        begin
-            prio_code = 4'd0;
-            for (j = 15; j >= 0; j = j - 1)
-                if (v[j])
-                    prio_code = j[3:0];
-        end
-    endfunction
+    // ========== always 块 ⑥ / 共 7 块: 优先级编码（纯组合逻辑）==========
+    // 功能: 从 16 位"按下沿"位图中取出**键号最小**的那一个，交给块⑦寄存输出
+    // 输入: press_edge[15:0]
+    // 输出: key_code_nxt[3:0]
+    // 算法: 从最高位 (15) 向最低位 (0) 遍历，每次发现置位就覆盖结果变量，
+    //       因此最终保留的是**最后一次写入** = 最低位的键号 ✓（低位优先）
+    //       例：键 2 与键 10 同时按下 → 结果为 2
+    // 说明: ① 此处原为一个 prio_code() function，现已展开为组合 always 块：
+    //          Verilog function 综合后本就是纯组合逻辑，展开不改变综合结果，
+    //          但显式写出后逻辑直接体现在波形里，调试时能看清编码过程
+    //       ② 与本项目 seg_scan4 的"组合算 next + 时序统一寄存"规范保持一致
+    //       ③ 组合块内只用阻塞赋值 = ；for 循环在综合时完全展开为并行比较逻辑，
+    //          不消耗任何额外时钟周期
+    reg [3:0] key_code_nxt;     // 【组合中间值】下一拍要寄存输出的键号
+    integer j;                  // for 循环变量（仅用于组合块的遍历展开）
+    always @(*) begin
+        key_code_nxt = 4'd0;
+        for (j = 15; j >= 0; j = j - 1)
+            if (press_edge[j])
+                key_code_nxt = j[3:0];
+    end
 
-    // ========== always 块 ⑥ / 共 6 块: 按下沿检测 + 键号编码 ==========
+    // ========== always 块 ⑦ / 共 7 块: 按下沿检测 + 键号寄存 ==========
     // 功能: 把 col_stable 打一拍得到 col_stable_d，两者相与即"上升沿"
-    //       （press_edge）；一旦检测到按下沿，就输出单拍 key_event 并给出键号
-    // 输入: clk, rst_n, col_stable, press_edge
+    //       （press_edge）；一旦检测到按下沿，就输出单拍 key_event，
+    //       同时把块⑥ 算好的 key_code_nxt 寄存到输出
+    // 输入: clk, rst_n, col_stable, press_edge, key_code_nxt
     // 输出: col_stable_d, key_event（单拍）, key_code
     // 说明: 每拍先把 col_stable_d 与 key_event 更新/清零，保证 key_event
     //       严格只维持一个时钟周期（不会被上层误认为"长按"）
@@ -284,7 +289,7 @@ module key_matrix_4x4 #(
             key_event    <= 1'b0;
             if (press_edge != 16'd0) begin
                 key_event <= 1'b1;
-                key_code  <= prio_code(press_edge);
+                key_code  <= key_code_nxt;
             end
         end
     end

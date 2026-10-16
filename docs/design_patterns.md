@@ -35,7 +35,7 @@
 - **本项目实例**
   - `rtl/common/seg_decoder.v` —— 4 位数字 → 7 段码，最纯粹的真值表
   - `rtl/video/test_pattern_gen.v` —— (坐标, 图案号) → RGB 颜色
-  - `rtl/input/key_matrix_4x4.v` 里的 `prio_code` 函数（优先级编码）
+  - `rtl/input/key_matrix_4x4.v` 的**块⑥ 优先级编码**（组合 always + for 展开）
 
 ### 2. 线性序列机（LSM, Linear Sequence Machine）
 
