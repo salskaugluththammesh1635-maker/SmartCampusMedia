@@ -108,30 +108,43 @@ module tb_sd_spi_ctrl;
     reg       bad_crc    = 1'b0;
 
     // —— 命令收集（posedge sd_sck 采 MOSI，CS 低电平才有效）——
-    // 设计要点：①用 CS 电平直接门控（不走 negedge 武装——NBA 晚一拍会吞掉
-    // 与 CS 下降沿同时的第一个 rise=start 位）；②48 位锁存后置 latch 停收，
-    // 防应答等待期 MOSI=1 填充位二次锁存覆盖正确帧；latch 在 CS 上升沿清除，
-    // 下一帧 CS 下降沿前必然已清零。
-    reg [47:0] cmd_shift = 48'hFFFF_FFFF_FFFF;
+    // 三态扫描，与真卡行为一致（关键：Ncc 填充期 MOSI 恒 1，若像旧版那样
+    // 从 CS 下降沿起盲数 48 位，填充位会被当成帧头导致整帧错位）：
+    //   态0 等 start=0 → 态1 校验下一位 trans=1（不符退回态0）→ 态2 收余 46 位。
+    // 帧结构 {start 0, trans 1, cmd[5:0], arg[31:0], crc7[6:0], stop 1} = 48 位。
+    // 收满后 cmd_frame 拼成完整 48 位（[47:46]=2'b01 供主流程校验），停收直到 CS 上升。
+    reg [47:0] cmd_shift = 48'd0;
     reg [5:0]  cmd_bits  = 6'd0;
+    reg [1:0]  cmd_state = 2'd0;    // 0=等 start 1=等 trans 2=收帧体
     reg [47:0] cmd_frame = 48'd0;
     reg        cmd_new   = 1'b0;    // 完整命令到达脉冲（主流程 @clk 消费）
-    reg        cmd_latch = 1'b0;    // 一帧已锁存停收标志
     always @(posedge sd_sck or posedge sd_cs_n) begin
         if (sd_cs_n) begin
+            cmd_state <= 2'd0;
             cmd_bits  <= 6'd0;
-            cmd_shift <= 48'hFFFF_FFFF_FFFF;
-            cmd_latch <= 1'b0;
-        end else if (!cmd_latch) begin
-            if (cmd_bits == 6'd47) begin
-                cmd_frame <= {cmd_shift[46:0], sd_mosi};
-                cmd_new   <= 1'b1;
-                cmd_bits  <= 6'd0;
-                cmd_latch <= 1'b1;
-            end else begin
-                cmd_shift <= {cmd_shift[46:0], sd_mosi};
-                cmd_bits  <= cmd_bits + 6'd1;
-            end
+            cmd_shift <= 48'd0;
+        end else begin
+            case (cmd_state)
+                2'd0: if (!sd_mosi) begin
+                          cmd_state <= 2'd1;   // 采到 start 位
+                          cmd_shift <= 48'd0;
+                          cmd_bits  <= 6'd0;
+                      end
+                2'd1: cmd_state <= sd_mosi ? 2'd2 : 2'd0;  // trans 必须为 1
+                2'd2: begin
+                          cmd_shift <= {cmd_shift[44:0], sd_mosi};
+                          if (cmd_bits == 6'd45) begin
+                              // 本拍是第 46 位（stop），连同前 45 位拼成完整帧
+                              cmd_frame <= {2'b01, cmd_shift[44:0], sd_mosi};
+                              cmd_new   <= 1'b1;
+                              cmd_bits  <= 6'd0;
+                              cmd_state <= 2'd0;   // 回态0：等下一条命令的 start
+                          end else begin
+                              cmd_bits <= cmd_bits + 6'd1;
+                          end
+                      end
+                default: cmd_state <= 2'd0;
+            endcase
         end
     end
 

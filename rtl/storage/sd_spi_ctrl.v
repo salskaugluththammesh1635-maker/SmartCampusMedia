@@ -108,7 +108,11 @@ module sd_spi_ctrl #(
     parameter ACMD41_LOOPS  = 65536,      // ACMD41 循环上限：每轮约 300 拍，65536 轮约 0.8s（Nid 规范 1s）
     parameter TOKEN_TIMEOUT = 1_048_576,  // 数据令牌等待上限（位拍）：2^20 @12.5MHz≈0.34s（Nac 规范 100ms）
     parameter RETRY_MAX     = 8,          // CMD0 重试上限：卡上电静默期偶发无应答，8 次足够
-    parameter POWERUP_CYCLES = 131_071   // 上电延时拍数（2^17-1 ≈ 5.24ms @25MHz；tb 可调小加速）
+    parameter POWERUP_CYCLES = 131_071,  // 上电延时拍数（2^17-1 ≈ 5.24ms @25MHz；tb 可调小加速）
+    parameter NCC_CYCLES    = 8           // 命令间 Ncc 填充 SCK 数：SD 规范要求两条命令间
+                                          // 至少 8 个 SCK 时钟（CS 保持低），不足时真卡会
+                                          // 把下一条命令整帧丢弃（仿真卡不检查、上板才暴露）
+                                          // ——值必须 ≥8，改大只会更慢不会出错
 )(
     input  wire        clk,          // 主时钟 25MHz
     input  wire        rst_n,        // 异步复位，低有效
@@ -147,6 +151,8 @@ module sd_spi_ctrl #(
     reg  [5:0]  tx_bit_cnt;   // 已 fall 移位次数（0~46，预置首 bit 不计数）
     reg         tx_active;    // 发送相有效（fall 拍移位）
     reg         tx_idle_d;    // tx_active 打一拍：接收相开启前的安全隔离
+    reg         ncc_run;      // Ncc 填充相有效：SCK 空翻给卡留命令间隔
+    reg  [3:0]  ncc_cnt;      // Ncc 已发填充 SCK 数（0~NCC_CYCLES-1，数下降沿）
 
     // —— [3] 应答接收器 ——
     reg  [47:0] rx_shift;     // 应答移位寄存器（左移入）
@@ -274,9 +280,13 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     // ------------------------------------------------------------------------
     // [2] 发送移位器：发起拍预置首 bit，此后 fall 拍移位
     // ------------------------------------------------------------------------
-    // 块[2a]：48bit 命令帧发送——时序为「预置 bit47 → rise#1 卡采样 →
-    // fall#1 出 bit46 → rise#2 采样 → … → fall#47 出 bit0 → rise#48 采样」，
-    // 共 48 个上升沿，位序不漂移。
+    // 块[2a]：命令帧发送——两段式「Ncc 填充段 + 帧发送段」。
+    // 填充段：xact_start 拍锁帧但不上总线，SCK 空翻 NCC_CYCLES 个周期（CS 已低、
+    //   MOSI 恒 1），满足 SD 规范的 Ncc（两条命令之间至少 8 个 SCK）。真卡靠这段
+    //   时钟完成内部命令状态复位，缺了会把下一条命令整帧丢弃（tb 卡模型不检查，
+    //   所以仿真全绿而上板 err=7——这是本模块唯一无法靠仿真暴露的时序约束）。
+    // 帧发送段：预置 start=0 → rise#1 卡采样 → fall#1 出 bit46 → rise#2 采样 →
+    //   … → fall#47 出 bit0 → rise#48 采样，共 48 个上升沿，位序不漂移。
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             tx_shift   <= 48'd0;
@@ -284,17 +294,34 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
             tx_active  <= 1'b0;
             tx_idle_d  <= 1'b0;
             sd_mosi    <= 1'b1;
+            ncc_run    <= 1'b0;
+            ncc_cnt    <= 4'd0;
         end else begin
             tx_idle_d <= tx_active;      // 接收相开启前的 1 拍隔离
             if (xact_start) begin
                 // 锁存帧：{start 0, trans 1, cmd, arg, crc7, stop 1}
                 // 用当拍组合扇入（cmd_idx_wire/xact_arg_wire/crc7_nxt of cmd_idx_wire），
-                // 不能用 xact_cmd 寄存器——NBA 下一拍才更新，发出去的会是上一条命令的帧
+                // 不能用 xact_cmd 寄存器——NBA 下一排才更新，发出去的会是上一条命令的帧
                 // （T2 实锤：CMD8 窗口重发了 CMD0 帧，卡对 echo 校验失败静默）。
+                // 锁帧后先不置 tx_active：留出 Ncc 填充段，start 位等填充完再上总线。
                 tx_shift   <= {2'b01, cmd_idx_wire, xact_arg_wire, crc7_of_idx, 1'b1};
                 tx_bit_cnt <= 6'd0;
-                tx_active  <= 1'b1;
-                sd_mosi    <= 1'b0;      // 首位 start=0 立即上总线（关键：第一个边沿是 rise，不预置会漏发）
+                tx_active  <= 1'b0;
+                sd_mosi    <= 1'b1;      // 填充期 MOSI 恒高（卡把这段当命令间隔）
+                ncc_run    <= 1'b1;
+                ncc_cnt    <= 4'd0;
+            end else if (ncc_run && sck_fall) begin
+                // 填充段：每数一个 SCK 下降沿 = 已给卡一个完整时钟
+                if (ncc_cnt == NCC_CYCLES[3:0] - 4'd1) begin
+                    ncc_run   <= 1'b0;
+                    ncc_cnt   <= 4'd0;
+                    tx_active <= 1'b1;
+                    // 本拍是 fall，紧跟着的边沿必然是 rise——start 位正好被它采样，
+                    // 与原「发起拍预置 start」的相位关系同构，位序不漂移
+                    sd_mosi   <= 1'b0;
+                end else begin
+                    ncc_cnt <= ncc_cnt + 4'd1;
+                end
             end else if (tx_active && sck_fall) begin
                 sd_mosi  <= tx_shift[46];            // 下一位（bit47 已在上一 rise 被卡采样）
                 tx_shift <= {tx_shift[46:0], 1'b0};  // 左移 1 位对齐下一位（读 [46] 出 bit46→bit45→…）
@@ -327,8 +354,11 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
         end else begin
             rx_done_ok <= 1'b0;
             rx_done_to <= 1'b0;
-            if (tx_active || !xact_busy) begin
-                // 发送相 / 事务未占用：接收器保持复位态
+            if (tx_active || ncc_run || !xact_busy) begin
+                // 帧发送相 / Ncc 填充相 / 事务未占用：接收器保持复位态。
+                // 填充相必须一并挡住：此时 tx_active=0 而 xact_busy=1，若放行会让
+                // rx_wait 提前武装、ncr_cnt 把填充 8 拍 + 帧 48 拍 + 真卡 Ncr 全计入，
+                // 逼近 NCR_TIMEOUT 上限产生误超时。
                 rx_wait <= 1'b0;
                 rx_got  <= 1'b0;
                 ncr_cnt <= 8'd0;

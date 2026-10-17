@@ -115,10 +115,12 @@ module tb_sd_probe;
     endfunction
 
     // ========================================================================
-    // 卡模型 —— 命令收集器（CS 门控 + 帧头校验 + latch 停收）
+    // 卡模型 —— 命令收集器（三态扫描：等 start → 校验 trans → 收帧体）
     // ========================================================================
-    reg        cmd_arm = 1'b0;      // 武装：CS 下降沿置位，收满 48 位撤销
-    reg        cmd_latch = 1'b0;    // 停收标志：锁存后不再覆盖
+    // 与 tb_sd_spi_ctrl.v 同款。关键：DUT 现在每条命令前插 Ncc 填充段
+    // （MOSI 恒 1 空翻 8 个 SCK），若像旧版那样从 CS 下降沿起盲数 48 位，
+    // 填充位会被当成帧头 → 整帧错位 → 卡对合法命令静默。
+    reg [1:0]  cmd_state = 2'd0;    // 0=等 start 1=等 trans 2=收帧体
     reg [47:0] cmd_shift;           // 命令帧移位
     reg [5:0]  cmd_bits;            // 已收位数
     reg [47:0] cmd_frame;           // 锁存的完整命令帧
@@ -126,32 +128,33 @@ module tb_sd_probe;
 
     always @(posedge sd_sck or posedge sd_cs_n) begin
         if (sd_cs_n) begin
-            cmd_arm   <= 1'b0;
+            cmd_state <= 2'd0;
             cmd_bits  <= 6'd0;
-            cmd_latch <= 1'b0;
+            cmd_shift <= 48'd0;
             cmd_new   <= 1'b0;
         end else begin
             cmd_new <= 1'b0;
-            if (cmd_arm && !cmd_latch) begin
-                cmd_shift <= {cmd_shift[46:0], sd_mosi};
-                if (cmd_bits == 6'd47) begin
-                    cmd_frame <= {cmd_shift[46:0], sd_mosi};
-                    cmd_bits  <= 6'd0;
-                    cmd_latch <= 1'b1;              // 停收防填充位覆盖
-                    cmd_new   <= 1'b1;
-                end else begin
-                    cmd_bits <= cmd_bits + 6'd1;
-                end
-            end
+            case (cmd_state)
+                2'd0: if (!sd_mosi) begin
+                          cmd_state <= 2'd1;   // 采到 start 位
+                          cmd_shift <= 48'd0;
+                          cmd_bits  <= 6'd0;
+                      end
+                2'd1: cmd_state <= sd_mosi ? 2'd2 : 2'd0;  // trans 必须为 1
+                2'd2: begin
+                          cmd_shift <= {cmd_shift[44:0], sd_mosi};
+                          if (cmd_bits == 6'd45) begin
+                              cmd_frame <= {2'b01, cmd_shift[44:0], sd_mosi};
+                              cmd_bits  <= 6'd0;
+                              cmd_state <= 2'd0;   // 回态0：等下一条命令
+                              cmd_new   <= 1'b1;
+                          end else begin
+                              cmd_bits <= cmd_bits + 6'd1;
+                          end
+                      end
+                default: cmd_state <= 2'd0;
+            endcase
         end
-    end
-
-    // CS 下降沿武装
-    always @(negedge sd_cs_n) begin
-        cmd_arm   <= 1'b1;
-        cmd_bits  <= 6'd0;
-        cmd_shift <= 48'hFFFF_FFFF_FFFF;
-        cmd_latch <= 1'b0;
     end
 
     // ========================================================================
