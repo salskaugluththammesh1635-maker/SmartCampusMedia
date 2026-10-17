@@ -109,10 +109,12 @@ module sd_spi_ctrl #(
     parameter TOKEN_TIMEOUT = 1_048_576,  // 数据令牌等待上限（位拍）：2^20 @12.5MHz≈0.34s（Nac 规范 100ms）
     parameter RETRY_MAX     = 8,          // CMD0 重试上限：卡上电静默期偶发无应答，8 次足够
     parameter POWERUP_CYCLES = 131_071,  // 上电延时拍数（2^17-1 ≈ 5.24ms @25MHz；tb 可调小加速）
-    parameter NCC_CYCLES    = 8           // 命令间 Ncc 填充 SCK 数：SD 规范要求两条命令间
-                                          // 至少 8 个 SCK 时钟（CS 保持低），不足时真卡会
-                                          // 把下一条命令整帧丢弃（仿真卡不检查、上板才暴露）
-                                          // ——值必须 ≥8，改大只会更慢不会出错
+    parameter NCC_CYCLES    = 8           // 命令间 Ncc 填充 SCK 数：SD 规范要求两条命令之间
+                                          // 至少 8 个 SCK，且这段时钟必须给在 CS 保持高时
+                                          // （CS 拉低后第一个字节就必须是命令帧，中间不能插
+                                          // 填充，否则真卡把填充当命令位流、整帧错位、无应答
+                                          // ——上板实测 err=1 即此因）。值必须 ≥8，改大只会
+                                          // 更慢不会出错
 )(
     input  wire        clk,          // 主时钟 25MHz
     input  wire        rst_n,        // 异步复位，低有效
@@ -151,8 +153,9 @@ module sd_spi_ctrl #(
     reg  [5:0]  tx_bit_cnt;   // 已 fall 移位次数（0~46，预置首 bit 不计数）
     reg         tx_active;    // 发送相有效（fall 拍移位）
     reg         tx_idle_d;    // tx_active 打一拍：接收相开启前的安全隔离
-    reg         ncc_run;      // Ncc 填充相有效：SCK 空翻给卡留命令间隔
-    reg  [3:0]  ncc_cnt;      // Ncc 已发填充 SCK 数（0~NCC_CYCLES-1，数下降沿）
+    reg         ncc_need;     // 上一条命令已结束、下一条仍需补 Ncc（CS 保持高时数 SCK）
+    reg  [3:0]  ncc_cnt;      // 已补的 Ncc SCK 个数（数下降沿；满 NCC_CYCLES 后清 ncc_need）
+    wire        ncc_ready;    // Ncc 已满足，允许拉低 CS 发下一条命令
 
     // —— [3] 应答接收器 ——
     reg  [47:0] rx_shift;     // 应答移位寄存器（左移入）
@@ -241,7 +244,28 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     // 生效），若 sck_en=0 会走空闲 else 分支——sck_d 被旧 sck_r 灌成 1 而 sck_r 清 0，
     // 下一拍制造假 fall 锚点，发送器误移位吞掉 start 位（本模块最深的一个坑）。
     assign sck_en   = xact_start | xact_busy | tx_active | rx_wait | rx_got | tok_active
-                    | (st_init == I_SEND80);
+                    | ncc_need | (st_init == I_SEND80);
+    // Ncc 就绪：没有待补的命令间隔时立即放行（首条命令 / SEND80 之后天然满足）
+    assign ncc_ready = ~ncc_need;
+    // 块[1b]：Ncc 命令间隔补充——CS 保持高期间数 SCK 下降沿，满 NCC_CYCLES 个才放行
+    // 为什么必须挂在「CS 高」这一侧：SD 规范要求 CS 拉低后的第一个字节就是命令帧，
+    // 中间不许插填充；Ncc 是「命令与命令之间」的空闲时钟，只能给在 CS 高期间。
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            ncc_need <= 1'b0;
+            ncc_cnt  <= 4'd0;
+        end else if (xact_done) begin
+            ncc_need <= 1'b1;    // 上一事务收尾：下一条命令前必须补满 Ncc
+            ncc_cnt  <= 4'd0;
+        end else if (ncc_need && sck_fall) begin
+            if (ncc_cnt == NCC_CYCLES - 1) begin
+                ncc_need <= 1'b0;
+                ncc_cnt  <= 4'd0;
+            end else begin
+                ncc_cnt <= ncc_cnt + 4'd1;
+            end
+        end
+    end
     // 块[1a]：SCK 翻转计数——使能期间每 sck_div_r 拍翻转一次，撤销后回低
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -280,13 +304,12 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     // ------------------------------------------------------------------------
     // [2] 发送移位器：发起拍预置首 bit，此后 fall 拍移位
     // ------------------------------------------------------------------------
-    // 块[2a]：命令帧发送——两段式「Ncc 填充段 + 帧发送段」。
-    // 填充段：xact_start 拍锁帧但不上总线，SCK 空翻 NCC_CYCLES 个周期（CS 已低、
-    //   MOSI 恒 1），满足 SD 规范的 Ncc（两条命令之间至少 8 个 SCK）。真卡靠这段
-    //   时钟完成内部命令状态复位，缺了会把下一条命令整帧丢弃（tb 卡模型不检查，
-    //   所以仿真全绿而上板 err=7——这是本模块唯一无法靠仿真暴露的时序约束）。
-    // 帧发送段：预置 start=0 → rise#1 卡采样 → fall#1 出 bit46 → rise#2 采样 →
-    //   … → fall#47 出 bit0 → rise#48 采样，共 48 个上升沿，位序不漂移。
+    // 块[2a]：命令帧发送——预置 start=0 → rise#1 卡采样 → fall#1 出 bit46 →
+    //   rise#2 采样 → … → fall#47 出 bit0 → rise#48 采样，共 48 个上升沿，位序不漂移。
+    // 注：SD 规范的 Ncc（两条命令之间至少 8 个 SCK）**不在本块实现**。它必须发生在
+    //   CS 保持高的窗口里（见状态机的 I_NCC / B_NCC 等待态）；本块是 CS 已拉低后的
+    //   发送相，若把填充塞在这里，真卡会把它当成 CS 拉低后的头一个字节流，导致整条
+    //   命令位序错位（上板实测：CMD0 直接无应答，probe 报 err=1）。
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             tx_shift   <= 48'd0;
@@ -294,34 +317,17 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
             tx_active  <= 1'b0;
             tx_idle_d  <= 1'b0;
             sd_mosi    <= 1'b1;
-            ncc_run    <= 1'b0;
-            ncc_cnt    <= 4'd0;
         end else begin
             tx_idle_d <= tx_active;      // 接收相开启前的 1 拍隔离
             if (xact_start) begin
                 // 锁存帧：{start 0, trans 1, cmd, arg, crc7, stop 1}
                 // 用当拍组合扇入（cmd_idx_wire/xact_arg_wire/crc7_nxt of cmd_idx_wire），
-                // 不能用 xact_cmd 寄存器——NBA 下一排才更新，发出去的会是上一条命令的帧
+                // 不能用 xact_cmd 寄存器——NBA 下一拍才更新，发出去的会是上一条命令的帧
                 // （T2 实锤：CMD8 窗口重发了 CMD0 帧，卡对 echo 校验失败静默）。
-                // 锁帧后先不置 tx_active：留出 Ncc 填充段，start 位等填充完再上总线。
                 tx_shift   <= {2'b01, cmd_idx_wire, xact_arg_wire, crc7_of_idx, 1'b1};
                 tx_bit_cnt <= 6'd0;
-                tx_active  <= 1'b0;
-                sd_mosi    <= 1'b1;      // 填充期 MOSI 恒高（卡把这段当命令间隔）
-                ncc_run    <= 1'b1;
-                ncc_cnt    <= 4'd0;
-            end else if (ncc_run && sck_fall) begin
-                // 填充段：每数一个 SCK 下降沿 = 已给卡一个完整时钟
-                if (ncc_cnt == NCC_CYCLES[3:0] - 4'd1) begin
-                    ncc_run   <= 1'b0;
-                    ncc_cnt   <= 4'd0;
-                    tx_active <= 1'b1;
-                    // 本拍是 fall，紧跟着的边沿必然是 rise——start 位正好被它采样，
-                    // 与原「发起拍预置 start」的相位关系同构，位序不漂移
-                    sd_mosi   <= 1'b0;
-                end else begin
-                    ncc_cnt <= ncc_cnt + 4'd1;
-                end
+                tx_active  <= 1'b1;
+                sd_mosi    <= 1'b0;      // 首位 start=0 立即上总线（关键：第一个边沿是 rise，不预置会漏发）
             end else if (tx_active && sck_fall) begin
                 sd_mosi  <= tx_shift[46];            // 下一位（bit47 已在上一 rise 被卡采样）
                 tx_shift <= {tx_shift[46:0], 1'b0};  // 左移 1 位对齐下一位（读 [46] 出 bit46→bit45→…）
@@ -354,11 +360,8 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
         end else begin
             rx_done_ok <= 1'b0;
             rx_done_to <= 1'b0;
-            if (tx_active || ncc_run || !xact_busy) begin
-                // 帧发送相 / Ncc 填充相 / 事务未占用：接收器保持复位态。
-                // 填充相必须一并挡住：此时 tx_active=0 而 xact_busy=1，若放行会让
-                // rx_wait 提前武装、ncr_cnt 把填充 8 拍 + 帧 48 拍 + 真卡 Ncr 全计入，
-                // 逼近 NCR_TIMEOUT 上限产生误超时。
+            if (tx_active || !xact_busy) begin
+                // 帧发送相 / 事务未占用：接收器保持复位态。
                 rx_wait <= 1'b0;
                 rx_got  <= 1'b0;
                 ncr_cnt <= 8'd0;
@@ -429,12 +432,14 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     // 请求/扇入 assign 见声明区（vlog 要求先声明后引用，集中管理）。
     assign xact_start = xact_req & ~xact_req_d;   // 请求上升沿 = 发起脉冲
     // 命令扇入：初始化序列机优先（读块只在 init_done 后被放进 B_TX，天然互斥）
-    // 请求条件：TX 态且本机 CS 已拉低（cs_n_i/cs_n_b 为 NBA 下一拍才生效，
-    // 若 TX 态第一拍即发起，帧头 1~2 位会在 CS 仍高期间发出，卡按 CS 门控
-    // 采不到这些位——必须等 CS 真正上总线的下一拍才允许发起）。
-    assign xact_req = ((st_init == I_C0_TX)  | (st_init == I_C8_TX)
-                     | (st_init == I_C55_TX) | (st_init == I_C41_TX)) & ~cs_n_i
-                    | ((st_blk == B_TX) & ~cs_n_b);
+    // 请求条件：TX 态 + 本机 CS 已上总线（低）+ Ncc 已补满。
+    // cs_n_i/cs_n_b 为 NBA 下一拍才生效，若 TX 态第一拍即发起，帧头 1~2 位会在 CS
+    // 仍高期间发出，卡按 CS 门控采不到这些位——必须等 CS 真正上总线的下一拍才允许发起。
+    // ncc_ready 门控：上一条命令结束后需在 CS 高期间补满 NCC_CYCLES 个 SCK，未满时
+    // 状态机虽已进 TX 态，但 CS 不会拉低（见各 TX 态的 cs_n<=0 守卫），自然也不会发起。
+    assign xact_req = (((st_init == I_C0_TX)  | (st_init == I_C8_TX)
+                     |  (st_init == I_C55_TX) | (st_init == I_C41_TX)) & ~cs_n_i
+                     | ((st_blk == B_TX) & ~cs_n_b)) & ncc_ready;
     assign req_i_fire = (st_init == I_C0_TX)  | (st_init == I_C8_TX)
                       | (st_init == I_C55_TX) | (st_init == I_C41_TX);
     assign cmd_idx_wire = req_i_fire ? (st_init == I_C0_TX  ? 6'd0  :
@@ -526,7 +531,11 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                     end
                 end
                 I_C0_TX: begin
-                    cs_n_i <= 1'b0;          // 第 1 拍拉低 CS（NBA 下一拍生效）
+                    // Ncc 未补满时保持 CS 高（此时不拉低、也不发起）：SCK 在 ncc_need
+                    // 驱动下继续空翻，卡借这段时钟完成上一条命令的内部收尾
+                    if (ncc_ready) begin
+                        cs_n_i <= 1'b0;      // CS 上总线（NBA 下一拍生效）
+                    end
                     if (xact_start) begin    // 引擎在 CS 已低后自动发起，发起拍才转 RX
                         st_init <= I_C0_RX;
                     end
@@ -547,7 +556,9 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                     end
                 end
                 I_C8_TX: begin
-                    cs_n_i <= 1'b0;
+                    if (ncc_ready) begin     // Ncc 补满后才拉低 CS（见 I_C0_TX 说明）
+                        cs_n_i <= 1'b0;
+                    end
                     if (xact_start) begin
                         st_init <= I_C8_RX;
                     end
@@ -567,7 +578,9 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                     end
                 end
                 I_C55_TX: begin
-                    cs_n_i <= 1'b0;
+                    if (ncc_ready) begin     // Ncc 补满后才拉低 CS（见 I_C0_TX 说明）
+                        cs_n_i <= 1'b0;
+                    end
                     if (xact_start) begin
                         st_init <= I_C55_RX;
                     end
@@ -585,7 +598,9 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                     end
                 end
                 I_C41_TX: begin
-                    cs_n_i <= 1'b0;
+                    if (ncc_ready) begin     // Ncc 补满后才拉低 CS（见 I_C0_TX 说明）
+                        cs_n_i <= 1'b0;
+                    end
                     if (xact_start) begin
                         st_init <= I_C41_RX;
                     end
@@ -686,7 +701,9 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                     end
                 end
                 B_TX: begin
-                    cs_n_b <= 1'b0;          // 第 1 拍拉低 CS（NBA 下一拍生效）
+                    if (ncc_ready) begin     // Ncc 补满后才拉低 CS（同 I_C0_TX 说明）
+                        cs_n_b <= 1'b0;
+                    end
                     if (xact_start) begin    // 引擎在 CS 已低后自动发起 CMD17
                         st_blk <= B_R1;
                     end
