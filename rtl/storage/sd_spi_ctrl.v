@@ -107,7 +107,8 @@ module sd_spi_ctrl #(
     parameter NCR_TIMEOUT   = 128,        // 应答前导等待上限（位拍）：Ncr 最大 64 位，取 2 倍余量
     parameter ACMD41_LOOPS  = 65536,      // ACMD41 循环上限：每轮约 300 拍，65536 轮约 0.8s（Nid 规范 1s）
     parameter TOKEN_TIMEOUT = 1_048_576,  // 数据令牌等待上限（位拍）：2^20 @12.5MHz≈0.34s（Nac 规范 100ms）
-    parameter RETRY_MAX     = 8           // CMD0 重试上限：卡上电静默期偶发无应答，8 次足够
+    parameter RETRY_MAX     = 8,          // CMD0 重试上限：卡上电静默期偶发无应答，8 次足够
+    parameter POWERUP_CYCLES = 131_071   // 上电延时拍数（2^17-1 ≈ 5.24ms @25MHz；tb 可调小加速）
 )(
     input  wire        clk,          // 主时钟 25MHz
     input  wire        rst_n,        // 异步复位，低有效
@@ -133,7 +134,7 @@ module sd_spi_ctrl #(
     // ------------------------------------------------------------------------
     // —— [1] SCK 分频发生器 ——
     reg  [5:0]  div_cnt;      // SCK 半周期分频计数（0~DIV-1 环形，翻转点即边沿）
-    reg         sck_r;        // SCK 寄存器输出（使能期间每 DIV 拍翻转）
+    reg         sck_r;        // SCK 内部翻转寄存器（使能期间每 DIV 拍翻转）
     reg         sck_d;        // sck_r 打一拍，供边沿检测
     wire        sck_rise;     // SCK 上升沿拍（1 拍脉冲）：MISO 采样锚点
     wire        sck_fall;     // SCK 下降沿拍（1 拍脉冲）：MOSI 更新锚点
@@ -157,7 +158,8 @@ module sd_spi_ctrl #(
     reg         rx_done_to;   // 应答 Ncr 超时退出 1 拍脉冲（信息即「超时」）
 
     // —— [4] 命令 CRC 查表 ——
-    reg  [6:0]  crc7_nxt;     // 当前命令的 CRC7 组合查表值
+    reg  [6:0]  crc7_nxt;     // 按引擎寄存器 xact_cmd 译码的 CRC7 查表值（兼容保留）
+    reg  [6:0]  crc7_of_idx;  // 按当拍扇入 cmd_idx_wire 译码的 CRC7 查表值（发起拍锁帧用）
 
     // —— [5] 事务引擎 ——
     reg  [5:0]  xact_cmd;     // 当前事务命令号（帧组装用）
@@ -192,13 +194,14 @@ module sd_spi_ctrl #(
     reg  [3:0]  st_init;      // 初始化序列状态
     reg  [3:0]  retry_cnt;    // CMD0 重试计数
     reg  [16:0] c41_loop;     // ACMD41 循环计数（上限 65536 需 17 位；卡内部初始化最长约 1s）
-    reg  [16:0] pow_cnt;      // 上电延时计数（2^17 拍 @25MHz≈5.2ms）
+    reg  [16:0] pow_cnt;      // 上电延时计数（上限 POWERUP_CYCLES，默认≈5.24ms）
     reg         cs_n_i;       // 序列机私有片选（合成见块[8]）
     reg  [3:0]  err_code_i;   // 序列机私有错误码（合成见块[8]）
 
     // —— [7] 读块状态机 ——
     localparam [2:0] B_IDLE  = 3'd0;   // 空闲
-    localparam [2:0] B_TX    = 3'd1;   // CMD17 事务进行中
+    localparam [2:0] B_TX    = 3'd1;   // 拉低 CS 等待事务引擎发起 CMD17
+localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     localparam [2:0] B_TOK   = 3'd2;   // 字节对齐滑窗等数据令牌 0xFE
     localparam [2:0] B_DATA  = 3'd3;   // 512 字节数据流出
     localparam [2:0] B_CRC   = 3'd4;   // 尾部 CRC16 接收（16 位）
@@ -223,10 +226,15 @@ module sd_spi_ctrl #(
     // [1] SCK 分频发生器：翻转式分频 + 边沿检测
     // ------------------------------------------------------------------------
     // 边沿锚点组合定义：rise=SCK 刚升高（MISO 采样），fall=SCK 刚降低（MOSI 更新）
+    // 注意：sck_rise/sck_fall 检测的是内部 sck_r 的边沿（超前输出 sd_sck 一拍），
+    // 收发器都以此拍为时序锚点——输出延迟 1 拍不影响协议（卡在下一个真实边沿动作）。
     assign sck_rise = sck_r & ~sck_d;
     assign sck_fall = ~sck_r & sck_d;
-    // SCK 运行条件：事务引擎占用 / 发送相 / 应答接收相 / 数据相 / 80 SCK 空周期
-    assign sck_en   = xact_busy | tx_active | rx_wait | rx_got | tok_active
+    // SCK 运行条件：事务发起拍 / 事务引擎占用 / 发送相 / 应答接收相 / 数据相 / 80 SCK 空闲周期
+    // 注意 xact_start 必须计入：发起拍 xact_busy/tx_active 还是旧值 0（NBA 下一拍才
+    // 生效），若 sck_en=0 会走空闲 else 分支——sck_d 被旧 sck_r 灌成 1 而 sck_r 清 0，
+    // 下一拍制造假 fall 锚点，发送器误移位吞掉 start 位（本模块最深的一个坑）。
+    assign sck_en   = xact_start | xact_busy | tx_active | rx_wait | rx_got | tok_active
                     | (st_init == I_SEND80);
     // 块[1a]：SCK 翻转计数——使能期间每 sck_div_r 拍翻转一次，撤销后回低
     always @(posedge clk or negedge rst_n) begin
@@ -234,10 +242,23 @@ module sd_spi_ctrl #(
             div_cnt <= 6'd0;
             sck_r   <= 1'b0;
             sck_d   <= 1'b0;
+            sd_sck  <= 1'b0;
         end else begin
             sck_d <= sck_r;
+            sd_sck <= sck_r;         // 输出跟随内部翻转寄存器（滞后 1 拍，建立时间充裕）
             if (sck_en) begin
-                if (div_cnt >= sck_div_r - 6'd1) begin
+                if (xact_start) begin
+                    // 事务发起拍强制 SCK 重启：上一事务/80 空周期的收尾 fall
+                    // 可能落在发起拍之后（如 SEND80 的 fall#80 晚于 xact_start），
+                    // 会被发送器误当命令帧第一个 fall——start 位没有任何 rise
+                    // 采样到就被覆盖，整帧错位。此处复位相位并同步清 sck_d：
+                    // 若 sck_r 原为 1，仅拉低 sck_r 会制造一次假 fall 锚点
+                    // （sck_fall=~sck_r&sck_d 在下一拍变 1），发送器同样会误移位；
+                    // sck_d 一并清零后下一拍 sck_fall=0，start 位安全等到 rise#1。
+                    div_cnt <= 6'd0;
+                    sck_r   <= 1'b0;
+                    sck_d   <= 1'b0;
+                end else if (div_cnt >= sck_div_r - 6'd1) begin
                     div_cnt <= 6'd0;
                     sck_r   <= ~sck_r;   // 翻转点：半周期到
                 end else begin
@@ -267,7 +288,10 @@ module sd_spi_ctrl #(
             tx_idle_d <= tx_active;      // 接收相开启前的 1 拍隔离
             if (xact_start) begin
                 // 锁存帧：{start 0, trans 1, cmd, arg, crc7, stop 1}
-                tx_shift   <= {2'b01, xact_cmd, xact_arg, crc7_nxt, 1'b1};
+                // 用当拍组合扇入（cmd_idx_wire/xact_arg_wire/crc7_nxt of cmd_idx_wire），
+                // 不能用 xact_cmd 寄存器——NBA 下一拍才更新，发出去的会是上一条命令的帧
+                // （T2 实锤：CMD8 窗口重发了 CMD0 帧，卡对 echo 校验失败静默）。
+                tx_shift   <= {2'b01, cmd_idx_wire, xact_arg_wire, crc7_of_idx, 1'b1};
                 tx_bit_cnt <= 6'd0;
                 tx_active  <= 1'b1;
                 sd_mosi    <= 1'b0;      // 首位 start=0 立即上总线（关键：第一个边沿是 rise，不预置会漏发）
@@ -317,7 +341,12 @@ module sd_spi_ctrl #(
                         rx_wait    <= 1'b0;
                         rx_got     <= 1'b1; // 起始位捕获
                         rx_bit_cnt <= 6'd0;
-                        rx_shift   <= {47'd0, sd_miso};
+                        // 起始位=应答首字节 MSB，协议强制为 0——预填 0 而非移入 miso：
+                        // 捕获位若进移位链，R7/R3 收 47 位后它会从 [47] 溢出（实际
+                        // 收了 49 位），echo/OCR 锚点全错。预填 0 随左移对齐：
+                        // R1 收 7 位后 0 落 [7]，rx[7:0] 恰为完整 R1 字节；
+                        // R7/R3 收 47 位后 0 落 [47] 占位，rx[46:0] 为线序应答体。
+                        rx_shift   <= 48'd0;
                     end else if (ncr_cnt == NCR_TIMEOUT[7:0]) begin
                         rx_wait    <= 1'b0;
                         rx_done_to <= 1'b1; // 超时退出（rx_done_to 即超时信息）
@@ -327,7 +356,11 @@ module sd_spi_ctrl #(
                 end
             end else if (rx_got && sck_rise) begin
                 rx_shift <= {rx_shift[46:0], sd_miso};
-                if (rx_bit_cnt == (xact_r48 ? 6'd47 : 6'd7)) begin
+                // 交付计数 = 应答体位数（7/47）：起始位已被捕获拍预填的 0 占位，
+                // 收 7 位后 0 恰移至 [7]（R1 型 rx[7:0]=完整 R1 字节）、
+                // 收 47 位后 0 移至 [47]（R7/R3 型 [46:0] 为线序应答体，字节对齐）。
+                // 若按 8/48 计数，预填 0 会被冲出，起始位照样丢失。
+                if (rx_bit_cnt == (xact_r48 ? 6'd46 : 6'd6)) begin
                     rx_got     <= 1'b0;
                     rx_done_ok <= 1'b1;  // 应答收满交付（rx_done_ok 即成功信息）
                 end else begin
@@ -340,6 +373,15 @@ module sd_spi_ctrl #(
     // ------------------------------------------------------------------------
     // [4] 命令 CRC 查表（组合）：CMD0/CMD8 固定 CRC，其余 SPI 模式 CRC off
     // ------------------------------------------------------------------------
+    // crc7_of_idx 按当拍扇入命令号译码（发起拍锁帧用）；crc7_nxt 按引擎寄存器
+    // xact_cmd 译码（保留兼容，若后续有非发起拍引用）。
+    always @(*) begin
+        case (cmd_idx_wire)
+            6'd0:    crc7_of_idx = 7'h4A;   // CMD0：帧尾字节 0x95
+            6'd8:    crc7_of_idx = 7'h43;   // CMD8(arg=0x1AA)：帧尾字节 0x87
+            default: crc7_of_idx = 7'h7F;   // 其余：CRC off，帧尾字节 0xFF
+        endcase
+    end
     always @(*) begin
         case (xact_cmd)
             6'd0:    crc7_nxt = 7'h4A;   // CMD0：帧尾字节 0x95
@@ -357,9 +399,12 @@ module sd_spi_ctrl #(
     // 请求/扇入 assign 见声明区（vlog 要求先声明后引用，集中管理）。
     assign xact_start = xact_req & ~xact_req_d;   // 请求上升沿 = 发起脉冲
     // 命令扇入：初始化序列机优先（读块只在 init_done 后被放进 B_TX，天然互斥）
-    assign xact_req = (st_init == I_C0_TX)  | (st_init == I_C8_TX)
-                    | (st_init == I_C55_TX) | (st_init == I_C41_TX)
-                    | (st_blk  == B_TX);
+    // 请求条件：TX 态且本机 CS 已拉低（cs_n_i/cs_n_b 为 NBA 下一拍才生效，
+    // 若 TX 态第一拍即发起，帧头 1~2 位会在 CS 仍高期间发出，卡按 CS 门控
+    // 采不到这些位——必须等 CS 真正上总线的下一拍才允许发起）。
+    assign xact_req = ((st_init == I_C0_TX)  | (st_init == I_C8_TX)
+                     | (st_init == I_C55_TX) | (st_init == I_C41_TX)) & ~cs_n_i
+                    | ((st_blk == B_TX) & ~cs_n_b);
     assign req_i_fire = (st_init == I_C0_TX)  | (st_init == I_C8_TX)
                       | (st_init == I_C55_TX) | (st_init == I_C41_TX);
     assign cmd_idx_wire = req_i_fire ? (st_init == I_C0_TX  ? 6'd0  :
@@ -399,7 +444,7 @@ module sd_spi_ctrl #(
             end else if (rx_done_to) begin
                 xact_busy  <= 1'b0;
                 xact_done  <= 1'b1;
-                xact_rx_ok <= 1'b0;          // 超时退出：失败交付
+                xact_rx_ok <= 1'b0;          // 超时退出：失败交付（xact_rx 保留旧值）
             end
         end
     end
@@ -425,8 +470,8 @@ module sd_spi_ctrl #(
                 I_POWERUP: begin
                     init_done <= 1'b0;
                     init_fail <= 1'b0;
-                    if (pow_cnt == {17{1'b1}}) begin
-                        pow_cnt <= 17'd0;    // 计满≈5.2ms，卡电源就绪
+                    if (pow_cnt == POWERUP_CYCLES[16:0]) begin
+                        pow_cnt <= 17'd0;    // 计满≈5.24ms（参数），卡电源就绪
                         st_init <= I_IDLE;
                     end else begin
                         pow_cnt <= pow_cnt + 17'd1;
@@ -435,6 +480,7 @@ module sd_spi_ctrl #(
                 I_IDLE: begin
                     if (init_start) begin
                         cnt80 <= 7'd0;
+                        retry_cnt <= 4'd0;   // 启动初始化时清零（每轮重试不清，才能数到 RETRY_MAX）
                         cs_n_i <= 1'b1;      // 空周期期间 CS 保持高
                         st_init <= I_SEND80;
                     end
@@ -443,7 +489,6 @@ module sd_spi_ctrl #(
                     cs_n_i <= 1'b1;
                     if (sck_rise) begin
                         if (cnt80 == 7'd79) begin
-                            retry_cnt <= 4'd0;
                             st_init   <= I_C0_TX;
                         end else begin
                             cnt80 <= cnt80 + 7'd1; // 80 个 SCK 同步空周期
@@ -451,8 +496,10 @@ module sd_spi_ctrl #(
                     end
                 end
                 I_C0_TX: begin
-                    cs_n_i  <= 1'b0;         // 命令期间 CS 拉低（引擎自动发起）
-                    st_init <= I_C0_RX;
+                    cs_n_i <= 1'b0;          // 第 1 拍拉低 CS（NBA 下一拍生效）
+                    if (xact_start) begin    // 引擎在 CS 已低后自动发起，发起拍才转 RX
+                        st_init <= I_C0_RX;
+                    end
                 end
                 I_C0_RX: begin
                     if (xact_done) begin
@@ -470,13 +517,16 @@ module sd_spi_ctrl #(
                     end
                 end
                 I_C8_TX: begin
-                    cs_n_i  <= 1'b0;
-                    st_init <= I_C8_RX;
+                    cs_n_i <= 1'b0;
+                    if (xact_start) begin
+                        st_init <= I_C8_RX;
+                    end
                 end
                 I_C8_RX: begin
                     if (xact_done) begin
-                        cs_n_i <= 1'b1;                        // R7 应答帧布局：[47:40] R1、[31:16] voltage accepted、[15:8] echo
-                        // （48bit 左移入 rx_shift，最后 8 位恰好落 [15:8]）
+                        cs_n_i <= 1'b1;
+                        // R7 布局（起始位预填 0 落 [47]）：[46:40] R1 低 7 位（R1=0x01
+                        // 时 MSB0 兼起始位，rx[46:40]=0011111）、[15:8] echo 字节 0xAA
                         if (xact_rx_ok && xact_rx[15:8] == 8'hAA) begin
                             st_init <= I_C55_TX;
                         end else begin
@@ -487,8 +537,10 @@ module sd_spi_ctrl #(
                     end
                 end
                 I_C55_TX: begin
-                    cs_n_i  <= 1'b0;
-                    st_init <= I_C55_RX;
+                    cs_n_i <= 1'b0;
+                    if (xact_start) begin
+                        st_init <= I_C55_RX;
+                    end
                 end
                 I_C55_RX: begin
                     if (xact_done) begin
@@ -503,8 +555,10 @@ module sd_spi_ctrl #(
                     end
                 end
                 I_C41_TX: begin
-                    cs_n_i  <= 1'b0;
-                    st_init <= I_C41_RX;
+                    cs_n_i <= 1'b0;
+                    if (xact_start) begin
+                        st_init <= I_C41_RX;
+                    end
                 end
                 I_C41_RX: begin
                     if (xact_done) begin
@@ -520,8 +574,8 @@ module sd_spi_ctrl #(
                                 st_init  <= I_C55_TX;
                             end
                         end else if (xact_rx[39] == 1'b1) begin
-                            // R3 应答字节流 {R1, 0xC0, 0x00, 0x00, 0x00, 0xFF}：
-                            // byte1=[39:32] 承载 OCR[31:24] → OCR[31]=rx[39]、CCS=OCR[30]=rx[38]
+                            // R3 布局（起始位预填 0 落 [47]）：[46:40] R1 低 7 位、
+                            // [39:32] OCR[31:24]=0xC0 → OCR[31]=rx[39]、CCS=OCR[30]=rx[38]
                             if (xact_rx[38] == 1'b1) begin
                                 sck_div_r <= SCK_FAST_DIV[5:0]; // 切高速时钟
                                 init_done <= 1'b1;
@@ -602,10 +656,21 @@ module sd_spi_ctrl #(
                     end
                 end
                 B_TX: begin
-                    cs_n_b <= 1'b0;          // 数据接收期间 CS 保持低（引擎自动发起 CMD17）
+                    cs_n_b <= 1'b0;          // 第 1 拍拉低 CS（NBA 下一拍生效）
+                    if (xact_start) begin    // 引擎在 CS 已低后自动发起 CMD17
+                        st_blk <= B_R1;
+                    end
+                end
+                B_R1: begin
                     if (xact_done) begin
                         if (xact_rx_ok && xact_rx[7:0] == 8'h00) begin
                             tok_cnt    <= 20'd0;
+                            // 令牌滑窗装入 R1 应答字节作窗口历史：R1[0]（引擎交付后
+                            // 的第 8 位）紧接其后进窗。若预填 0xFF，错误令牌场景
+                            // （R1 后无填充直接 0x0X）首个 0 会与预填 1 拼成假 0xFE
+                            // 窗口误转 B_DATA；从 R1 字节起步则前导 1 需真实收满
+                            // 7 个才可能成窗，且字节对齐锚点=R1[0] 之后的每 8 位
+                            tok_shift  <= xact_rx[7:0];
                             tok_active <= 1'b1;
                             st_blk     <= B_TOK;
                         end else begin
@@ -623,18 +688,21 @@ module sd_spi_ctrl #(
                             tok_cnt   <= tok_cnt + 20'd1;
                             tok_shift <= {tok_shift[6:0], sd_miso};
                             tok_bits  <= tok_bits + 3'd1;   // 模 8 回绕
-                            if (tok_bits == 3'd7) begin
-                                // 字节对齐判定：R1 收完即字节对齐，每 8 位判一次
-                                if ({tok_shift[6:0], sd_miso} == 8'hFE) begin
-                                    tok_bits <= 3'd0;
-                                    st_blk   <= B_DATA;
-                                end else if (tok_shift[6] == 1'b0) begin
-                                    // 高位为 0 的字节是错误令牌 0x0X（当前字节 MSB=滑动前 tok_shift[6]）
-                                    err_code_b <= 3'd5;
-                                    st_blk     <= B_TAIL;
-                                end
-                                // 0xFF：仍是前导，继续滑窗
+                            // 0xFE 每拍滑窗判（字节对齐锚点）：R1 应答后 DUT 首个
+                            // rise 不保证落在令牌字节边界（交付链滞后 1~2 位），靠
+                            // Ncr 前导 1 补齐窗口——检出拍即令牌末位，B_DATA 从
+                            // 下一 rise 起天然字节对齐。判定若套「tok_bits==7」外层
+                            // 会读旧值晚一拍，窗口已被挤掉最高位而永远 miss
+                            if ({tok_shift[6:0], sd_miso} == 8'hFE) begin
+                                tok_bits <= 3'd0;
+                                st_blk   <= B_DATA;
+                            end else if (tok_bits == 3'd7 && tok_shift[6] == 1'b0) begin
+                                // 字节对齐边界上的 0x0X = 错误令牌（0xFE 已先行排除：
+                                // 其末位 0 前高 7 位全 1，MSB 恒 1 不会进本分支）
+                                err_code_b <= 3'd5;
+                                st_blk     <= B_TAIL;
                             end
+                            // 0xFF：仍是前导，继续滑窗
                         end
                     end
                 end
