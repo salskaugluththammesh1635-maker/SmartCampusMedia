@@ -6,7 +6,7 @@
 #   [底板例程]     = M0_Borad/.../10_VGA_hdmi_tx_display_MB/source_code/adc_sdc/hdmi.adc
 #   [核心板原理图] = EG4S20BG256核心板 - 2023.pdf
 #   [走近FPGA]     = 实验系列二：走近FPGA（表1.1~1.6）
-# 本工程 IO 合计 36 个: 系统 2 + 键盘 8 + LED 8 + 数码管 12 + 蜂鸣器 1 + 音频 1 + HDMI 4
+# 本工程 IO 合计 41 个: 系统 2 + 键盘 8 + LED 8 + 数码管 12 + 蜂鸣器 1 + 音频 1 + HDMI 4 + SD 5
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -83,3 +83,17 @@ set_pin_assignment { HDMI_CLK_P } { LOCATION = P1; IOSTANDARD = LVDS33; PULLTYPE
 set_pin_assignment { HDMI_D0_P  } { LOCATION = N1; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
 set_pin_assignment { HDMI_D1_P  } { LOCATION = P4; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
 set_pin_assignment { HDMI_D2_P  } { LOCATION = J3; IOSTANDARD = LVDS33; PULLTYPE = NONE; }
+
+# ---------------------------------------------------------------------------
+# 7. SD 卡（SPI 模式）【阶段四探针链路】
+#    来源: [底板引脚说明 3.6] 与 [底板例程 sd_card.adc] 一致 ✓
+#    官方裁决（docs/sd_spi_reference.md §1）: MOSI=F14（SD_datain）、MISO=D14（SD_dataout）
+#    板载: microSD 卡座 3.3V 直连无电平转换；CMD/DAT0 10k 上拉（R22/R32~R37）
+#    CD（E15）: 卡座 pin9 → FPGA，无卡=1 插卡=0（原理图补齐，10k 上拉）
+#    上拉: FPGA 内部 PULLUP 与板载 10k 并联无害；SCK/CS 推挽输出
+# ---------------------------------------------------------------------------
+set_pin_assignment { sd_cs_n } { LOCATION = F13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = PULLUP; }
+set_pin_assignment { sd_sck  } { LOCATION = F15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { sd_mosi } { LOCATION = F14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = PULLUP; }
+set_pin_assignment { sd_miso } { LOCATION = D14; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { sd_cd   } { LOCATION = E15; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }

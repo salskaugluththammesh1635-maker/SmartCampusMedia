@@ -25,6 +25,9 @@ $map = [ordered]@{
     'rtl\input\key_matrix_4x4.v'    = @('project\src\key_matrix_4x4.v',   'project\hdmi\key_matrix_4x4.v')
     'rtl\audio\buzzer_tone.v'       = @('project\src\buzzer_tone.v',      'project\hdmi\buzzer_tone.v')
     'rtl\audio\pwm_audio_out.v'     = @('project\hdmi\pwm_audio_out.v')
+    # ===== 仅 hdmi_td（阶段四存储链）=====
+    'rtl\storage\sd_spi_ctrl.v'     = @('project\hdmi\sd_spi_ctrl.v')
+    'rtl\storage\sd_probe.v'        = @('project\hdmi\sd_probe.v')
     # ===== 仅 hdmi_td =====
     'rtl\top\dmz_eg4s20_hdmi_top.v' = @('project\hdmi\dmz_eg4s20_hdmi_top.v')
     'rtl\video\hdmi\hdmi_pll.v'     = @('project\hdmi\hdmi_pll.v')

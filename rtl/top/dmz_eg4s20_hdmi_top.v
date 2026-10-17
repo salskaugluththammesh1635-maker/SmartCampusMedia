@@ -25,7 +25,7 @@
 //
 // 【二、本模块功能】
 //   一句话职责: 实现 640×480@60Hz 测试图案 → HDMI TMDS 输出的完整链路，
-//               并支持按键切换 8 种测试图案 + PWM 音频测试音输出。
+//               支持按键切换 8 种测试图案 + PWM 音频测试音 + SD 卡链路探针。
 //   关键特性:
 //     - 全系统单一时钟域（25MHz 像素时钟）：从根上规避跨时钟域（CDC）问题，
 //       键盘/数码管/LED/蜂鸣器/视频全部同域，无需任何同步器
@@ -40,13 +40,16 @@
 //     输出  key_row[3:0]  : 矩阵键盘行扫描输出（E10/C10/F9/D9，低电平选通）
 //     输入  key_col[3:0]  : 矩阵键盘列输入（E11/D11/C11/F10，板上 10k 上拉）
 //     输出  led[7:0]      : LED 指示（B14/B15/B16/C15/C16/E13/E16/F16，高电平点亮）
-//     输出  seg_data[7:0] : 数码管段选（A4/A6/B8/E8/A7/B5/A8/C8，低电平点亮）
+//     输出  seg_data[7:0] : 数码管段选（A4/A6/B8/E8/A7/B5/A8/C8，高电平点亮）
 //     输出  seg_cs[3:0]   : 数码管位选（C9/B6/A5/A3，低电平选通）
 //     输出  buzzer        : 蜂鸣器（球 H11，低电平响）
+//     输出  sd_cs_n/sck/mosi : SD 卡 SPI（F13/F15/F14，阶段四探针链路）
+//     输入  sd_miso       : SD 卡数据回传（球 D14）
+//     输入  sd_cd         : SD 卡插入检测（球 E15，无卡=1，本版未参与逻辑）
 //     输出  audio_pwm     : PWM 音频（球 F3，板载低通+功放，基础要求③）
 //     输出  HDMI_*_P ×4   : TMDS 差分正端（P1/N1/P4/J3，IOSTANDARD=LVDS33）
 //
-//   内部逻辑块（共 10 块，按信号流顺序）:
+//   内部逻辑块（共 13 块，按信号流顺序）:
 //     [1] PLL 复位延时发生器      always @(posedge clk or negedge rst_n_btn)
 //           功能: 上电后延时约 2.5us 释放 PLL 复位，等 50MHz 参考时钟稳定
 //           输入: clk, rst_n_btn              输出: pll_reset
@@ -80,6 +83,13 @@
 //     [10] pwm_audio_out         子模块例化
 //           功能: DDS 三角波测试音 → 8bit PWM → 板载音频通路（基础要求③）
 //           输入: clk_pixel, rst_n            输出: audio_pwm
+//     [11] sd_spi_ctrl + sd_probe 子模块例化（阶段四 S2 探针链路）
+//           功能: 初始化 SD 卡 → 读扇区 0 → 校验 MBR 签名 0x55AA
+//           输入: sd_miso                     输出: sd_cs_n, sd_sck, sd_mosi
+//     [12] 状态上报               assign + 子模块例化
+//           功能: LED 低 4 位报 SD 状态（[0]=成功 [3]=失败 [2:1]=错误码高位）；
+//                 数码管次右位显示探针结果（0=进行中 1=成功 2~8=错误码）
+//           输入: probe_ok/fail/err, seg_pat  输出: led, seg_data, seg_cs
 //
 // 【四、设计思路与范式】
 //   主要范式 : 结构化装配（Structural）—— 顶层只做例化与连线，不含算法逻辑
@@ -125,6 +135,12 @@ module dmz_eg4s20_hdmi_top (
     output wire [3:0]  seg_cs,         // C9,B6,A5,A3
     // ---- 蜂鸣器（低电平响）----
     output wire        buzzer,         // H11
+    // ---- SD 卡（SPI 模式，阶段四 S2 探针链路）----
+    output wire        sd_cs_n,        // F13, 片选（低有效）
+    output wire        sd_sck,         // F15, SPI 时钟
+    output wire        sd_mosi,        // F14, 主出从入（CMD 线）
+    input  wire        sd_miso,        // D14, 主入从出（DAT0 线）
+    input  wire        sd_cd,          // E15, 卡插入检测（无卡=1 插卡=0，本版未用）
     // ---- PWM 音频输出（板载低通+功放，赛规基础要求③）----
     output wire        audio_pwm,      // F3，占空比调制信号
     // ---- HDMI TMDS（只出差分正端；负端由工具按差分对自动配对）----
@@ -329,10 +345,8 @@ module dmz_eg4s20_hdmi_top (
     );
 
     // -------------------------------------------------------------------------
-    // [9a] 数码管显示
-    //      功能: 最右位显示当前图案号（0~7），其余三位熄灭
-    //      输入: pattern_sel + rst_n + clk_pixel
-    //      输出: seg_data[7:0], seg_cs[3:0]
+    // [9a] 图案号段码（数码管实际扫描在 [12] 状态上报段统一驱动）
+    //      功能: pattern_sel 经 seg_decoder 译码，供 [12] 的 seg_scan4 使用
     //      注: 段码为高电平点亮（2026-10-17 上板修正）→ 8'h00 表示该位全灭
     // -------------------------------------------------------------------------
     wire [6:0] seg_pat;     // 【图案号段码】pattern_sel 经 seg_decoder 译码后的 7 段码
@@ -342,28 +356,13 @@ module dmz_eg4s20_hdmi_top (
         .seg_data (seg_pat)
     );
 
-    seg_scan4 #(
-        .CLK_FREQ_HZ (25_000_000),
-        .SCAN_HZ     (1000)
-    ) u_seg (
-        .clk      (clk_pixel),
-        .rst_n    (rst_n),
-        .dig0     ({1'b0, seg_pat}),        // 最右位: 图案号（DP 灭）
-        .dig1     (8'h00),                  // 以下三位熄灭
-        .dig2     (8'h00),
-        .dig3     (8'h00),
-        .seg_data (seg_data),
-        .seg_cs   (seg_cs)
-    );
-
     // -------------------------------------------------------------------------
-    // [9b] LED 指示
+    // [9b] LED 指示（实际拼接在 [12] 状态上报段 —— probe_* 线在 [11] 声明，
+    //      vlog 要求先声明后引用，故 assign 统一放 [12]）
     //      功能: bit7~5 = 图案号, bit4 = PLL 锁定指示（现场调试关键信号）,
-    //            低 4 位预留
-    //      输入: pattern_sel, locked      输出: led[7:0]
+    //            低 4 位 = SD 探针状态（阶段四 S2 起）
     // -------------------------------------------------------------------------
-    assign led = {pattern_sel, locked, 4'b0000};
-
+    // -------------------------------------------------------------------------
     // -------------------------------------------------------------------------
     // [9c] 蜂鸣器提示音
     //      功能: 每次按键短鸣 100ms（C5≈523Hz），作为操作反馈
@@ -394,6 +393,101 @@ module dmz_eg4s20_hdmi_top (
         .rst_n     (rst_n),
         .mute      (1'b0),                  // 现阶段常开；阶段五接播放控制
         .audio_pwm (audio_pwm)
+    );
+
+    // -------------------------------------------------------------------------
+    // [11] SD 卡探针链路 —— 阶段四 S2（链路验证，不动 HDMI 显示链）
+    //      功能: sd_probe 序列机驱动 sd_spi_ctrl 完成"初始化 → 读扇区 0 →
+    //            校验 MBR 签名 0x55AA"，结果上 LED/数码管现场可读
+    //      输入: sd_miso, sd_cd    输出: sd_cs_n/sd_sck/sd_mosi（球 F13/F15/F14）
+    //      注: sd_cd（E15，无卡=1 插卡=0）本版仅引到顶层预留，未参与逻辑；
+    //          成功时 LED[0] 亮，失败时 LED[3:1] 显示错误码二进制
+    // -------------------------------------------------------------------------
+    wire        sd_init_done;   // 【初始化完成指示】来自 sd_spi_ctrl（电平）
+    wire        sd_init_fail;   // 【初始化失败指示】来自 sd_spi_ctrl（电平）
+    wire [3:0]  sd_err;         // 【错误码】来自 sd_spi_ctrl（电平，本模块只读）
+    wire        sd_blk_done;    // 【读块完成脉冲】
+    wire        sd_blk_err;     // 【读块失败脉冲】
+    wire [7:0]  sd_dbyte;       // 【块数据字节】
+    wire        sd_dvalid;      // 【块数据有效脉冲】
+    wire        sd_busy;        // 【读块进行中】预留观察
+    wire        probe_init_start, probe_blk_start;  // 【探针发起脉冲】
+    wire [31:0] probe_blk_addr;                     // 【探针扇区号】恒 0（MBR）
+    wire        probe_ok, probe_fail;               // 【探针终态】成功/失败锁定
+    wire [3:0]  probe_err;                          // 【探针错误码】锁存版
+
+    sd_spi_ctrl #(
+        .CLK_FREQ_HZ (25_000_000)
+    ) u_sd (
+        .clk        (clk_pixel),
+        .rst_n      (rst_n),
+        .init_start (probe_init_start),
+        .init_done  (sd_init_done),
+        .init_fail  (sd_init_fail),
+        .err_code   (sd_err),
+        .blk_start  (probe_blk_start),
+        .blk_addr   (probe_blk_addr),
+        .blk_busy   (sd_busy),
+        .blk_done   (sd_blk_done),
+        .blk_err    (sd_blk_err),
+        .data_byte  (sd_dbyte),
+        .data_valid (sd_dvalid),
+        .sd_cs_n    (sd_cs_n),
+        .sd_sck     (sd_sck),
+        .sd_mosi    (sd_mosi),
+        .sd_miso    (sd_miso)
+    );
+
+    sd_probe #(
+        .CLK_FREQ_HZ        (25_000_000),
+        .PROBE_DELAY_CYCLES (200_000)       // 8ms@25MHz > POWERUP 静默期 5.24ms
+    ) u_probe (
+        .clk        (clk_pixel),
+        .rst_n      (rst_n),
+        .init_start (probe_init_start),
+        .init_done  (sd_init_done),
+        .init_fail  (sd_init_fail),
+        .err_code   (sd_err),
+        .blk_start  (probe_blk_start),
+        .blk_addr   (probe_blk_addr),
+        .blk_busy   (sd_busy),
+        .blk_done   (sd_blk_done),
+        .blk_err    (sd_blk_err),
+        .data_byte  (sd_dbyte),
+        .data_valid (sd_dvalid),
+        .sd_ok      (probe_ok),
+        .sd_fail    (probe_fail),
+        .err_latch  (probe_err)
+    );
+
+    // -------------------------------------------------------------------------
+    // [12] 状态上报（LED / 数码管）
+    //      LED[7:5]=图案号 LED[4]=PLL锁定 LED[3]=sd_fail LED[2:1]=错误码高位
+    //      LED[0]=sd_ok —— 阶段四 S2 起低 4 位由 SD 探针接管
+    //      数码管最右位: 图案号；次右位: 探针未完成(=0)显 0 / 成功(=1)显 1 /
+    //                    失败显错误码 2~8（1 号错误码=无卡会与成功混淆，
+    //                    但无卡时 LED[3]=1 且 LED[0]=0，可区分）
+    // -------------------------------------------------------------------------
+    assign led = {pattern_sel, locked, probe_fail, probe_err[3:2], probe_ok};
+
+    wire [6:0] seg_status;  // 【状态段码】SD 探针结果经 seg_decoder 译码
+    seg_decoder u_dec_sd (
+        .bin_data ({1'b0, probe_ok ? 4'd1 : probe_err}),   // 0=未完成 1=成功 2~8=错误码
+        .seg_data (seg_status)
+    );
+
+    seg_scan4 #(
+        .CLK_FREQ_HZ (25_000_000),
+        .SCAN_HZ     (1000)
+    ) u_seg (
+        .clk      (clk_pixel),
+        .rst_n    (rst_n),
+        .dig0     ({1'b0, seg_pat}),        // 最右位: 图案号（DP 灭）
+        .dig1     ({1'b0, seg_status}),     // 次右位: SD 探针状态（DP 灭）
+        .dig2     (8'h00),                  // 以下两位熄灭
+        .dig3     (8'h00),
+        .seg_data (seg_data),
+        .seg_cs   (seg_cs)
     );
 
 endmodule

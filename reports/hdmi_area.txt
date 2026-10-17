@@ -2,26 +2,26 @@ standard
 ***Report Model: dmz_eg4s20_hdmi_top Device: EG4S20BG256***
 
 IO Statistics
-#IO                        36   out of    188   19.15%
-  #input                    6
-  #output                  30
+#IO                        41   out of    188   21.81%
+  #input                    8
+  #output                  33
   #inout                    0
 
 Utilization Statistics
-#lut                      976   out of  19600    4.98%
-#reg                      460   out of  19600    2.35%
-#le                      1047
-  #lut only               587   out of   1047   56.06%
-  #reg only                71   out of   1047    6.78%
-  #lut&reg                389   out of   1047   37.15%
+#lut                     1493   out of  19600    7.62%
+#reg                      819   out of  19600    4.18%
+#le                      1567
+  #lut only               748   out of   1567   47.73%
+  #reg only                74   out of   1567    4.72%
+  #lut&reg                745   out of   1567   47.54%
 #bram                       0   out of     64    0.00%
   #bram9k                   0
   #fifo9k                   0
 #bram32k                    0   out of     16    0.00%
 #dsp                        0   out of     29    0.00%
-#pad                       40   out of    188   21.28%
+#pad                       45   out of    188   23.94%
   #ireg                     4
-  #oreg                    20
+  #oreg                    26
   #treg                     0
 #pll                        1   out of      4   25.00%
 #gclk                       1   out of     16    6.25%
@@ -36,6 +36,8 @@ Detailed IO Report
    key_col[1]        INPUT        D11        LVCMOS33      PAD           N/A          PULLUP      IREG    
    key_col[0]        INPUT        E11        LVCMOS33      PAD           N/A          PULLUP      IREG    
     rst_n_btn        INPUT         E3        LVCMOS33      PAD           N/A          PULLUP      NONE    
+      sd_cd          INPUT        E15        LVCMOS33      PAD           N/A          PULLUP      NONE    
+     sd_miso         INPUT        D14        LVCMOS33      PAD           N/A          PULLUP      NONE    
    HDMI_CLK_P       OUTPUT         P1         LVDS33       PAD           NA            NONE       DDRX1   
   HDMI_CLK_P(n)     OUTPUT         R1         LVDS33       PAD           NA            NONE       NONE    
     HDMI_D0_P       OUTPUT         N1         LVDS33       PAD           NA            NONE       DDRX1   
@@ -54,10 +56,13 @@ Detailed IO Report
      led[6]         OUTPUT        E16        LVCMOS33      PAD            8            NONE       OREG    
      led[5]         OUTPUT        E13        LVCMOS33      PAD            8            NONE       OREG    
      led[4]         OUTPUT        C16        LVCMOS33      PAD            8            NONE       NONE    
-     led[3]         OUTPUT        C15        LVCMOS33      PAD            8            NONE       NONE    
-     led[2]         OUTPUT        B16        LVCMOS33      PAD            8            NONE       NONE    
-     led[1]         OUTPUT        B15        LVCMOS33      PAD            8            NONE       NONE    
-     led[0]         OUTPUT        B14        LVCMOS33      PAD            8            NONE       NONE    
+     led[3]         OUTPUT        C15        LVCMOS33      PAD            8            NONE       OREG    
+     led[2]         OUTPUT        B16        LVCMOS33      PAD            8            NONE       OREG    
+     led[1]         OUTPUT        B15        LVCMOS33      PAD            8            NONE       OREG    
+     led[0]         OUTPUT        B14        LVCMOS33      PAD            8            NONE       OREG    
+     sd_cs_n        OUTPUT        F13        LVCMOS33      PAD            8           PULLUP      NONE    
+     sd_mosi        OUTPUT        F14        LVCMOS33      PAD            8           PULLUP      OREG    
+     sd_sck         OUTPUT        F15        LVCMOS33      PAD            8            NONE       OREG    
     seg_cs[3]       OUTPUT         A3        LVCMOS33      PAD            8            NONE       OREG    
     seg_cs[2]       OUTPUT         A5        LVCMOS33      PAD            8            NONE       OREG    
     seg_cs[1]       OUTPUT         B6        LVCMOS33      PAD            8            NONE       OREG    
@@ -78,12 +83,12 @@ Report Clock Domain Luts:
 ----------------------------------------------------------------------------------------------------------------
   #1      |  clk        |  50MHz       |  10             |  0                |  0             |  0      |  0
   #2      |  clk_5x     |  125MHz      |  13             |  0                |  0             |  0      |  0
-  #3      |  clk_pixel  |  25MHz       |  431            |  0                |  0             |  0      |  0
+  #3      |  clk_pixel  |  25MHz       |  689            |  0                |  0             |  0      |  0
 ----------------------------------------------------------------------------------------------------------------
 
 Clock Resource Statistics
 Index     ClockNet                                Type               DriverType         Driver                  Fanout
-#1        u_pll/clk0_buf                          Global             pll                u_pll/pll_inst.clkc0    277
+#1        u_pll/clk0_buf                          Global             pll                u_pll/pll_inst.clkc0    498
 #2        u_hdmi/Inst_DVITransmitter/PCLK_X5_I    Global             pll                u_pll/pll_inst.clkc2    32
 #3        clk_dup_1                               Global             io                 clk_syn_2.di            5
 
@@ -91,34 +96,36 @@ Report Hierarchy Area:
 +------------------------------------------------------------------------------------------------------------+
 |Instance                         |Module              |le      |lut     |ripple  |seq     |bram    |dsp     |
 +------------------------------------------------------------------------------------------------------------+
-|top                              |dmz_eg4s20_hdmi_top |1047    |774     |202     |484     |0       |0       |
-|  u_audio                        |pwm_audio_out       |72      |28      |17      |35      |0       |0       |
-|  u_buzz                         |buzzer_tone         |101     |70      |31      |38      |0       |0       |
-|  u_hdmi                         |hdmi_tx             |382     |299     |55      |182     |0       |0       |
-|    Inst_DVITransmitter          |DVITransmitter      |382     |299     |55      |182     |0       |0       |
-|      Inst_TMDSEncoder_blue      |TMDSEncoder         |120     |101     |19      |44      |0       |0       |
-|      Inst_TMDSEncoder_green     |TMDSEncoder         |102     |83      |18      |39      |0       |0       |
-|      Inst_TMDSEncoder_red       |TMDSEncoder         |106     |88      |18      |45      |0       |0       |
-|      Inst_blue_serializer_10_1  |Serial_N_1_lvds_dat |21      |11      |0       |21      |0       |0       |
+|top                              |dmz_eg4s20_hdmi_top |1567    |1247    |246     |849     |0       |0       |
+|  u_audio                        |pwm_audio_out       |68      |30      |17      |39      |0       |0       |
+|  u_buzz                         |buzzer_tone         |99      |68      |31      |38      |0       |0       |
+|  u_hdmi                         |hdmi_tx             |385     |300     |55      |180     |0       |0       |
+|    Inst_DVITransmitter          |DVITransmitter      |385     |300     |55      |180     |0       |0       |
+|      Inst_TMDSEncoder_blue      |TMDSEncoder         |121     |101     |19      |43      |0       |0       |
+|      Inst_TMDSEncoder_green     |TMDSEncoder         |106     |87      |18      |42      |0       |0       |
+|      Inst_TMDSEncoder_red       |TMDSEncoder         |103     |84      |18      |40      |0       |0       |
+|      Inst_blue_serializer_10_1  |Serial_N_1_lvds_dat |20      |10      |0       |20      |0       |0       |
 |      Inst_clk_serializer_10_1   |Serial_N_1_lvds     |7       |2       |0       |7       |0       |0       |
 |      Inst_green_serializer_10_1 |Serial_N_1_lvds_dat |14      |8       |0       |14      |0       |0       |
-|      Inst_red_serializer_10_1   |Serial_N_1_lvds_dat |12      |6       |0       |12      |0       |0       |
-|  u_key                          |key_matrix_4x4      |175     |167     |5       |101     |0       |0       |
+|      Inst_red_serializer_10_1   |Serial_N_1_lvds_dat |14      |8       |0       |14      |0       |0       |
+|  u_key                          |key_matrix_4x4      |181     |173     |5       |113     |0       |0       |
 |  u_pat                          |test_pattern_gen    |131     |85      |46      |20      |0       |0       |
-|  u_pll                          |hdmi_pll            |0       |0       |0       |0       |0       |0       |
-|  u_seg                          |seg_scan4           |47      |32      |7       |24      |0       |0       |
-|  u_vtg                          |video_timing_gen    |108     |70      |38      |38      |0       |0       |
+|  u_pll                          |hdmi_pll            |2       |2       |0       |1       |0       |0       |
+|  u_probe                        |sd_probe            |71      |56      |8       |51      |0       |0       |
+|  u_sd                           |sd_spi_ctrl         |441     |400     |36      |300     |0       |0       |
+|  u_seg                          |seg_scan4           |54      |44      |7       |25      |0       |0       |
+|  u_vtg                          |video_timing_gen    |99      |61      |38      |31      |0       |0       |
 +------------------------------------------------------------------------------------------------------------+
 
 
 DataNet Average Fanout:
 
    Index     Fanout    Nets  
-    #1         1       627   
-    #2         2       222   
-    #3         3        80   
-    #4         4        69   
-    #5        5-10     119   
-    #6       11-50      27   
-    #7       51-100     1    
-  Average     2.53           
+    #1         1       917   
+    #2         2       434   
+    #3         3       147   
+    #4         4        81   
+    #5        5-10     159   
+    #6       11-50      52   
+    #7       51-100     3    
+  Average     2.66           
