@@ -333,10 +333,10 @@ module dmz_eg4s20_hdmi_top (
     //      功能: 最右位显示当前图案号（0~7），其余三位熄灭
     //      输入: pattern_sel + rst_n + clk_pixel
     //      输出: seg_data[7:0], seg_cs[3:0]
-    //      注: 段码为低电平点亮 → 8'hFF 表示该位全灭
+    //      注: 段码为高电平点亮（2026-10-17 上板修正）→ 8'h00 表示该位全灭
     // -------------------------------------------------------------------------
     wire [6:0] seg_pat;     // 【图案号段码】pattern_sel 经 seg_decoder 译码后的 7 段码
-                            //   位序 {g,f,e,d,c,b,a}，低电平点亮
+                            //   位序 {g,f,e,d,c,b,a}，高电平点亮
     seg_decoder u_dec_pat (
         .bin_data ({1'b0, pattern_sel}),
         .seg_data (seg_pat)
@@ -348,10 +348,10 @@ module dmz_eg4s20_hdmi_top (
     ) u_seg (
         .clk      (clk_pixel),
         .rst_n    (rst_n),
-        .dig0     ({1'b1, seg_pat}),        // 最右位: 图案号（DP 灭）
-        .dig1     (8'hFF),                  // 以下三位熄灭
-        .dig2     (8'hFF),
-        .dig3     (8'hFF),
+        .dig0     ({1'b0, seg_pat}),        // 最右位: 图案号（DP 灭）
+        .dig1     (8'h00),                  // 以下三位熄灭
+        .dig2     (8'h00),
+        .dig3     (8'h00),
         .seg_data (seg_data),
         .seg_cs   (seg_cs)
     );

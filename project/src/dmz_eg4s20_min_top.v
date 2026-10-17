@@ -215,7 +215,7 @@ module dmz_eg4s20_min_top (
     wire [6:0] seg3, seg2, seg1, seg0;
                             // 【4 组段码】由 4 个 seg_decoder 分别把 bcd3/bcd2/bcd1/bcd0
                             //   译码得到（seg3 对应千位，seg0 对应个位）
-                            //   位序: {g,f,e,d,c,b,a}，低电平点亮
+                            //   位序: {g,f,e,d,c,b,a}，高电平点亮（2026-10-17 上板修正）
     seg_decoder u_dec3 (.bin_data (bcd3), .seg_data (seg3));
     seg_decoder u_dec2 (.bin_data (bcd2), .seg_data (seg2));
     seg_decoder u_dec1 (.bin_data (bcd1), .seg_data (seg1));
@@ -227,10 +227,10 @@ module dmz_eg4s20_min_top (
     ) u_seg (
         .clk      (clk),
         .rst_n    (rst_n_btn),
-        .dig0     ({1'b1, seg0}),        // 最右位: 个位（DP 灭）
-        .dig1     ({1'b1, seg1}),        // 次右位: 十位
-        .dig2     ({1'b1, seg2}),        // 次左位: 百位
-        .dig3     ({~hb_flag, seg3}),    // 最左位: 千位（DP = 心跳, 低电平点亮）
+        .dig0     ({1'b0, seg0}),        // 最右位: 个位（DP 灭）
+        .dig1     ({1'b0, seg1}),        // 次右位: 十位
+        .dig2     ({1'b0, seg2}),        // 次左位: 百位
+        .dig3     ({hb_flag, seg3}),     // 最左位: 千位（DP = 心跳, 高电平点亮: 计数时亮）
         .seg_data (seg_data),
         .seg_cs   (seg_cs)
     );

@@ -307,10 +307,10 @@ module dmz_eg4s20_bringup_top (
     ) u_seg (
         .clk      (clk50),
         .rst_n    (rst_n),
-        .dig0     ({1'b1, seg_pat_l}),      // 右位: 图号个位（DP 灭）
-        .dig1     ({1'b1, seg_pat_m}),      // 次右: 图号十位
-        .dig2     ({1'b1, seg_pat_h}),      // 次左: 图案号
-        .dig3     ({1'b1, seg_mode}),       // 最左: 模式
+        .dig0     ({1'b0, seg_pat_l}),      // 右位: 图号个位（DP 灭）
+        .dig1     ({1'b0, seg_pat_m}),      // 次右: 图号十位
+        .dig2     ({1'b0, seg_pat_h}),      // 次左: 图案号
+        .dig3     ({1'b0, seg_mode}),       // 最左: 模式
         .seg_data (seg_data),
         .seg_cs   (seg_cs)
     );

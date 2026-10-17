@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <Project Version="3" Minor="2" Path="D:/FPGA_Compelate/SmartCampusMedia/project">
     <Project_Created_Time></Project_Created_Time>
     <TD_Version>6.2.168116</TD_Version>
@@ -71,7 +71,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="8"/>
+                    <Attr Name="CompileOrder" Val="9"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/dmz_eg4s20_hdmi_top.v">
@@ -97,7 +97,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="9"/>
+                    <Attr Name="CompileOrder" Val="10"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/enc/SerializerN_1_lvds.enc.vhd">
@@ -105,7 +105,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="10"/>
+                    <Attr Name="CompileOrder" Val="11"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/enc/SerializerN_1_lvds_dat.enc.vhd">
@@ -113,7 +113,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="11"/>
+                    <Attr Name="CompileOrder" Val="12"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/enc/TMDSEncoder.enc.vhd">
@@ -121,7 +121,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="12"/>
+                    <Attr Name="CompileOrder" Val="13"/>
                 </FileInfo>
             </File>
         </VHDL>
@@ -153,7 +153,7 @@
         </FileSet>
     </FileSets>
     <TOP_MODULE>
-        <LABEL></LABEL>
+        <LABEL>dmz_eg4s20_hdmi_top</LABEL>
         <MODULE>dmz_eg4s20_hdmi_top</MODULE>
         <CREATEINDEX>auto</CREATEINDEX>
     </TOP_MODULE>
@@ -180,4 +180,3 @@
     <Project_Settings>
     </Project_Settings>
 </Project>
-
