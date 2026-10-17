@@ -282,6 +282,36 @@ testbench 膨胀数倍且更难维护。
   SDC 映射上一轮已加，A4 收尾完成。
 - 赛规基础要求③：❌→✅（测试音级，音乐播放待阶段五资源通路）。
 
+## S2 上板 err=7 根因：SD 命令间隔 Ncc 违规（2026-10-17）
+
+用户首烧 S2 探针后数码管次右位报 7（读块 R1 超时）。逐层排查结论：
+
+- **现象**：LED D4=locked 正常、D3=sd_fail、错误码 7；初始化链 CMD0/CMD8/
+  ACMD41 全通（否则码 1~3），只有 CMD17 被卡吞掉。
+- **根因**：SD 规范 Ncc 要求两条命令之间至少 8 个 SCK 时钟（CS 保持低，
+  卡靠这段时钟完成内部命令状态复位）。实测我们的间隙 SCK **停着不翻**
+  （sck_en 无来源）、时长仅约 360ns → 卡数到的时钟沿 = 0 个 → CMD17
+  整帧被丢弃 → MISO 恒高 → Ncr 超时 → err 7。
+- **为什么仿真测不出**：tb 卡模型从不检查 Ncc。这是本模块唯一无法靠
+  ModelSim 暴露的时序约束——**协议合规性缺陷只能靠真卡暴露**。
+- **修复**：`sd_spi_ctrl.v` 新增参数 `NCC_CYCLES = 8`，块[2a] 发送器改
+  「Ncc 填充段 + 帧发送段」两段式：xact_start 拍锁帧但不上总线，SCK
+  空翻满 8 个下降沿后才预置 start=0。两个关键约束：
+  ①**数 fall 不数 rise**——数 rise 时预置的 start 位会在紧随的 fall 被
+  移走而没有 rise 采样，整帧错位 1 位；
+  ②接收器复位条件补 `ncc_run`——填充段 tx_active=0 而 xact_busy=1，
+  若放行会让 ncr_cnt 多计 56 拍逼近 NCR_TIMEOUT 上限产生误超时。
+- 修复只动发送器层，三处序列机（初始化/读块）全链受益；慢速 INIT 相
+  （390.6kHz）因 Ncc 数的是 SCK 周期数而非 clk 拍数，自动同样合规。
+
+**踩坑教训（重要）**：`{40'hFFFF_FFFF, 8'hXX}` 是位宽补零陷阱——40 位
+宽的 0xFFFF_FFFF 高位补 0，出位变成 8 个 0 被当成起始位。前导 1 的帧头
+必须写全位宽值 `{8'hFF, 32'hFFFF_FFFF, ...}`。
+
+验证：lint 32 文件 E0/E1/E2=0；tb_sd_spi_ctrl T1~T7、tb_sd_probe T1~T4、
+tb_seg_scan4、tb_pwm_audio_out、tb_dmz_eg4s20_bringup 全绿；
+STA SWNS 6.295ns / HWNS 0.038ns / 0 违例；新 bit 629,640B。
+
 ## 问题记录
 
 | 日期 | 问题 | 影响 | 处理 | 状态 |
