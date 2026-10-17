@@ -360,6 +360,64 @@ module tb_sd_spi_ctrl;
     end
 
     // ------------------------------------------------------------------------
+    // [4b] CS/SCK 协议监视器：抓「Ncc 给错位置」这类硬件级违规
+    // ------------------------------------------------------------------------
+    // 背景（上板实测教训）：把 Ncc 的 8 个填充时钟放在 CS 已拉低之后，真卡会把
+    // 填充位当成 CS 拉低后的头一个字节流，整条命令位序错位、直接无应答。而本节
+    // 上面的三态扫描收集器会「跳过」填充位后再找命令帧——所以那种错误在仿真里
+    // 全绿。这里补两条硬检查，让同类回归必然在仿真暴露：
+    //   ①cs_head_err：CS 下降沿之后第一个 SCK 上升沿采到的 MOSI 必须是 0（start），
+    //                 否则说明 CS 低电平窗口里塞了非命令位。
+    //   ②ncc_short  ：两条命令之间（CS 高期间）的 SCK 下降沿数必须 ≥ NCC_CYCLES，
+    //                 否则真卡因 Ncc 不足丢弃后一条命令。
+    localparam integer NCC_EXPECT = 8;   // 必须与 sd_spi_ctrl 的 NCC_CYCLES 一致
+    reg        sck_q         = 1'b0;     // sd_sck 打一拍（边沿检测用）
+    wire       sck_rise_ref  = sd_sck & ~sck_q;   // sd_sck 上升沿拍
+    wire       sck_fall_ref  = ~sd_sck & sck_q;   // sd_sck 下降沿拍
+    reg        cs_d          = 1'b1;     // CS 打一拍（下降沿检测）
+    reg        cs_head_seen  = 1'b0;     // 本次 CS 低电平窗口已检查过首位的 start
+    reg        cs_first_mosi = 1'b1;     // 首位采样值（1=违规）
+    integer    cs_head_err   = 0;        // 违规次数累计
+    integer    ncc_gap       = 0;        // CS 高期间的 SCK 下降沿累计
+    integer    ncc_short     = 0;        // Ncc 不足次数累计
+
+    always @(posedge clk) begin
+        cs_d <= sd_cs_n;
+        // CS 拉低那一拍：开始新窗口，首位标志复位
+        if (cs_d && !sd_cs_n) begin
+            cs_head_seen  <= 1'b0;
+            cs_first_mosi <= 1'b1;
+            ncc_gap       <= 0;
+        end
+        // CS 高期间的 SCK 下降沿：累计 Ncc 间隔（含上电 80 空周期）
+        if (sd_cs_n && sck_fall_ref) begin
+            ncc_gap <= ncc_gap + 1;
+        end
+        // CS 低窗口里第一个 SCK 上升沿：采 MOSI 判 start
+        if (!sd_cs_n && !cs_head_seen && sck_rise_ref) begin
+            cs_head_seen  <= 1'b1;
+            cs_first_mosi <= sd_mosi;
+            if (sd_mosi !== 1'b0) begin
+                cs_head_err <= cs_head_err + 1;
+                $display("PROTO-ERR: CS 拉低后首位 MOSI=%b（应为 start=0）@%0t", sd_mosi, $time);
+            end
+        end
+    end
+
+    // 独立的 SCK 边沿参考用的打拍寄存器（已在上方声明 sck_q/sck_rise_ref/sck_fall_ref）
+    always @(posedge clk) begin
+        sck_q <= sd_sck;
+        // 一条命令收尾（CS 拉高）时校验 Ncc 是否给够
+        if (cs_d && !sd_cs_n) begin
+            if (ncc_gap < NCC_EXPECT && ncc_gap > 0) begin
+                ncc_short <= ncc_short + 1;
+                $display("PROTO-ERR: 命令间隔只有 %0d 个 SCK（应 >= %0d）@%0t",
+                         ncc_gap, NCC_EXPECT, $time);
+            end
+        end
+    end
+
+    // ------------------------------------------------------------------------
     // [5] 检查序列
     // ------------------------------------------------------------------------
     integer errors = 0;
@@ -536,6 +594,13 @@ module tb_sd_spi_ctrl;
         run_read_block(32'h0000_0004);
         chk(blk_done == 1'b1, "T7 second read blk_done");
         chk(mon_cnt == 512, "T7 received 512 bytes");
+
+        // ================================================================
+        // T8：CS/SCK 协议合规（Ncc 必须给在 CS 高期间）
+        // ================================================================
+        $display("---- T8: CS/Ncc protocol compliance ----");
+        chk(cs_head_err == 0, "T8 every command starts right after CS low");
+        chk(ncc_short   == 0, "T8 Ncc gap >= 8 SCK between commands");
 
         // ================================================================
         // 汇总

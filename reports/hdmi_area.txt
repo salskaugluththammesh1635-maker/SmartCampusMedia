@@ -8,12 +8,12 @@ IO Statistics
   #inout                    0
 
 Utilization Statistics
-#lut                     1500   out of  19600    7.65%
+#lut                     1512   out of  19600    7.71%
 #reg                      823   out of  19600    4.20%
-#le                      1584
-  #lut only               761   out of   1584   48.04%
-  #reg only                84   out of   1584    5.30%
-  #lut&reg                739   out of   1584   46.65%
+#le                      1592
+  #lut only               769   out of   1592   48.30%
+  #reg only                80   out of   1592    5.03%
+  #lut&reg                743   out of   1592   46.67%
 #bram                       0   out of     64    0.00%
   #bram9k                   0
   #fifo9k                   0
@@ -81,14 +81,14 @@ Report Clock Domain Luts:
 ----------------------------------------------------------------------------------------------------------------
   Index   |  Name       |  Frequency   |  LUT As Logic   |  LUT As Shifter   |  LUT As Dram   |  BRAM   |  DSP
 ----------------------------------------------------------------------------------------------------------------
-  #1      |  clk        |  50MHz       |  8              |  0                |  0             |  0      |  0
-  #2      |  clk_5x     |  125MHz      |  13             |  0                |  0             |  0      |  0
-  #3      |  clk_pixel  |  25MHz       |  686            |  0                |  0             |  0      |  0
+  #1      |  clk        |  50MHz       |  10             |  0                |  0             |  0      |  0
+  #2      |  clk_5x     |  125MHz      |  14             |  0                |  0             |  0      |  0
+  #3      |  clk_pixel  |  25MHz       |  701            |  0                |  0             |  0      |  0
 ----------------------------------------------------------------------------------------------------------------
 
 Clock Resource Statistics
 Index     ClockNet                                Type               DriverType         Driver                  Fanout
-#1        u_pll/clk0_buf                          Global             pll                u_pll/pll_inst.clkc0    511
+#1        u_pll/clk0_buf                          Global             pll                u_pll/pll_inst.clkc0    503
 #2        u_hdmi/Inst_DVITransmitter/PCLK_X5_I    Global             pll                u_pll/pll_inst.clkc2    32
 #3        clk_dup_1                               Global             io                 clk_syn_2.di            5
 
@@ -96,36 +96,36 @@ Report Hierarchy Area:
 +------------------------------------------------------------------------------------------------------------+
 |Instance                         |Module              |le      |lut     |ripple  |seq     |bram    |dsp     |
 +------------------------------------------------------------------------------------------------------------+
-|top                              |dmz_eg4s20_hdmi_top |1584    |1254    |246     |853     |0       |0       |
-|  u_audio                        |pwm_audio_out       |69      |28      |17      |38      |0       |0       |
-|  u_buzz                         |buzzer_tone         |101     |70      |31      |39      |0       |0       |
-|  u_hdmi                         |hdmi_tx             |381     |297     |55      |175     |0       |0       |
-|    Inst_DVITransmitter          |DVITransmitter      |381     |297     |55      |175     |0       |0       |
-|      Inst_TMDSEncoder_blue      |TMDSEncoder         |123     |104     |19      |43      |0       |0       |
-|      Inst_TMDSEncoder_green     |TMDSEncoder         |101     |82      |18      |38      |0       |0       |
-|      Inst_TMDSEncoder_red       |TMDSEncoder         |102     |83      |18      |39      |0       |0       |
+|top                              |dmz_eg4s20_hdmi_top |1592    |1266    |246     |853     |0       |0       |
+|  u_audio                        |pwm_audio_out       |66      |28      |17      |35      |0       |0       |
+|  u_buzz                         |buzzer_tone         |100     |69      |31      |38      |0       |0       |
+|  u_hdmi                         |hdmi_tx             |389     |304     |55      |180     |0       |0       |
+|    Inst_DVITransmitter          |DVITransmitter      |389     |304     |55      |180     |0       |0       |
+|      Inst_TMDSEncoder_blue      |TMDSEncoder         |124     |104     |19      |46      |0       |0       |
+|      Inst_TMDSEncoder_green     |TMDSEncoder         |105     |86      |18      |40      |0       |0       |
+|      Inst_TMDSEncoder_red       |TMDSEncoder         |105     |86      |18      |39      |0       |0       |
 |      Inst_blue_serializer_10_1  |Serial_N_1_lvds_dat |20      |10      |0       |20      |0       |0       |
 |      Inst_clk_serializer_10_1   |Serial_N_1_lvds     |7       |2       |0       |7       |0       |0       |
 |      Inst_green_serializer_10_1 |Serial_N_1_lvds_dat |14      |8       |0       |14      |0       |0       |
 |      Inst_red_serializer_10_1   |Serial_N_1_lvds_dat |14      |8       |0       |14      |0       |0       |
-|  u_key                          |key_matrix_4x4      |174     |166     |5       |106     |0       |0       |
-|  u_pat                          |test_pattern_gen    |133     |87      |46      |21      |0       |0       |
-|  u_pll                          |hdmi_pll            |2       |2       |0       |1       |0       |0       |
-|  u_probe                        |sd_probe            |65      |50      |8       |46      |0       |0       |
-|  u_sd                           |sd_spi_ctrl         |459     |409     |36      |311     |0       |0       |
-|  u_seg                          |seg_scan4           |61      |54      |7       |29      |0       |0       |
-|  u_vtg                          |video_timing_gen    |102     |64      |38      |35      |0       |0       |
+|  u_key                          |key_matrix_4x4      |175     |170     |5       |107     |0       |0       |
+|  u_pat                          |test_pattern_gen    |133     |87      |46      |22      |0       |0       |
+|  u_pll                          |hdmi_pll            |1       |1       |0       |0       |0       |0       |
+|  u_probe                        |sd_probe            |72      |51      |8       |54      |0       |0       |
+|  u_sd                           |sd_spi_ctrl         |457     |414     |36      |298     |0       |0       |
+|  u_seg                          |seg_scan4           |54      |43      |7       |23      |0       |0       |
+|  u_vtg                          |video_timing_gen    |113     |75      |38      |44      |0       |0       |
 +------------------------------------------------------------------------------------------------------------+
 
 
 DataNet Average Fanout:
 
    Index     Fanout    Nets  
-    #1         1       924   
-    #2         2       432   
-    #3         3       143   
-    #4         4        88   
-    #5        5-10     161   
-    #6       11-50      50   
-    #7       51-100     4    
-  Average     2.67           
+    #1         1       939   
+    #2         2       419   
+    #3         3       131   
+    #4         4        93   
+    #5        5-10     166   
+    #6       11-50      59   
+    #7       51-100     3    
+  Average     2.68           

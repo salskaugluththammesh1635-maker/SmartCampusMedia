@@ -156,6 +156,9 @@ module sd_spi_ctrl #(
     reg         ncc_need;     // 上一条命令已结束、下一条仍需补 Ncc（CS 保持高时数 SCK）
     reg  [3:0]  ncc_cnt;      // 已补的 Ncc SCK 个数（数下降沿；满 NCC_CYCLES 后清 ncc_need）
     wire        ncc_ready;    // Ncc 已满足，允许拉低 CS 发下一条命令
+    wire        cs_n_int;     // 内部 CS 合成值（初始化期取 cs_n_i、init_done 后取 cs_n_b）
+    reg         cs_n_int_d;   // cs_n_int 打一拍，用于检测 CS 上升沿（一条命令窗口结束）
+    wire        cs_rise;      // CS 由低变高 1 拍脉冲 = 命令窗口收尾，Ncc 计时起点
 
     // —— [3] 应答接收器 ——
     reg  [47:0] rx_shift;     // 应答移位寄存器（左移入）
@@ -244,25 +247,43 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     // 生效），若 sck_en=0 会走空闲 else 分支——sck_d 被旧 sck_r 灌成 1 而 sck_r 清 0，
     // 下一拍制造假 fall 锚点，发送器误移位吞掉 start 位（本模块最深的一个坑）。
     assign sck_en   = xact_start | xact_busy | tx_active | rx_wait | rx_got | tok_active
-                    | ncc_need | (st_init == I_SEND80);
+                    | ncc_need | cs_rise | (st_init == I_SEND80);
+    // 内部 CS 合成（与块[8]输出同一份表达式）：Ncc 计时需要观察 CS 上升沿，
+    // 放在块[1b]之前定义，避免用到后面块[8] 的 assign。
+    assign cs_n_int  = init_done ? cs_n_b : cs_n_i;
+    assign cs_rise   = cs_n_int & ~cs_n_int_d;   // CS 由低变高 = 命令窗口收尾
     // Ncc 就绪：没有待补的命令间隔时立即放行（首条命令 / SEND80 之后天然满足）
-    assign ncc_ready = ~ncc_need;
+    // 为什么还要 & ~cs_rise：CS 上升沿那一拍 ncc_need 尚未置位（块[1b] 的 NBA 下拍才
+    // 生效），若此时只看 ~ncc_need 会得到 1，状态机就在下一拍立刻把 CS 又拉低——CS 只
+    // 高了 1 拍、Ncc 一个都没数到，真卡判定命令间隔不足而丢弃命令（上板实测 err=1）。
+    // 把 cs_rise 一起排除，保证「CS 变高 → 数满 Ncc → 才允许再拉低」这条链不断。
+    assign ncc_ready = ~ncc_need & ~cs_rise;
     // 块[1b]：Ncc 命令间隔补充——CS 保持高期间数 SCK 下降沿，满 NCC_CYCLES 个才放行
     // 为什么必须挂在「CS 高」这一侧：SD 规范要求 CS 拉低后的第一个字节就是命令帧，
     // 中间不许插填充；Ncc 是「命令与命令之间」的空闲时钟，只能给在 CS 高期间。
+    // 为什么计起点是 CS 上升沿（而非 xact_done）：读块事务的 xact_done 发生在 B_R1
+    // （CMD17 的 R1 应答收完），此后 CS 仍保持低、还要收令牌与 512B 数据，SCK 会继续
+    // 翻几千个周期。若以 xact_done 为起点，ncc_need 会在数据相里就被数满清零，等
+    // B_TAIL 真正拉高 CS、SCK 停下后，下一条命令前只剩收尾残余的 2 个 SCK——真卡判
+    // 定 Ncc 不足，丢弃下一条命令。以 CS 上升沿为起点才与规范语义一致：Ncc 是「CS
+    // 拉高之后、下一次拉低之前」的那段时钟。
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            ncc_need <= 1'b0;
-            ncc_cnt  <= 4'd0;
-        end else if (xact_done) begin
-            ncc_need <= 1'b1;    // 上一事务收尾：下一条命令前必须补满 Ncc
-            ncc_cnt  <= 4'd0;
-        end else if (ncc_need && sck_fall) begin
-            if (ncc_cnt == NCC_CYCLES - 1) begin
-                ncc_need <= 1'b0;
+            ncc_need   <= 1'b0;
+            ncc_cnt    <= 4'd0;
+            cs_n_int_d <= 1'b1;
+        end else begin
+            cs_n_int_d <= cs_n_int;      // CS 上升沿检测的延迟拍
+            if (cs_rise) begin
+                ncc_need <= 1'b1;        // 一条命令窗口收尾：下一条命令前必须补满 Ncc
                 ncc_cnt  <= 4'd0;
-            end else begin
-                ncc_cnt <= ncc_cnt + 4'd1;
+            end else if (ncc_need && sck_fall) begin
+                if (ncc_cnt == NCC_CYCLES - 1) begin
+                    ncc_need <= 1'b0;    // 补满：放行下一条命令
+                    ncc_cnt  <= 4'd0;
+                end else begin
+                    ncc_cnt <= ncc_cnt + 4'd1;
+                end
             end
         end
     end
@@ -807,6 +828,6 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     // init_done/init_fail 都是保持电平：init_fail 时读块机错误码必为 0（复位值），
     // init_done 后序列机不再写错误码——两路私有寄存器在时间上天然互斥。
     assign err_code = init_done ? {1'b0, err_code_b} : err_code_i;
-    assign sd_cs_n  = init_done ? cs_n_b : cs_n_i;
+    assign sd_cs_n  = cs_n_int;      // 与块[1b] 的 Ncc 计时共用同一份合成值
 
 endmodule
