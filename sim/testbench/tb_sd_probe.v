@@ -160,11 +160,9 @@ module tb_sd_probe;
     // ========================================================================
     // 卡模型 —— 主控（应答组装）与回放引擎
     // ========================================================================
-    // 应答帧装载（直接装 resp_shift，免中转变量旧值坑）
-    // R1 型:  {8'h01, 40'd0} 位流 FF..01 → resp_bits=8
-    // R7 型:  {8'h01, 32'h0000_01AA, 8'h87} → resp_bits=48
-    // R3 型:  {8'h00, 32'hC000_FF80, 8'hFF} → resp_bits=48（busy=0, CCS=1）
-    // CMD17R1:{8'h00, 40'd0} → resp_bits=8
+    // 应答左对齐装入 48 位容器，但线上只发 resp_bits 位；R7/R3 都没有响应 CRC 尾字节。
+    // R1：8 位；CMD8/R7：{01, 000001AA} 共 40 位；CMD58/R3：{00, C0FF8000} 共 40 位。
+    // ACMD41 只回 8 位 R1，先 idle=01 再 ready=00；CMD55 的 idle 位跟随卡的实际状态。
     reg [47:0] resp_shift = 48'hFFFF_FFFF_FFFF;
     reg [6:0]  resp_bits  = 7'd0;
 
@@ -173,7 +171,7 @@ module tb_sd_probe;
     reg [3:0]  ncr_run   = 4'd0;    // Ncr 前导 1 拍数
     reg [47:0] r48_buf;             // 应答位流出移位
     reg [6:0]  r48_bits;
-    reg [3:0]  tok_bits;            // 令牌位计数（0xFE = 4 个 1 后 4 个 0 → 低 4 位逐位）
+    reg [3:0]  tok_bits;            // 令牌位序 0~7：0xFE 为七个 1 后一个 0，MSB first
     reg [12:0] data_idx_q;          // 数据字节索引 0~511
     reg [2:0]  bit_in_byte;         // 字节内位序 0=b7..7=b0
     reg [7:0]  byte_out;            // 当拍组合出位字节（组合局部变量，无延迟装载）
@@ -184,55 +182,99 @@ module tb_sd_probe;
     // 扇区 0 内容签名位
     reg [7:0]  sig509 = 8'h00, sig510 = 8'h55, sig511 = 8'hAA;
 
-    // 主控: 消费完整命令帧，按场景组装应答
+    // 主机复位不代表卡断电：协议状态保留到 CMD0，CS 撤销仅中止当前回放。
+    reg        card_idle = 1'b1;            // 真实卡状态：CMD0 进入 idle，ACMD41 ready 后清除
+    reg        app_cmd_pending = 1'b0;      // CMD55 仅授权下一条应用命令
+    integer    acmd_poll_count = 0;         // 每次 CMD0 后累计合法 ACMD41 轮数
+    integer    acmd_busy_sent = 0;          // 本轮初始化实际回过的 R1=01 数量
+    integer    acmd_ready_sent = 0;         // 本轮初始化实际回过的 R1=00 数量
+    integer    cmd58_count = 0;             // 本轮初始化实际 OCR 查询数量
+    integer    command_errors = 0;         // 仅基于线上命令位流的合法性计数
+
+    // 主控：消费完整命令帧，按 SPI 应答格式与当前卡状态组装回放。
     always @(posedge clk) begin
         cmd_new <= 1'b0;
-        if (cmd_new && probe_phase != PP_POWERUP && cmd_frame[47:46] == 2'b01) begin
+        if (cmd_new && !sd_cs_n && probe_phase != PP_POWERUP
+                                 && cmd_frame[47:46] == 2'b01) begin
+            app_cmd_pending <= 1'b0;        // 不允许旧 CMD55 授权跨过另一条命令
+            if (cmd_frame[0] !== 1'b1
+                || (cmd_frame[45:40] == 6'd0
+                    && (cmd_frame[39:8] !== 32'd0 || cmd_frame[7:0] !== 8'h95))
+                || (cmd_frame[45:40] == 6'd8
+                    && (cmd_frame[39:8] !== 32'h0000_01AA || cmd_frame[7:0] !== 8'h87))
+                || (cmd_frame[45:40] == 6'd55 && cmd_frame[39:8] !== 32'd0)
+                || (cmd_frame[45:40] == 6'd41 && !app_cmd_pending)
+                || (cmd_frame[45:40] == 6'd58
+                    && (cmd_frame[39:8] !== 32'd0 || card_idle))) begin
+                command_errors <= command_errors + 1;
+                $display("PROTO-ERR: 非法命令或顺序 cmd=%0d frame=%012x @%0t",
+                         cmd_frame[45:40], cmd_frame, $time);
+            end
+            resp_bits <= 7'd8;              // R1 默认为八位，只有 CMD8/CMD58 扩成四十位
+            ncr_run <= 4'd8;                // 八个高位均在完整命令 stop 位之后发送
+            tx_sel <= 3'd1;
             case (cmd_frame[45:40])
-                6'd0:  begin // CMD0 → R1=0x01（idle）
-                    resp_shift <= {8'h01, 40'd0};
-                    resp_bits  <= 7'd8;
-                    ncr_run    <= 4'd8;
-                    tx_sel     <= 3'd1;
+                6'd0: begin
+                    resp_shift <= {8'h01, 40'd0}; // CMD0 进入 idle，并开始新的初始化计数
+                    card_idle <= 1'b1;
+                    acmd_poll_count <= 0;
+                    acmd_busy_sent <= 0;
+                    acmd_ready_sent <= 0;
+                    cmd58_count <= 0;
                 end
-                6'd8:  begin // CMD8 → R7（echo 0x01AA）
-                    resp_shift <= {8'h01, 32'h0000_01AA, 8'h87};
-                    resp_bits  <= 7'd48;
-                    ncr_run    <= 4'd8;
-                    tx_sel     <= 3'd1;
+                6'd8: begin
+                    resp_shift <= {(card_idle ? 8'h01 : 8'h00), 32'h0000_01AA, 8'hFF};
+                    resp_bits <= 7'd40;     // R7 无额外 CRC，容器末八位不发送
                 end
-                6'd55: begin // CMD55 → R1=0x01
-                    resp_shift <= {8'h01, 40'd0};
-                    resp_bits  <= 7'd8;
-                    ncr_run    <= 4'd8;
-                    tx_sel     <= 3'd1;
+                6'd55: begin
+                    resp_shift <= {(card_idle ? 8'h01 : 8'h00), 40'd0}; // idle/ready 下分别回 01/00
+                    app_cmd_pending <= 1'b1;
                 end
-                6'd41: begin // ACMD41 → R3（busy=0, CCS=1=SDHC）
-                    resp_shift <= {8'h00, 32'hC000_FF80, 8'hFF};
-                    resp_bits  <= 7'd48;
-                    ncr_run    <= 4'd8;
-                    tx_sel     <= 3'd1;
+                6'd41: begin
+                    if (!app_cmd_pending) begin
+                        resp_shift <= {(card_idle ? 8'h05 : 8'h04), 40'd0}; // 缺 CMD55 时回 illegal-command
+                    end else if (card_idle && acmd_poll_count == 0) begin
+                        resp_shift <= {8'h01, 40'd0}; // 第一轮 busy，强制 DUT 真实再次发 CMD55+ACMD41
+                        acmd_busy_sent <= acmd_busy_sent + 1;
+                    end else begin
+                        resp_shift <= {8'h00, 40'd0}; // 第二轮 ready；OCR 留给单独 CMD58
+                        card_idle <= 1'b0;
+                        acmd_ready_sent <= acmd_ready_sent + 1;
+                    end
+                    if (app_cmd_pending) acmd_poll_count <= acmd_poll_count + 1;
                 end
-                6'd17: begin // CMD17 → R1=0x00 + 场景决定的数据段
-                    resp_shift <= {8'h00, 40'd0};
-                    resp_bits  <= 7'd8;
-                    ncr_run    <= 4'd8;
-                    tx_sel     <= 3'd1;
-                    // 数据段在应答回放结束后由 tx_sel 桥接逻辑启动
-                    tok_bits   <= 4'd0;
+                6'd58: begin
+                    resp_shift <= {(card_idle ? 8'h01 : 8'h00),
+                                   (card_idle ? 32'h40FF_8000 : 32'hC0FF_8000), 8'hFF};
+                    resp_bits <= 7'd40;     // R3 的 bit31=上电完成，bit30=SDHC
+                    cmd58_count <= cmd58_count + 1;
+                end
+                6'd17: begin
+                    resp_shift <= {(card_idle ? 8'h01 : 8'h00), 40'd0}; // 未初始化时只回 idle，不接数据
+                    tok_bits <= 4'd0;
                     data_idx_q <= 13'd0;
-                    bit_in_byte<= 3'd0;
-                    crc16_run  <= 16'd0;
-                    crc_bit_q  <= 4'd0;
-                    bad_crc    <= 1'b0;
+                    bit_in_byte <= 3'd0;
+                    crc16_run <= 16'd0;
+                    crc_bit_q <= 4'd0;
+                    bad_crc <= 1'b0;
                 end
-                default: ;
+                default: resp_shift <= {(card_idle ? 8'h05 : 8'h04), 40'd0}; // 模型不支持的命令显式拒绝
             endcase
         end
     end
 
-    // 回放引擎（negedge SCK 出位 —— 与 DUT 上升沿采样对齐）
-    always @(negedge sd_sck) begin
+    // 回放引擎：下降沿出位；CS 变高立即丢弃剩余响应/数据，避免主机复位后旧位流串入。
+    always @(negedge sd_sck or posedge sd_cs_n) begin
+        if (sd_cs_n) begin
+            sd_miso <= 1'b1;                // 未选中时不驱动低电平，模型中由上拉呈高
+            tx_sel <= 3'd0;
+            resp_bits <= 7'd0;
+            ncr_run <= 4'd0;
+            tok_bits <= 4'd0;
+            data_idx_q <= 13'd0;
+            bit_in_byte <= 3'd0;
+            crc_bit_q <= 4'd0;
+        end else begin
         case (tx_sel)
             3'd0: sd_miso <= 1'b1;                      // 静默高
             3'd1: begin                                 // Ncr + 应答
@@ -243,19 +285,17 @@ module tb_sd_probe;
                     sd_miso   <= resp_shift[47];
                     resp_shift<= {resp_shift[46:0], 1'b0};
                     resp_bits <= resp_bits - 7'd1;
-                end else begin
-                    // 应答出完：CMD17 后按场景接数据段前导——
-                    //   正常/坏签名: 填充段 8 个 1（真卡 R1 后 MISO 呈 0xFF）→ 令牌
-                    //   错误令牌场景: 跳过填充直接 0x05（协议中读错误无专用响应令牌，
-                    //     以 R1 后异常字节模拟，走 DUT 已验证的错误令牌路径）
-                    if (cmd_frame[45:40] == 6'd17) begin
-                        tx_sel <= (probe_phase == PP_ERRTOK) ? 3'd6 : 3'd5;
-                    end else begin
-                        tx_sel <= 3'd0;
+                    if (resp_bits == 7'd1) begin
+                        // 在发送 R1 最后一位时桥接；不额外保持该位一整拍，避免插入第九个响应位。
+                        if (cmd_frame[45:40] == 6'd17 && !card_idle) begin
+                            tx_sel <= (probe_phase == PP_ERRTOK) ? 3'd6 : 3'd5;
+                        end else begin
+                            tx_sel <= 3'd0;
+                        end
                     end
                 end
             end
-            3'd5: begin                                 // 填充段: 8 个 1（一个字节）
+            3'd5: begin                                 // 数据等待：本组用例选择八个高位，不把它误称为 Ncr
                 sd_miso <= 1'b1;
                 tok_bits <= tok_bits + 4'd1;
                 if (tok_bits == 4'd7) begin
@@ -264,8 +304,7 @@ module tb_sd_probe;
                 end
             end
             3'd6: begin                                 // 错误令牌 0x05 = 0000_0101
-                sd_miso <= (tok_bits == 4'd3) || (tok_bits == 4'd5)
-                         || (tok_bits == 4'd7);
+                sd_miso <= (tok_bits == 4'd5) || (tok_bits == 4'd7); // MSB first 的 0000_0101，不能多置 bit4
                 tok_bits <= tok_bits + 4'd1;
                 if (tok_bits == 4'd7) tx_sel <= 3'd0;   // 出完回静默（DUT 会报错）
             end
@@ -310,6 +349,7 @@ module tb_sd_probe;
             end
             default: sd_miso <= 1'b1;
         endcase
+        end
     end
 
     // ========================================================================
@@ -344,6 +384,8 @@ module tb_sd_probe;
         chk(dut_probe.sd_fail == 1'b0,            "T2 sd_fail clear");
         chk(dut_probe.err_latch == 4'd0,          "T2 err_latch==0");
         chk(dut_sd.init_done == 1'b1,             "T2 init_done");
+        chk(acmd_busy_sent == 1 && acmd_ready_sent == 1, "T2 ACMD41 busy then ready");
+        chk(cmd58_count == 1,                    "T2 OCR queried using CMD58");
 
         // ---- T3: 签名坏（511 字节=0x00）→ sd_fail, err_latch=8 ----
         $display("---- T3: bad signature ----");
@@ -367,7 +409,8 @@ module tb_sd_probe;
         chk(dut_probe.sd_fail == 1'b1,            "T4 sd_fail asserted");
         chk(dut_probe.err_latch == 4'd5,          "T4 err_latch==5 (error token)");
 
-        // ---- 收尾 ----
+        // ---- 收尾：帧合法性来自引脚位流，不以 DUT 内部节点作为期望答案。----
+        chk(command_errors == 0,                 "command stop CRC and order legal");
         $display("==== tb_sd_probe done, errors = %0d ====", errors);
         if (errors == 0) $display("*** ALL CHECKS PASSED ***");
         else             $display("*** CHECKS FAILED, errors = %0d ***", errors);

@@ -123,6 +123,7 @@ module tb_sd_spi_ctrl;
             cmd_state <= 2'd0;
             cmd_bits  <= 6'd0;
             cmd_shift <= 48'd0;
+            cmd_new   <= 1'b0;             // CS 撤销时丢弃未消费的旧命令，隔离复位前后的事务
         end else begin
             case (cmd_state)
                 2'd0: if (!sd_mosi) begin
@@ -169,81 +170,99 @@ module tb_sd_spi_ctrl;
     // 主流程：@posedge clk 消费 cmd_new，组装应答帧
     reg [5:0]  cmd_seen;
     reg [31:0] arg_seen;
-    // resp_frame 中转变量已删：同拍 NBA 会让 resp_shift 装到上一命令的旧应答帧（首条为 X），回放永远滞后一轮
-    reg        is_acmd41;
-    // ACMD41 ready/CCS 模拟（默认 ready）
-    reg        acmd_ready = 1'b1;
+    // 卡的协议状态只由命令改变；主机 rst_n 不模拟卡断电，CS 撤销也不清除 idle 状态。
+    reg        card_idle = 1'b1;             // CMD0 进入 idle，成功 ACMD41 后退出
+    reg        app_cmd_pending = 1'b0;       // CMD55 只授权紧随其后的一条应用命令
+    integer    acmd_busy_polls = 1;          // 每次 CMD0 后先回若干次 R1=01，再回 R1=00
+    integer    acmd_poll_count = 0;          // 当前初始化收到的合法 ACMD41 数
+    integer    acmd_busy_sent = 0;           // 当前初始化实际装载的 busy 应答数
+    integer    acmd_ready_sent = 0;          // 当前初始化实际装载的 ready 应答数
+    integer    cmd58_count = 0;              // 当前初始化的 OCR 查询数
+    integer    command_errors = 0;          // 只统计线上帧与命令序列，不读取 DUT 内部状态
 
     always @(posedge clk) begin
         cmd_new <= 1'b0;
-        if (cmd_new && card_phase != PH_POWERUP
-                      && cmd_frame[47:46] == 2'b01) begin
-            // 只消费帧头合法（01）的命令帧——防碎片帧误触发应答
+        if (cmd_new && !sd_cs_n && card_phase != PH_POWERUP
+                                 && cmd_frame[47:46] == 2'b01) begin
             cmd_seen <= cmd_frame[45:40];
             arg_seen <= cmd_frame[39:8];
+            app_cmd_pending <= 1'b0;        // CMD55 的授权不能跨过另一条命令继续有效
+            // SPI 关闭通用 CRC 后，CMD0/CMD8 仍校验固定 CRC；其余命令至少校验 stop 与参数。
+            if (cmd_frame[0] !== 1'b1
+                || (cmd_frame[45:40] == 6'd0
+                    && (cmd_frame[39:8] !== 32'd0 || cmd_frame[7:0] !== 8'h95))
+                || (cmd_frame[45:40] == 6'd8
+                    && (cmd_frame[39:8] !== 32'h0000_01AA || cmd_frame[7:0] !== 8'h87))
+                || (cmd_frame[45:40] == 6'd55 && cmd_frame[39:8] !== 32'd0)
+                || (cmd_frame[45:40] == 6'd41 && !app_cmd_pending)
+                || (cmd_frame[45:40] == 6'd58
+                    && (cmd_frame[39:8] !== 32'd0 || card_idle))) begin
+                command_errors <= command_errors + 1;
+                $display("PROTO-ERR: 非法命令或顺序 cmd=%0d frame=%012x @%0t",
+                         cmd_frame[45:40], cmd_frame, $time);
+            end
+            // 48 位寄存器仅作左对齐容器；线上长度由 resp_bits 决定，R7/R3 没有响应 CRC 尾字节。
+            resp_bits <= 7'd8;              // CMD0/CMD55/ACMD41/CMD17 都只回一字节 R1
+            ncr_run   <= 1'b1;              // 在完整命令 stop 位之后插入八个高位
+            ncr_cnt   <= 3'd0;
+            tx_sel    <= 3'd1;
             case (cmd_frame[45:40])
                 6'd0: begin
-                    // CMD0：R1=0x01（idle）。R1 应答是 1 字节流，MSB=0 兼作起始位。
-                    // 出位仅 resp_bits 位（[47] 起），装载高 8 位即应答体——
-                    // 勿写 {40'hFFFF_FFFF, 8'h01}：位宽 40 的 0xFFFF_FFFF 高位补零，
-                    // 出位 [47:40] 变成 8 个 0，帧头假 1 陷阱
-                    resp_shift <= {8'h01, 40'd0};
-                    resp_bits  <= 7'd8;
-                    ncr_run    <= 1'b1;
-                    ncr_cnt    <= 3'd0;
-                    tx_sel     <= 3'd1;
+                    resp_shift <= {8'h01, 40'd0}; // CMD0：进入 idle，不受主机先前复位方式影响
+                    card_idle <= 1'b1;
+                    acmd_poll_count <= 0;
+                    acmd_busy_sent <= 0;
+                    acmd_ready_sent <= 0;
+                    cmd58_count <= 0;
                 end
                 6'd8: begin
-                    // R7：48 位完整协议流 {R1=0x01(其 MSB=0 即起始位),
-                    // IF_COND=0x000001AA, CRC=0x87}。起始位必须真实发到 MISO——
-                    // DUT 靠「等 MISO 变低」捕获，线上省掉它捕获点就错位
-                    resp_shift <= {8'h01, 32'h0000_01AA, 8'h87};
-                    resp_bits  <= 7'd48;
-                    ncr_run    <= 1'b1;
-                    ncr_cnt    <= 3'd0;
-                    tx_sel     <= 3'd1;
+                    resp_shift <= {(card_idle ? 8'h01 : 8'h00), 32'h0000_01AA, 8'hFF};
+                    resp_bits <= 7'd40;     // R7 = R1 + 32 位 IF_COND，后面的容器字节不发送
                 end
                 6'd55: begin
-                    // CMD55：R1=0x01（同 CMD0，装载高 8 位=应答体）
-                    resp_shift <= {8'h01, 40'd0};
-                    resp_bits  <= 7'd8;
-                    ncr_run    <= 1'b1;
-                    ncr_cnt    <= 3'd0;
-                    tx_sel     <= 3'd1;
+                    resp_shift <= {(card_idle ? 8'h01 : 8'h00), 40'd0}; // R1 的 idle 位跟随真实卡状态
+                    app_cmd_pending <= 1'b1;
                 end
                 6'd41: begin
-                    // R3：48 位完整协议流 {R1=0x00, OCR=0xC000FF80, 尾 0xFF}。
-                    // DUT 捕获拍预填 0 占 [47]、收 47 位应答体——线上位流从 R1 MSB 起
-                    // 逐位发出，OCR[31:24]=0xC0 落 [39:32]，busy=rx[39]、CCS=rx[38]
-                    resp_shift <= {8'h00, 32'hC000_FF80, 8'hFF};
-                    resp_bits  <= 7'd48;
-                    ncr_run    <= 1'b1;
-                    ncr_cnt    <= 3'd0;
-                    tx_sel     <= 3'd1;
+                    if (!app_cmd_pending) begin
+                        resp_shift <= {(card_idle ? 8'h05 : 8'h04), 40'd0}; // 无 CMD55 前缀则拒绝应用命令
+                    end else if (card_idle && acmd_poll_count < acmd_busy_polls) begin
+                        resp_shift <= {8'h01, 40'd0}; // busy：只有 R1，不把 OCR 塞进 ACMD41
+                        acmd_busy_sent <= acmd_busy_sent + 1;
+                    end else begin
+                        resp_shift <= {8'h00, 40'd0}; // ready：后续由 CMD58 单独读取 OCR
+                        card_idle <= 1'b0;
+                        acmd_ready_sent <= acmd_ready_sent + 1;
+                    end
+                    if (app_cmd_pending) acmd_poll_count <= acmd_poll_count + 1;
+                end
+                6'd58: begin
+                    resp_shift <= {(card_idle ? 8'h01 : 8'h00),
+                                   (card_idle ? 32'h40FF_8000 : 32'hC0FF_8000), 8'hFF};
+                    resp_bits <= 7'd40;     // R3 = R1 + OCR；bit31=上电完成、bit30=SDHC
+                    cmd58_count <= cmd58_count + 1;
                 end
                 6'd17: begin
-                    // CMD17：R1=0x00（ready）
-                    resp_shift <= {8'h00, 40'd0};
-                    resp_bits  <= 7'd8;
-                    ncr_run    <= 1'b1;
-                    ncr_cnt    <= 3'd0;
-                    tx_sel     <= 3'd1;
+                    resp_shift <= {(card_idle ? 8'h01 : 8'h00), 40'd0}; // 未初始化的卡拒绝读块
                 end
-                default: begin
-                    resp_shift <= {8'h01, 40'd0};
-                    resp_bits  <= 7'd8;
-                    ncr_run    <= 1'b1;
-                    ncr_cnt    <= 3'd0;
-                    tx_sel     <= 3'd1;
-                end
+                default: resp_shift <= {(card_idle ? 8'h05 : 8'h04), 40'd0}; // 未实现命令回 illegal-command
             endcase
-
         end
     end
 
-    // 回放引擎（negedge sd_sck 逐位驱动 MISO）
-    always @(negedge sd_sck) begin
-        if (ncr_run) begin
+    // 回放引擎：下降沿出位；CS 撤销立即中止本事务，但保留卡的初始化状态。
+    always @(negedge sd_sck or posedge sd_cs_n) begin
+        if (sd_cs_n) begin
+            sd_miso <= 1'b1;                // 未选中时由上拉呈高，不允许旧响应污染下一事务
+            tx_sel <= 3'd0;
+            resp_bits <= 7'd0;
+            ncr_run <= 1'b0;
+            ncr_cnt <= 3'd0;
+            tok_bits <= 4'd0;
+            data_idx_q <= 13'd0;
+            bit_in_byte <= 3'd0;
+            crc_bits <= 5'd0;
+        end else if (ncr_run) begin
             sd_miso <= 1'b1;         // Ncr 期间保持高
             if (ncr_cnt == 3'd7) begin
                 ncr_run <= 1'b0;
@@ -258,16 +277,15 @@ module tb_sd_spi_ctrl;
                 // 应答最后一位：准备数据阶段（仅 CMD17）
                 if (card_phase == PH_READY || card_phase == PH_NODATA
                      || card_phase == PH_ERRTOK) begin
-                    if (cmd_seen == 6'd17) begin
+                    if (cmd_seen == 6'd17 && !card_idle) begin
                         if (card_phase == PH_ERRTOK) begin
                             tx_sel   <= 3'd3;  // 错误令牌
                             tok_bits <= 4'd0;
                         end else if (card_phase == PH_NODATA) begin
                             tx_sel <= 3'd0;    // 永不给令牌
                         end else begin
-                            // 真卡发完 R1 会让 MISO 悬空呈 0xFF 填充字节
-                            // （Ncr 域），下一字节才是令牌——补 8 位前导 1，
-                            // DUT 滑窗靠它补齐 0xFE 窗口
+                            // 本组旧用例选择在 R1 与令牌之间等待一个 0xFF 字节；这是数据等待，不是 Ncr。
+                            // 不再把该等待当成 DUT 修复错位所必需的协议前提，零等待另由独立协议回归覆盖。
                             tx_sel      <= 3'd4; // 前导 0xFF 过渡
                             tok_bits    <= 4'd0;
                             data_idx    <= 13'd0;
@@ -281,13 +299,13 @@ module tb_sd_spi_ctrl;
                 end
             end
         end else if (tx_sel == 3'd4) begin
-            // R1 后的 0xFF 填充字节（Ncr 域）：出 8 个 1 再转令牌
-            if (tok_bits != 4'd8) begin
-                sd_miso  <= 1'b1;
-                tok_bits <= tok_bits + 4'd1;
-            end else begin
-                tx_sel   <= 3'd2;   // 令牌 0xFE + 数据 + CRC16
+            // 数据等待恰为八个高位；第八位同时切换，避免空转分支多发第九位。
+            sd_miso <= 1'b1;
+            if (tok_bits == 4'd7) begin
+                tx_sel   <= 3'd2;           // 下一下降沿直接发送令牌首位
                 tok_bits <= 4'd0;
+            end else begin
+                tok_bits <= tok_bits + 4'd1;
             end
         end else if (tx_sel == 3'd2) begin
             // 令牌 0xFE（8 位）：tok_bits 0~6 出 1，第 7 位出 0（MSB first）
@@ -362,14 +380,10 @@ module tb_sd_spi_ctrl;
     // ------------------------------------------------------------------------
     // [4b] CS/SCK 协议监视器：抓「Ncc 给错位置」这类硬件级违规
     // ------------------------------------------------------------------------
-    // 背景（上板实测教训）：把 Ncc 的 8 个填充时钟放在 CS 已拉低之后，真卡会把
-    // 填充位当成 CS 拉低后的头一个字节流，整条命令位序错位、直接无应答。而本节
-    // 上面的三态扫描收集器会「跳过」填充位后再找命令帧——所以那种错误在仿真里
-    // 全绿。这里补两条硬检查，让同类回归必然在仿真暴露：
-    //   ①cs_head_err：CS 下降沿之后第一个 SCK 上升沿采到的 MOSI 必须是 0（start），
-    //                 否则说明 CS 低电平窗口里塞了非命令位。
-    //   ②ncc_short  ：两条命令之间（CS 高期间）的 SCK 下降沿数必须 ≥ NCC_CYCLES，
-    //                 否则真卡因 Ncc 不足丢弃后一条命令。
+    // 这里检查本控制器的实现约定，而不是宣称所有 SD 卡都禁止选中后的空闲高位。
+    //   ①cs_head_err：本实现应在 CS 拉低后的首个采样上升沿发送 start=0。
+    //   ②ncc_short：本实现约定命令前提供至少 NCC_CYCLES 个 CS 高电平空时钟，零个也必须报错。
+    // 复位期间清除窗口/边沿历史，避免把主机异步复位误计成正常命令开始。
     localparam integer NCC_EXPECT = 8;   // 必须与 sd_spi_ctrl 的 NCC_CYCLES 一致
     reg        sck_q         = 1'b0;     // sd_sck 打一拍（边沿检测用）
     wire       sck_rise_ref  = sd_sck & ~sck_q;   // sd_sck 上升沿拍
@@ -382,7 +396,12 @@ module tb_sd_spi_ctrl;
     integer    ncc_short     = 0;        // Ncc 不足次数累计
 
     always @(posedge clk) begin
-        cs_d <= sd_cs_n;
+        cs_d <= rst_n ? sd_cs_n : 1'b1;
+        if (!rst_n) begin
+            cs_head_seen <= 1'b0;
+            cs_first_mosi <= 1'b1;
+            ncc_gap <= 0;
+        end else begin
         // CS 拉低那一拍：开始新窗口，首位标志复位
         if (cs_d && !sd_cs_n) begin
             cs_head_seen  <= 1'b0;
@@ -402,14 +421,15 @@ module tb_sd_spi_ctrl;
                 $display("PROTO-ERR: CS 拉低后首位 MOSI=%b（应为 start=0）@%0t", sd_mosi, $time);
             end
         end
+        end
     end
 
     // 独立的 SCK 边沿参考用的打拍寄存器（已在上方声明 sck_q/sck_rise_ref/sck_fall_ref）
     always @(posedge clk) begin
-        sck_q <= sd_sck;
-        // 一条命令收尾（CS 拉高）时校验 Ncc 是否给够
-        if (cs_d && !sd_cs_n) begin
-            if (ncc_gap < NCC_EXPECT && ncc_gap > 0) begin
+        sck_q <= rst_n ? sd_sck : 1'b0;
+        // 新命令选中时校验此前的高电平空时钟数；不能放过 ncc_gap=0。
+        if (rst_n && cs_d && !sd_cs_n) begin
+            if (ncc_gap < NCC_EXPECT) begin
                 ncc_short <= ncc_short + 1;
                 $display("PROTO-ERR: 命令间隔只有 %0d 个 SCK（应 >= %0d）@%0t",
                          ncc_gap, NCC_EXPECT, $time);
@@ -443,7 +463,7 @@ module tb_sd_spi_ctrl;
             init_start <= 1'b1;
             @(posedge clk);
             init_start <= 1'b0;
-            wait (init_done == 1'b1);
+            wait (init_done == 1'b1 || init_fail == 1'b1); // 初始化失败也交回检查序列，避免只剩看门狗诊断
             @(posedge clk);
         end
     endtask
@@ -524,6 +544,12 @@ module tb_sd_spi_ctrl;
         chk(init_done == 1'b1, "T2 init_done asserted");
         chk(init_fail == 1'b0, "T2 init_fail clear");
         chk(err_code == 4'd0, "T2 err_code==0");
+        chk(acmd_busy_sent == 1 && acmd_ready_sent == 1, "T2 ACMD41 R1 busy then ready");
+        chk(cmd58_count == 1, "T2 reads OCR once using CMD58");
+        if (init_done !== 1'b1) begin
+            $display("CHECKS FAILED, errors = %0d (initialization)", errors);
+            $finish;                         // 没有初始化成功时不继续发读块，保留首个失败现场
+        end
         // SCK 已切高速档：读块 SCK 半周期 = 1 拍
         // （由 blk 流程隐式验证）
 
@@ -587,13 +613,21 @@ module tb_sd_spi_ctrl;
         wait_idle();
 
         // ================================================================
-        // T7：初始化中 ACMD41 busy 轮询（acmd_ready=0 若干轮后 ready）
-        // （简化：卡模型恒 ready——busy 轮询路径由 T2 隐式覆盖）
+        // T7：主机复位但卡不断电；CMD0 后真实返回三轮 idle，再在第四轮 ACMD41 就绪。
         // ================================================================
-        $display("---- T7: second block read after T3 ----");
-        run_read_block(32'h0000_0004);
-        chk(blk_done == 1'b1, "T7 second read blk_done");
-        chk(mon_cnt == 512, "T7 received 512 bytes");
+        $display("---- T7: real ACMD41 idle polling after host reset ----");
+        acmd_busy_polls = 3;                  // 场景改变实际线上 R1 序列，不再用第二次读块冒充轮询
+        rst_n <= 1'b0;
+        repeat (5) @(posedge clk);
+        rst_n <= 1'b1;
+        wait (dut.st_init == 4'd1);            // 重新等待主机上电延时；卡状态直到 CMD0 才改变
+        wait_idle();
+        run_init();
+        chk(init_done == 1'b1 && !init_fail, "T7 init succeeds after busy polling");
+        chk(acmd_busy_sent == 3, "T7 three ACMD41 R1=01 replies");
+        chk(acmd_ready_sent == 1 && acmd_poll_count == 4, "T7 fourth ACMD41 R1=00 reply");
+        chk(cmd58_count == 1, "T7 CMD58 follows ready ACMD41");
+        wait_idle();
 
         // ================================================================
         // T8：CS/SCK 协议合规（Ncc 必须给在 CS 高期间）
@@ -601,6 +635,7 @@ module tb_sd_spi_ctrl;
         $display("---- T8: CS/Ncc protocol compliance ----");
         chk(cs_head_err == 0, "T8 every command starts right after CS low");
         chk(ncc_short   == 0, "T8 Ncc gap >= 8 SCK between commands");
+        chk(command_errors == 0, "T8 command stop CRC and order legal");
 
         // ================================================================
         // 汇总

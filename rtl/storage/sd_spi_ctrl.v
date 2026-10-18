@@ -1,120 +1,46 @@
 // ============================================================================
 // 文件名：rtl/storage/sd_spi_ctrl.v
-// ============================================================================
 // 【一、在整体系统中的功能】
-//   所属层次：阶段四存储子系统最底层（SD 物理接口层）
-//   工程归属：SmartCampusMedia SD 卡图片播放系统
-//   数据流位置：SD 卡引脚(sd_cs_n/sd_sck/sd_mosi/sd_miso) ←→ 本模块
-//              ←→ fat32_reader（下游 S3 切片接入；S1/S2 阶段由 tb 顶替）
-//   为什么需要它：SD 卡 SPI 模式以位流收发，命令/应答/数据块各有独立位级
-//               时序（Ncr 应答前导、令牌 0xFE、CRC16 尾部）。把位级细节
-//               封装在此，上层只见「初始化好了吗」「读一块 512B」。
+//   阶段四存储链最底层：SD SPI 引脚 ←→ 本模块 ←→ sd_probe / 后续 FAT32。
+//   把卡端位级时序封装成初始化状态与单扇区 512 字节流；不解析文件系统。
 // 【二、本模块功能】
-//   一句话职责：SD 卡 SPI 驱动器——上电初始化（CMD0→CMD8→CMD55+ACMD41
-//   循环，SDHC-only）+ 单块读（CMD17，512 字节流式输出 + CRC16 校验）。
-//   关键特性：
-//     1. 全逻辑单一 25MHz 时钟域（项目铁律），SCK 由分频计数器翻转产生；
-//     2. 两阶段时钟：初始化 SCK≈390.6kHz（CLK/64），init_done 后自动切
-//        12.5MHz（CLK/2）；
-//     3. 每一处等待都有超时上限（Ncr 应答前导 / ACMD41 循环 / 数据令牌 /
-//        CMD0 重试），卡不插或不响应时状态机自行走出并报 err_code，绝不
-//        挂死（赛规基础要求②「显示稳定性与鲁棒性」在驱动层的落地）；
-//     4. SPI mode 0：MOSI 在 SCK 下降沿拍更新（卡在上升沿采样），MISO 在
-//        SCK 上升沿拍采样（卡在下降沿送出后已稳定）；
-//     5. 驱动权单一化：初始化序列机与读块机各自驱动私有 cs/err 寄存器，
-//        输出端用 wire 合成（lint E2 多驱动检查的合规做法）。
+//   SDHC-only 初始化：80 空时钟→CMD0→CMD8→CMD55/ACMD41 轮询→CMD58。
+//   CMD8 返回 40 位 R7；ACMD41 只返回 8 位 R1（01=忙，00=就绪）；
+//   CMD58 返回 40 位 R3，用 OCR[31] 和 OCR[30] 确认上电完成及块寻址能力。
+//   CMD17 单块读：R1→按字节等待 FE→512 字节→CRC16→结束；全程只读。
+//   初始化分频为 390.625kHz，完成后为 12.5MHz；无卡/错误均有界退出。
 // 【三、接口与内部结构】
-//   端口一览：
-//     clk         in  1    主时钟 25MHz（全系统单一时钟域）
-//     rst_n       in  1    异步复位，低有效
-//     init_start  in  1    脉冲：启动初始化序列（上电后调用一次）
-//     init_done   out 1    电平：初始化成功（此后才可 blk_start）
-//     init_fail   out 1    电平：初始化失败（err_code 有效，须复位重来）
-//     err_code    out 4    电平：错误码（0 正常，编码见下）
-//     blk_start   in  1    脉冲：启动读一个 512B 块（init_done 后有效）
-//     blk_addr    in  32   电平：目标扇区号（SDHC 按扇区寻址）
-//     blk_busy    out 1    电平：读块进行中
-//     blk_done    out 1    脉冲：512B 已全部流出且 CRC 校验通过
-//     blk_err     out 1    脉冲：读块失败（err_code 标明原因）
-//     data_byte   out 8    电平：块数据字节流（data_valid 拍可读）
-//     data_valid  out 1    脉冲：data_byte 有效（每字节 1 拍）
-//     sd_cs_n     out 1    SD 卡片选，低有效
-//     sd_sck      out 1    SPI 时钟（初始化 390.6kHz / 读块 12.5MHz）
-//     sd_mosi     out 1    FPGA→卡 串行数据
-//     sd_miso     in  1    卡→FPGA 串行数据
-//   err_code 编码：1=CMD0 重试用尽 2=CMD8/CMD55 应答异常（非 SDv2）
-//                 3=ACMD41 循环超时 4=卡非 SDHC（OCR.CCS=0）
-//                 5=数据令牌超时/错误令牌 6=CRC16 比对失败
-//                 7=CMD17 应答非 0x00
-//   内部逻辑块（共 8 块，按信号流顺序）：
-//     [1] SCK 分频发生器 always：div_cnt 环形计数翻转 sck_r；sck_d 打拍
-//         出 sck_rise（MISO 采样锚点）/sck_fall（MOSI 更新锚点）。
-//     [2] 发送移位器 always：xact_start 拍预置帧首 bit48（start=0）上总线，
-//         此后每个 sck_fall 拍输出下一位——保证卡在第一个上升沿采到的
-//         就是 bit47，位序不漂移；48 位 = 预置 1 次 + fall 移位 47 次。
-//     [3] 应答接收器 always：发送相结束并隔 1 拍（tx_idle_d 防止把最后一个
-//         命令位的回显误当应答起始位）→ 等 MISO 变低（Ncr 超时保护）→
-//         按 8/48bit 收入 rx_shift → 双脉冲交付：rx_done_ok=正常收满、
-//         rx_done_to=Ncr 超时（信息在脉冲本身，替代共享 ok 标志）。
-//     [4] 命令 CRC 查表 always(*)：CMD0=0x4A（帧尾 0x95）、CMD8=0x43
-//         （帧尾 0x87）、其余 SPI 模式 CRC off=0x7F（帧尾 0xFF）。
-//     [5] 事务引擎 always：监视请求状态（初始化 TX 态 / 读块 B_TX 态），
-//         请求上升沿自动锁存命令帧并驱动收发流程，rx_done 时交付应答——
-//         序列机只表达「我要发哪条命令」，怎么收发全部在此层复用。
-//     [6] 初始化序列机 always：POWERUP→SEND80→CMD0(重试≤8)→CMD8(R7
-//         echo 校验)→(CMD55+ACMD41)×N（判 OCR busy 位[39]与 CCS[38]）
-//         →DONE（切高速时钟）/FAIL，每步都有失败出口与错误码。
-//     [7] 读块状态机 always：CMD17→R1==0x00→字节对齐滑窗等令牌 0xFE
-//         （非 0xFE 且高位为 0 即错误令牌）→512 字节按位流出（每 8 位出
-//         data_valid）→CRC16 逐位 LFSR 累积→尾部 16 位比对→TAIL 收尾。
-//     [8] 输出合成（组合 assign）：sd_cs_n/err_code 由两个序列机的私有
-//         寄存器按「init_done 前归序列机、之后归读块机」合成，规避多驱动。
-//   上电时序：复位后 pow_cnt 计满（≈5.2ms）等 init_start → 先发 80 个
-//   SCK 空周期（cs=1、MOSI=1，卡内部同步）→ 进入 CMD0。
+//   输入：clk/rst_n，init_start，blk_start/blk_addr，sd_miso。
+//   输出：init_done/init_fail，err_code，blk_busy/blk_done/blk_err，
+//         data_valid/data_byte，sd_cs_n/sd_sck/sd_mosi；详细位宽与极性见端口。
+//   内部：①分频与命令间空时钟；②48 位命令发送；③8/40 位应答接收；
+//         ④CMD0/CMD8 CRC7 常量；⑤共享事务引擎；⑥初始化状态机；
+//         ⑦读块/CRC16 状态机；⑧片选与错误码合成。
+//   err_code：1=CMD0 重试用尽；2=CMD8/CMD55 异常；3=ACMD41/CMD58 异常；
+//             4=非 SDHC；5=令牌超时/错误；6=CRC16 错；7=CMD17 应答异常。
+//   成功数据在 data_valid 拍输出；上层必须等待 blk_done 才认可整块校验结果。
 // 【四、设计思路与范式】
-//   范式定位：有限状态机（两层级联：序列机决定「先发哪条命令」，事务引擎
-//   决定「一条命令怎么收发」）+ 线性序列机（位级收发计数）+ 计数器/分频
-//   （SCK 翻转生成）+ 打拍/移位（边沿检测、应答移位、rx_gate 防误采）。
-//   为什么这样写：官方例程 sd_initial.v/sd_read.v 把「发哪条」「怎么发」
-//   「怎么收」耦合在一个大 case 里，每条命令一套状态、无超时（卡不插就
-//   永久停在 wait 态）、negedge 时钟域（双沿域不利综合与 STA）。本设计
-//   两层拆分后新增命令只在序列机加状态、事务引擎零改动；全链超时保证
-//   任何卡状态都能自行走出；单沿采样（只认 sck_rise/sck_fall 锚点）让
-//   整个驱动处于一个时钟域，时序约束简单。
-//   关键写法要点：
-//     1. 命令帧 = {start 0, trans 1, cmd[5:0], arg[31:0], crc7, stop 1}
-//        共 48bit，MSB 先发；首 bit 在事务发起拍预置上总线（关键：翻转式
-//        SCK 的第一个边沿是上升沿，若不在发起拍预置，bit47 会被卡漏采）；
-//     2. ACMD41 结果不判「R1==0」而判 OCR：R3 应答 = 48bit 左移入 rx_shift，
-//        字节流 {R1, 0xC0|0x80, 0x00, 0x00, 0x00, 0xFF}，OCR[31:24] 落
-//        [39:32]——OCR[31]（busy 完成位）即 rx[39]、OCR[30]（CCS）即 rx[38]；
-//        官方例程按 R1 字节判是语义混乱的写法；
-//     3. R7 校验取 echo 回显字节：应答字节流第 5 字节 = arg 低字节 0xAA
-//        的回显，左移入后落 [15:8]；
-//     4. 令牌检测按字节对齐滑窗：R1 应答本身 8 位对齐，后续卡数据按字节
-//        边界输出，滑窗每 8 位判一次 {tok_shift[6:0], miso}==0xFE，比
-//        「等第一个 0」更稳（0xFE 的 MSB 是 1，首位检测法会错位）；
-//     5. CRC16：多项式 0x1021、初值 0x0000、MSB first 逐位异或，数据相
-//        每个采样位都参与，尾部 16 位与本地值比对；
-//     6. 翻转式分频：div_cnt 每 DIV 拍翻转 sck_r，SCK=CLK/(2×DIV)，故
-//        INIT_DIV=32 → 390.6kHz、FAST_DIV=1 → 12.5MHz。
-//   范式认读方法：见 docs/design_patterns.md §3（FSM）/§2（LSM）/§4（计数器）。
+//   两级 FSM：序列层决定发什么命令，事务层处理收发；全部在 clk 上升沿运行。
+//   SPI mode 0：fall 更新 MOSI，rise 采 MISO；命令首位预置，直到第 48 个
+//   rise 采到 stop 才结束发送，避免默认慢分频下提前把卡 DO 当应答。
+//   CMD17 的 R1 由位接收器直接交给读块机，避免 FAST_DIV=1 时丢后续第一位；
+//   后续按完整 8 位字节判 token，不以跨字节滑窗把 FF+错误 token 误判为 FE。
+//   CRC16：多项式 0x1021、初值 0、MSB-first；参数上限用完整比较，禁止截断。
+//   片选高时保留 NCC_CYCLES 个空时钟是本实现的命令间隔策略，不是已证实的
+//   真卡故障根因；不假定“CS 低后绝对不允许 FF”。主机复位不等于卡断电。
+//   规范依据：SDA Physical Layer Simplified Specification v9.10 §7.2.1、
+//   §7.3.2.1/4/6；R3/R7 均为 R1+32 位载荷，不附带第六个 CRC 字节。
 // ============================================================================
 module sd_spi_ctrl #(
     parameter CLK_FREQ_HZ   = 25_000_000, // 主时钟频率（Hz），全系统统一 25MHz
     parameter SCK_INIT_DIV  = 32,         // 初始化 SCK 半周期拍数：25M/(2*32)=390.6kHz（卡要求 100~400kHz）
     parameter SCK_FAST_DIV  = 1,          // 读数据 SCK 半周期拍数：25M/(2*1)=12.5MHz（SPI 模式保守高速档）
     parameter NCR_TIMEOUT   = 128,        // 应答前导等待上限（位拍）：Ncr 最大 64 位，取 2 倍余量
-    parameter ACMD41_LOOPS  = 65536,      // ACMD41 循环上限：每轮约 300 拍，65536 轮约 0.8s（Nid 规范 1s）
-    parameter TOKEN_TIMEOUT = 1_048_576,  // 数据令牌等待上限（位拍）：2^20 @12.5MHz≈0.34s（Nac 规范 100ms）
+    parameter ACMD41_LOOPS  = 65536,      // ACMD41 最大轮询次数；总时间还取决于 SCK 与应答延迟
+    parameter TOKEN_TIMEOUT = 1_048_576,  // 令牌等待上限（位拍）：2^20 /12.5MHz≈83.89ms
     parameter RETRY_MAX     = 8,          // CMD0 重试上限：卡上电静默期偶发无应答，8 次足够
     parameter POWERUP_CYCLES = 131_071,  // 上电延时拍数（2^17-1 ≈ 5.24ms @25MHz；tb 可调小加速）
-    parameter NCC_CYCLES    = 8           // 命令间 Ncc 填充 SCK 数：SD 规范要求两条命令之间
-                                          // 至少 8 个 SCK，且这段时钟必须给在 CS 保持高时
-                                          // （CS 拉低后第一个字节就必须是命令帧，中间不能插
-                                          // 填充，否则真卡把填充当命令位流、整帧错位、无应答
-                                          // ——上板实测 err=1 即此因）。值必须 ≥8，改大只会
-                                          // 更慢不会出错
+    parameter NCC_CYCLES    = 8           // 本实现片选高时的命令间空时钟数，支持 1~15
 )(
     input  wire        clk,          // 主时钟 25MHz
     input  wire        rst_n,        // 异步复位，低有效
@@ -150,7 +76,7 @@ module sd_spi_ctrl #(
 
     // —— [2] 发送移位器 ——
     reg  [47:0] tx_shift;     // 命令帧移位寄存器（左移，bit47 先出）
-    reg  [5:0]  tx_bit_cnt;   // 已 fall 移位次数（0~46，预置首 bit 不计数）
+    reg  [5:0]  tx_bit_cnt;   // 已 fall 移位次数（0~47，预置首 bit 不计数）
     reg         tx_active;    // 发送相有效（fall 拍移位）
     reg         tx_idle_d;    // tx_active 打一拍：接收相开启前的安全隔离
     reg         ncc_need;     // 上一条命令已结束、下一条仍需补 Ncc（CS 保持高时数 SCK）
@@ -176,17 +102,17 @@ module sd_spi_ctrl #(
     // —— [5] 事务引擎 ——
     reg  [5:0]  xact_cmd;     // 当前事务命令号（帧组装用）
     reg  [31:0] xact_arg;     // 当前事务参数
-    reg         xact_r48;     // 1=收 48bit 应答（R3/R7），0=只收 R1（8bit）
+    reg         xact_r40;     // 1=收 40bit 应答（R3/R7），0=只收 R1（8bit）
     reg         xact_busy;    // 事务占用中（TX+RX 相）
     reg         xact_done;    // 事务完成 1 拍脉冲
     reg         xact_rx_ok;   // 应答起始位在 Ncr 时限内收到
-    reg  [47:0] xact_rx;      // 应答原始 48bit（R1 落 [7:0]；R3 OCR 载荷落 [39:8]，R7 echo 落 [15:8]）
+    reg  [47:0] xact_rx;      // 右对齐应答：R1=[7:0]；R3/R7=[39:0]，载荷=[31:0]
     reg         xact_req_d;   // 请求状态打一拍：上升沿检测出「发起」脉冲
     wire        xact_req;     // 请求状态（TX 态即请求，TX 态持续期间状态机不动）
     wire        req_i_fire;   // 初始化序列机请求标志（命令扇入选择用）
     wire [5:0]  cmd_idx_wire; // 当前请求的命令号扇入
     wire [31:0] xact_arg_wire;// 当前请求的参数扇入
-    wire        xact_r48_wire;// 当前请求的应答位宽扇入
+    wire        xact_r40_wire;// 当前请求的应答位宽扇入
     wire        xact_start;   // 请求上升沿 = 发起脉冲
 
     // —— [6] 初始化序列机 ——
@@ -200,9 +126,11 @@ module sd_spi_ctrl #(
     localparam [3:0] I_C55_TX  = 4'd7;  // CMD55 事务进行中（ACMD 前导）
     localparam [3:0] I_C55_RX  = 4'd8;  // CMD55 应答判定（期望 0x01）
     localparam [3:0] I_C41_TX  = 4'd9;  // ACMD41 事务进行中（arg HCS=1）
-    localparam [3:0] I_C41_RX  = 4'd10; // ACMD41 应答判定（OCR busy/CCS）
+    localparam [3:0] I_C41_RX  = 4'd10; // ACMD41 的 R1：01=继续初始化，00=就绪
     localparam [3:0] I_DONE    = 4'd11; // 初始化成功（保持电平）
     localparam [3:0] I_FAIL    = 4'd12; // 初始化失败（保持电平）
+    localparam [3:0] I_C58_TX  = 4'd13; // CMD58 读取 OCR（仅 ACMD41 就绪后）
+    localparam [3:0] I_C58_RX  = 4'd14; // R3 的 R1、OCR power-up、CCS 校验
     reg  [3:0]  st_init;      // 初始化序列状态
     reg  [3:0]  retry_cnt;    // CMD0 重试计数
     reg  [16:0] c41_loop;     // ACMD41 循环计数（上限 65536 需 17 位；卡内部初始化最长约 1s）
@@ -213,8 +141,8 @@ module sd_spi_ctrl #(
     // —— [7] 读块状态机 ——
     localparam [2:0] B_IDLE  = 3'd0;   // 空闲
     localparam [2:0] B_TX    = 3'd1;   // 拉低 CS 等待事务引擎发起 CMD17
-localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
-    localparam [2:0] B_TOK   = 3'd2;   // 字节对齐滑窗等数据令牌 0xFE
+    localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
+    localparam [2:0] B_TOK   = 3'd2;   // 按字节对齐等待数据令牌 0xFE
     localparam [2:0] B_DATA  = 3'd3;   // 512 字节数据流出
     localparam [2:0] B_CRC   = 3'd4;   // 尾部 CRC16 接收（16 位）
     localparam [2:0] B_TAIL  = 3'd5;   // 收尾（拉 CS、出 done/err）
@@ -252,21 +180,11 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     // 放在块[1b]之前定义，避免用到后面块[8] 的 assign。
     assign cs_n_int  = init_done ? cs_n_b : cs_n_i;
     assign cs_rise   = cs_n_int & ~cs_n_int_d;   // CS 由低变高 = 命令窗口收尾
-    // Ncc 就绪：没有待补的命令间隔时立即放行（首条命令 / SEND80 之后天然满足）
-    // 为什么还要 & ~cs_rise：CS 上升沿那一拍 ncc_need 尚未置位（块[1b] 的 NBA 下拍才
-    // 生效），若此时只看 ~ncc_need 会得到 1，状态机就在下一拍立刻把 CS 又拉低——CS 只
-    // 高了 1 拍、Ncc 一个都没数到，真卡判定命令间隔不足而丢弃命令（上板实测 err=1）。
-    // 把 cs_rise 一起排除，保证「CS 变高 → 数满 Ncc → 才允许再拉低」这条链不断。
+    // 就绪条件同时排除 CS 上升拍，避免 ncc_need 尚未 NBA 更新时提前放行。
+    // 输入：片选上升与空时钟计数；输出：命令请求门控 ncc_ready。
     assign ncc_ready = ~ncc_need & ~cs_rise;
-    // 块[1b]：Ncc 命令间隔补充——CS 保持高期间数 SCK 下降沿，满 NCC_CYCLES 个才放行
-    // 为什么必须挂在「CS 高」这一侧：SD 规范要求 CS 拉低后的第一个字节就是命令帧，
-    // 中间不许插填充；Ncc 是「命令与命令之间」的空闲时钟，只能给在 CS 高期间。
-    // 为什么计起点是 CS 上升沿（而非 xact_done）：读块事务的 xact_done 发生在 B_R1
-    // （CMD17 的 R1 应答收完），此后 CS 仍保持低、还要收令牌与 512B 数据，SCK 会继续
-    // 翻几千个周期。若以 xact_done 为起点，ncc_need 会在数据相里就被数满清零，等
-    // B_TAIL 真正拉高 CS、SCK 停下后，下一条命令前只剩收尾残余的 2 个 SCK——真卡判
-    // 定 Ncc 不足，丢弃下一条命令。以 CS 上升沿为起点才与规范语义一致：Ncc 是「CS
-    // 拉高之后、下一次拉低之前」的那段时钟。
+    // 块[1b]：输入 CS 上升、sck_fall，输出 ncc_need/ncc_cnt。
+    // 从真正的片选释放开始补空时钟，不能从 CMD17 的 R1 完成拍开始计时。
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             ncc_need   <= 1'b0;
@@ -327,10 +245,8 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     // ------------------------------------------------------------------------
     // 块[2a]：命令帧发送——预置 start=0 → rise#1 卡采样 → fall#1 出 bit46 →
     //   rise#2 采样 → … → fall#47 出 bit0 → rise#48 采样，共 48 个上升沿，位序不漂移。
-    // 注：SD 规范的 Ncc（两条命令之间至少 8 个 SCK）**不在本块实现**。它必须发生在
-    //   CS 保持高的窗口里（见状态机的 I_NCC / B_NCC 等待态）；本块是 CS 已拉低后的
-    //   发送相，若把填充塞在这里，真卡会把它当成 CS 拉低后的头一个字节流，导致整条
-    //   命令位序错位（上板实测：CMD0 直接无应答，probe 报 err=1）。
+    // 输入：xact_start、命令帧、SCK 锚点；输出：MOSI、tx_active。
+    // 命令间空时钟在块[1b]完成；此处只负责完整 48 位命令。
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             tx_shift   <= 48'd0;
@@ -349,15 +265,14 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                 tx_bit_cnt <= 6'd0;
                 tx_active  <= 1'b1;
                 sd_mosi    <= 1'b0;      // 首位 start=0 立即上总线（关键：第一个边沿是 rise，不预置会漏发）
-            end else if (tx_active && sck_fall) begin
-                sd_mosi  <= tx_shift[46];            // 下一位（bit47 已在上一 rise 被卡采样）
-                tx_shift <= {tx_shift[46:0], 1'b0};  // 左移 1 位对齐下一位（读 [46] 出 bit46→bit45→…）
-                if (tx_bit_cnt == 6'd46) begin
-                    tx_active <= 1'b0;   // 预置 1 次 + fall 47 次 = 48 位发完
-                    sd_mosi   <= 1'b1;   // 应答期 MOSI 回高（dummy 0xFF）
-                end else begin
-                    tx_bit_cnt <= tx_bit_cnt + 6'd1;
-                end
+            end else if (tx_active && sck_fall && tx_bit_cnt < 6'd47) begin
+                sd_mosi  <= tx_shift[46];          // 上一位已在 rise 被卡采样，fall 放下一位
+                tx_shift <= {tx_shift[46:0], 1'b0};
+                tx_bit_cnt <= tx_bit_cnt + 6'd1;
+            end else if (tx_active && sck_rise && tx_bit_cnt == 6'd47) begin
+                // 必须等第 48 个 rise 采到 stop=1 后才交出发送权；DIV32 下尤其重要。
+                tx_active <= 1'b0;
+                sd_mosi   <= 1'b1;
             end else if (!tx_active && !xact_busy) begin
                 sd_mosi <= 1'b1;         // 空闲期 MOSI 保持高
             end
@@ -365,10 +280,10 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     end
 
     // ------------------------------------------------------------------------
-    // [3] 应答接收器：安全隔离 → 等 MISO 变低 → 收 8/48bit → rx_done
+    // [3] 应答接收器：完整发送结束 → 等 MISO 变低 → 收 8/40bit → rx_done
     // ------------------------------------------------------------------------
     // 块[3a]：应答位接收与 Ncr 超时——发送相结束 + tx_idle_d 隔离 1 拍后，
-    // 每个 sck_rise 采样 MISO：变低即起始位，随后收 xact_r48 位。
+    // 输入：tx_active/xact_busy、MISO/SCK；输出：右对齐应答及正常/超时完成脉冲。
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             rx_shift   <= 48'd0;
@@ -395,11 +310,8 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                         rx_wait    <= 1'b0;
                         rx_got     <= 1'b1; // 起始位捕获
                         rx_bit_cnt <= 6'd0;
-                        // 起始位=应答首字节 MSB，协议强制为 0——预填 0 而非移入 miso：
-                        // 捕获位若进移位链，R7/R3 收 47 位后它会从 [47] 溢出（实际
-                        // 收了 49 位），echo/OCR 锚点全错。预填 0 随左移对齐：
-                        // R1 收 7 位后 0 落 [7]，rx[7:0] 恰为完整 R1 字节；
-                        // R7/R3 收 47 位后 0 落 [47] 占位，rx[46:0] 为线序应答体。
+                        // 当前采到的是 R1 的 MSB=0；清零后再收剩余 7/39 位。
+                        // 完成后 R1 右对齐至 [7:0]，R3/R7 右对齐至 [39:0]。
                         rx_shift   <= 48'd0;
                     end else if (ncr_cnt == NCR_TIMEOUT[7:0]) begin
                         rx_wait    <= 1'b0;
@@ -410,11 +322,8 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                 end
             end else if (rx_got && sck_rise) begin
                 rx_shift <= {rx_shift[46:0], sd_miso};
-                // 交付计数 = 应答体位数（7/47）：起始位已被捕获拍预填的 0 占位，
-                // 收 7 位后 0 恰移至 [7]（R1 型 rx[7:0]=完整 R1 字节）、
-                // 收 47 位后 0 移至 [47]（R7/R3 型 [46:0] 为线序应答体，字节对齐）。
-                // 若按 8/48 计数，预填 0 会被冲出，起始位照样丢失。
-                if (rx_bit_cnt == (xact_r48 ? 6'd46 : 6'd6)) begin
+                // 首个 0 已收，剩余 7/39 次；计数从 0 开始，终值分别为 6/38。
+                if (rx_bit_cnt == (xact_r40 ? 6'd38 : 6'd6)) begin
                     rx_got     <= 1'b0;
                     rx_done_ok <= 1'b1;  // 应答收满交付（rx_done_ok 即成功信息）
                 end else begin
@@ -459,26 +368,30 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     // ncc_ready 门控：上一条命令结束后需在 CS 高期间补满 NCC_CYCLES 个 SCK，未满时
     // 状态机虽已进 TX 态，但 CS 不会拉低（见各 TX 态的 cs_n<=0 守卫），自然也不会发起。
     assign xact_req = (((st_init == I_C0_TX)  | (st_init == I_C8_TX)
-                     |  (st_init == I_C55_TX) | (st_init == I_C41_TX)) & ~cs_n_i
+                     |  (st_init == I_C55_TX) | (st_init == I_C41_TX)
+                     |  (st_init == I_C58_TX)) & ~cs_n_i
                      | ((st_blk == B_TX) & ~cs_n_b)) & ncc_ready;
     assign req_i_fire = (st_init == I_C0_TX)  | (st_init == I_C8_TX)
-                      | (st_init == I_C55_TX) | (st_init == I_C41_TX);
+                      | (st_init == I_C55_TX) | (st_init == I_C41_TX)
+                      | (st_init == I_C58_TX);
     assign cmd_idx_wire = req_i_fire ? (st_init == I_C0_TX  ? 6'd0  :
                                         st_init == I_C8_TX  ? 6'd8  :
-                                        st_init == I_C55_TX ? 6'd55 : 6'd41)
+                                        st_init == I_C55_TX ? 6'd55 :
+                                        st_init == I_C41_TX ? 6'd41 : 6'd58)
                                      : 6'd17;
     assign xact_arg_wire = req_i_fire ? (st_init == I_C8_TX  ? 32'h0000_01AA :
                                          st_init == I_C41_TX ? 32'h4000_0000 :
                                          32'd0)
                                       : blk_addr_r;
-    assign xact_r48_wire = req_i_fire ? ((st_init == I_C8_TX) | (st_init == I_C41_TX))
+    // SPI：CMD8(R7)、CMD58(R3)是 R1+32bit；ACMD41 仅有 R1。
+    assign xact_r40_wire = req_i_fire ? ((st_init == I_C8_TX) | (st_init == I_C58_TX))
                                       : 1'b0;
     // 块[5a]：事务主控——发起锁存、完成交付
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             xact_cmd   <= 6'd0;
             xact_arg   <= 32'd0;
-            xact_r48   <= 1'b0;
+            xact_r40   <= 1'b0;
             xact_busy  <= 1'b0;
             xact_done  <= 1'b0;
             xact_rx_ok <= 1'b0;
@@ -490,7 +403,7 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
             if (xact_start) begin
                 xact_cmd  <= cmd_idx_wire;
                 xact_arg  <= xact_arg_wire;
-                xact_r48  <= xact_r48_wire;
+                xact_r40  <= xact_r40_wire;
                 xact_busy <= 1'b1;
             end else if (rx_done_ok) begin
                 xact_busy  <= 1'b0;
@@ -506,9 +419,9 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     end
 
     // ------------------------------------------------------------------------
-    // [6] 初始化序列机：上电→80 SCK→CMD0→CMD8→(CMD55+ACMD41)×N→DONE/FAIL
+    // [6] 初始化：上电→80 SCK→CMD0→CMD8→(CMD55+ACMD41)×N→CMD58→DONE/FAIL
     // ------------------------------------------------------------------------
-    // 块[6a]：序列主控——所有等待都有出口，失败带错误码停机
+    // 块[6a]：输入事务应答/超时，输出下条命令状态、片选、初始化结果及分频。
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             st_init   <= I_POWERUP;
@@ -572,7 +485,8 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                             st_init    <= I_FAIL;
                         end else begin
                             retry_cnt <= retry_cnt + 4'd1;
-                            st_init   <= I_SEND80; // 重新给空周期再试
+                            cnt80     <= 7'd0; // 每轮重试都给完整 80 个时钟，不能沿用 79
+                            st_init   <= I_SEND80;
                         end
                     end
                 end
@@ -587,9 +501,8 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                 I_C8_RX: begin
                     if (xact_done) begin
                         cs_n_i <= 1'b1;
-                        // R7 布局（起始位预填 0 落 [47]）：[46:40] R1 低 7 位（R1=0x01
-                        // 时 MSB0 兼起始位，rx[46:40]=0011111）、[15:8] echo 字节 0xAA
-                        if (xact_rx_ok && xact_rx[15:8] == 8'hAA) begin
+                        // R7 共 40 位：R1=01、保留位=0、VHS=1、echo=AA，全字段校验。
+                        if (xact_rx_ok && xact_rx[39:0] == 40'h01_0000_01AA) begin
                             st_init <= I_C55_TX;
                         end else begin
                             err_code_i <= 4'd2;   // 非 SDv2 卡（或电压不受支持）
@@ -629,38 +542,47 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                 I_C41_RX: begin
                     if (xact_done) begin
                         cs_n_i <= 1'b1;
-                        if (!xact_rx_ok) begin
-                            // 应答超时：继续轮询（卡忙时偶发丢弃）
-                            if (c41_loop == ACMD41_LOOPS[15:0]) begin
-                                err_code_i <= 4'd3;
-                                init_fail  <= 1'b1;
-                                st_init    <= I_FAIL;
-                            end else begin
-                                c41_loop <= c41_loop + 17'd1;
-                                st_init  <= I_C55_TX;
-                            end
-                        end else if (xact_rx[39] == 1'b1) begin
-                            // R3 布局（起始位预填 0 落 [47]）：[46:40] R1 低 7 位、
-                            // [39:32] OCR[31:24]=0xC0 → OCR[31]=rx[39]、CCS=OCR[30]=rx[38]
-                            if (xact_rx[38] == 1'b1) begin
-                                sck_div_r <= SCK_FAST_DIV[5:0]; // 切高速时钟
-                                init_done <= 1'b1;
-                                st_init   <= I_DONE;
-                            end else begin
-                                err_code_i <= 4'd4;   // OCR[30]=0：SDSC 不支持
-                                init_fail  <= 1'b1;
-                                st_init    <= I_FAIL;
-                            end
+                        if (xact_rx_ok && xact_rx[7:0] == 8'h00) begin
+                            st_init <= I_C58_TX; // 仅 R1=00 代表就绪；OCR 必须另发 CMD58
+                        end else if (xact_rx_ok && xact_rx[7:0] != 8'h01) begin
+                            err_code_i <= 4'd3; // ACMD41 返回非法命令等异常 R1
+                            init_fail  <= 1'b1;
+                            st_init    <= I_FAIL;
+                        end else if (c41_loop >= ACMD41_LOOPS - 1) begin
+                            // 比较完整参数；不能切成 16 位，否则默认 65536 会变成 0。
+                            err_code_i <= 4'd3;
+                            init_fail  <= 1'b1;
+                            st_init    <= I_FAIL;
                         end else begin
-                            // OCR[31]=0：卡仍在初始化，继续轮询
-                            if (c41_loop == ACMD41_LOOPS[15:0]) begin
-                                err_code_i <= 4'd3;
-                                init_fail  <= 1'b1;
-                                st_init    <= I_FAIL;
-                            end else begin
-                                c41_loop <= c41_loop + 17'd1;
-                                st_init  <= I_C55_TX;
-                            end
+                            c41_loop <= c41_loop + 17'd1;
+                            st_init  <= I_C55_TX; // R1=01 或无应答：有界重试
+                        end
+                    end
+                end
+                I_C58_TX: begin
+                    if (ncc_ready) begin
+                        cs_n_i <= 1'b0;
+                    end
+                    if (xact_start) begin
+                        st_init <= I_C58_RX;
+                    end
+                end
+                I_C58_RX: begin
+                    if (xact_done) begin
+                        cs_n_i <= 1'b1;
+                        // R3 共 40 位：[39:32]=R1，[31:0]=OCR；无独立 CRC 尾字节。
+                        if (!xact_rx_ok || xact_rx[39:32] != 8'h00 || !xact_rx[31]) begin
+                            err_code_i <= 4'd3; // OCR 未就绪或 CMD58 应答异常
+                            init_fail  <= 1'b1;
+                            st_init    <= I_FAIL;
+                        end else if (!xact_rx[30]) begin
+                            err_code_i <= 4'd4; // OCR.CCS=0：本实现不支持 SDSC
+                            init_fail  <= 1'b1;
+                            st_init    <= I_FAIL;
+                        end else begin
+                            sck_div_r <= SCK_FAST_DIV[5:0];
+                            init_done <= 1'b1;
+                            st_init   <= I_DONE;
                         end
                     end
                 end
@@ -680,7 +602,7 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
     // ------------------------------------------------------------------------
     // [7] 读块状态机：CMD17→R1==0x00→令牌 0xFE→512B 流出→CRC16→TAIL
     // ------------------------------------------------------------------------
-    // 块[7a]：读块主控——blk_start 仅在 init_done 且空闲时被接受
+    // 块[7a]：输入块请求/位应答/MISO，输出块握手、字节流、读块片选与 CRC16。
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             st_blk       <= B_IDLE;
@@ -712,7 +634,7 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                         blk_busy     <= 1'b1;
                         tok_active   <= 1'b0;
                         tok_bits     <= 3'd0;
-                        tok_shift    <= 8'hFF;   // 滑窗预填 0xFF（令牌前导态）
+                        tok_shift    <= 8'hFF;   // 暂存清空；R1 结束后重新建立 token 字节边界
                         data_bit_cnt <= 13'd0;
                         crc_bit_cnt  <= 5'd0;
                         crc16_r      <= 16'd0;   // CRC 初值（每次块读重置）
@@ -730,47 +652,37 @@ localparam [2:0] B_R1    = 3'd6;   // 已发起，等 R1 应答（0x00=接受）
                     end
                 end
                 B_R1: begin
-                    if (xact_done) begin
-                        if (xact_rx_ok && xact_rx[7:0] == 8'h00) begin
+                    // 直接消费位接收器的完成拍，省去 xact_done 的额外交付拍。
+                    // FAST_DIV=1 时下个 rise 仅隔两个 clk；否则会丢掉令牌第一位。
+                    if (rx_done_ok || rx_done_to) begin
+                        if (rx_done_ok && rx_shift[7:0] == 8'h00) begin
                             tok_cnt    <= 20'd0;
-                            // 令牌滑窗装入 R1 应答字节作窗口历史：R1[0]（引擎交付后
-                            // 的第 8 位）紧接其后进窗。若预填 0xFF，错误令牌场景
-                            // （R1 后无填充直接 0x0X）首个 0 会与预填 1 拼成假 0xFE
-                            // 窗口误转 B_DATA；从 R1 字节起步则前导 1 需真实收满
-                            // 7 个才可能成窗，且字节对齐锚点=R1[0] 之后的每 8 位
-                            tok_shift  <= xact_rx[7:0];
+                            tok_bits   <= 3'd0;
+                            tok_shift  <= 8'd0;
                             tok_active <= 1'b1;
                             st_blk     <= B_TOK;
                         end else begin
-                            err_code_b <= 3'd7; // CMD17 应答非 0x00
+                            err_code_b <= 3'd7; // CMD17 应答超时或 R1 非 00
                             st_blk     <= B_TAIL;
                         end
                     end
                 end
                 B_TOK: begin
                     if (sck_rise) begin
-                        if (tok_cnt == TOKEN_TIMEOUT[19:0]) begin
-                            err_code_b <= 3'd5; // 令牌等待超时
+                        tok_cnt   <= tok_cnt + 20'd1;
+                        tok_shift <= {tok_shift[6:0], sd_miso};
+                        tok_bits  <= tok_bits + 3'd1;
+                        // R1 后第一位即开始新字节；只在第 8 位判 token，禁止跨字节拼 FE。
+                        if (tok_bits == 3'd7 && {tok_shift[6:0], sd_miso} == 8'hFE) begin
+                            tok_bits <= 3'd0;
+                            st_blk   <= B_DATA;
+                        end else if (tok_bits == 3'd7 && {tok_shift[6:0], sd_miso} != 8'hFF) begin
+                            err_code_b <= 3'd5; // 错误令牌或非法非 FF 字节
                             st_blk     <= B_TAIL;
-                        end else begin
-                            tok_cnt   <= tok_cnt + 20'd1;
-                            tok_shift <= {tok_shift[6:0], sd_miso};
-                            tok_bits  <= tok_bits + 3'd1;   // 模 8 回绕
-                            // 0xFE 每拍滑窗判（字节对齐锚点）：R1 应答后 DUT 首个
-                            // rise 不保证落在令牌字节边界（交付链滞后 1~2 位），靠
-                            // Ncr 前导 1 补齐窗口——检出拍即令牌末位，B_DATA 从
-                            // 下一 rise 起天然字节对齐。判定若套「tok_bits==7」外层
-                            // 会读旧值晚一拍，窗口已被挤掉最高位而永远 miss
-                            if ({tok_shift[6:0], sd_miso} == 8'hFE) begin
-                                tok_bits <= 3'd0;
-                                st_blk   <= B_DATA;
-                            end else if (tok_bits == 3'd7 && tok_shift[6] == 1'b0) begin
-                                // 字节对齐边界上的 0x0X = 错误令牌（0xFE 已先行排除：
-                                // 其末位 0 前高 7 位全 1，MSB 恒 1 不会进本分支）
-                                err_code_b <= 3'd5;
-                                st_blk     <= B_TAIL;
-                            end
-                            // 0xFF：仍是前导，继续滑窗
+                        end else if (tok_cnt >= TOKEN_TIMEOUT - 1) begin
+                            // 终值为上限减 1；完整比较，不把默认 2^20 切片成 0。
+                            err_code_b <= 3'd5;
+                            st_blk     <= B_TAIL;
                         end
                     end
                 end
