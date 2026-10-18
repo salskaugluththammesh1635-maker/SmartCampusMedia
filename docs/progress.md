@@ -312,6 +312,113 @@ testbench 膨胀数倍且更难维护。
 tb_seg_scan4、tb_pwm_audio_out、tb_dmz_eg4s20_bringup 全绿；
 STA SWNS 6.295ns / HWNS 0.038ns / 0 违例；新 bit 629,640B。
 
+## S2 上板 err=1：Ncc 填充位置错误（2026-10-17 晚）
+
+err=7 修复上板后现象变为 **err=1（CMD0 重试用尽）**——比 err=7 更早失败，
+说明干预点确实命中了命令帧，但方向错了。
+
+- **根因一（8753d82）**：上一版把 Ncc 的 8 个填充 SCK 放在 **CS 已拉低之后**
+  （发送器两段式）。真卡把填充位当成 CS 拉低后的头一个字节流，整条命令位序
+  错位，连 CMD0 都无应答。修正为引擎级约束：**Ncc 必须在 CS 保持高期间补足**。
+- **根因二（f620729）**：`ncc_ready = ~ncc_need` 在 CS 刚变高的那一拍仍为 1
+  （块[1b] 的 `ncc_need` 是 NBA，下一拍才生效），状态机立刻又把 CS 拉低，
+  CS 只高了 1 拍、Ncc 一个时钟都没补。修正：就绪判定**排除 CS 上升沿**。
+
+## S2 上板 err=2：ACMD41 应答格式与默认参数截断（2026-10-19，460163e）
+
+err=1 修复后现象变为 **err=2（CMD8/CMD55 异常）、LED0 仍灭**。本轮改用独立协议
+回归逐条证伪，暴露三类缺陷（均属"仿真测不出、真卡才暴"）：
+
+| # | 缺陷 | 机理 | 修复 |
+|---|---|---|---|
+| 1 | ACMD41 应答格式 | SD 规范中 ACMD41 **只返回 R1（8 位）**，旧实现按 40 位长应答接收，卡在 R1 之后给出的位被误当载荷，初始化判据整体偏移。**既有仿真的卡模型按同样错误格式应答，所以"仿真通过"是假绿** | 应答接收器按 `xact_r40` 区分：CMD8/CMD58 收 40 位，ACMD41 只收 R1 |
+| 2 | 默认参数截断 | `ACMD41_LOOPS=65536` 需 17 位、`TOKEN_TIMEOUT=1048576` 需 21 位，比较时被 16/20 位切片截成 **0** → 默认参数下等价"立即超时"。仿真改小参数恰好绕开 | `c41_loop` 用 17 位；参数上限**完整比较**，禁止截断 |
+| 3 | 位级边界 | ① 48 位命令未等第 48 个 rise 采到 stop 就交出发送权，慢分频下提前把卡 DO 当应答；② CMD17 的 R1 与读块机之间丢令牌首位（`FAST_DIV=1`）；③ 令牌用跨字节滑窗判定，会把 `FF`+错误令牌误判成 `FE` | 命令发送等第 48 个 rise；R1 由位接收器直连读块机；令牌按完整 8 位字节判定 |
+
+**新增独立回归 `sim/testbench/tb_sd_spi_protocol.v`**（本轮关键资产）：
+
+- 卡模型使用真实 R1/R3/R7 格式与**默认参数**（`LOOP_LIMIT=65536`、
+  `TOKEN_LIMIT=1048576`、`POWERUP_DELAY=131071`），不读 DUT 内部状态；
+- 卡模型**不随 `rst_n` 复位** idle/app 状态——复现"主机复位 ≠ 卡断电"的真实行为；
+- 覆盖：命令期间 DO 被拉低不误判为应答、传输中途复位、初始化轮询收敛、
+  载荷阶段复位后主机恢复、连续 FF 令牌超时、非 SDHC 拒绝、帧与参数合法性。
+
+**验证（2026-10-19 00:18，ModelSim 10.1d）**：
+
+- `tb_sd_spi_protocol` → **ALL CHECKS PASSED**（11 项）
+- `tb_sd_spi_ctrl` → **ALL CHECKS PASSED, errors = 0**（含 T8 Ncc 间隔 ≥8 SCK）
+- `tb_sd_probe` → **ALL CHECKS PASSED, errors = 0**
+- `python scripts/lint_verilog.py rtl project/src` → 21 文件，**E0/E1/E2 全 0**
+
+**同时修正的工程问题**：`project/hdmi_td.al` 曾丢失 `hdmi/sd_spi_ctrl.v`、
+`hdmi/sd_probe.v` 两个文件条目（TD 打开工程时被清理），而顶层第 419/441 行
+明确例化了它们 → 综合会得到 black box，**SD 逻辑根本不进 bit**。已还原。
+排查"LED0 灭"时必须先确认这两个条目在位，否则代码再对也无效。
+
+**bit 已重新生成并复核**（2026-10-19 00:16:49）：
+`project/hdmi_td_Runs/phy_1/hdmi_td.bit` 629640 字节；TD 日志
+`project/td_20261019_001625.log` 显示流程走完，
+`SWNS: 6.254, STNS: 0.000, Hold WNS: 0.038, FEP: 0`，0 违例。
+`reports/hdmi_area.txt` 层次表证明 SD 逻辑**确实进了 bit**（非 black box）：
+`u_sd | sd_spi_ctrl | le=535 lut=447 seq=333`、`u_probe | sd_probe | le=72 lut=58 seq=53`。
+整体：IO 41/188，#lut 1586/19600（8.09%），#reg 866，#bram 0，#dsp 0，#pll 1，#gclk 1。
+管脚：SD=SCK F15 / CS F13 / MOSI F14 / MISO D14；HDMI=P1/N1/P4/J3（LVDS33）；
+音频 F3；复位 E3；时钟 R7（50MHz）。
+
+**仍未验证**：真卡上板行为（本轮无人在板边。上板步骤见
+`docs/session_handover_2026-10-19.md`）。
+
+## P2-6：新增「初始化中途主机复位」回归 T12（2026-10-19）
+
+旧界面缺口：`tb_sd_spi_protocol.v` 原有 T7 是初始化**完成后**的热复位，
+T9 是**传输中途**复位，而「初始化过程之中被硬复位」一直是空白。
+
+**新增内容**（`sim/testbench/tb_sd_spi_protocol.v`）：
+
+1. 新增 `rerun_initialization` task（**不复位主机**，只等 `POWERUP_DELAY+10` 拍后发
+   `init_start` 并等终态）。若复用 `start_initialization`，它开头的 `rst_n=0`
+   会把 T12 制造的「中途现场」二次清掉，测不到真正的中途恢复。
+   `start_initialization` 原样保留。
+2. T12 五轮：分别在「80 空时钟窗口」与「第 1..4 个命令窗口 + 24 拍」处打断，
+   再拉低 `rst_n` 五拍后释放，然后重跑初始化并读一个块；
+   `card_idle`/`busy_polls`/`ncr_bytes` 按 scenario 交替变化。
+3. T12 头部注释明确边界：本场景检验的是**主机侧**（序列机 / 事务引擎 / 分频器
+   能否从任意中途状态经硬复位恢复干净并重建字节边界），
+   **不以卡被动就绪为前提**——因为重跑初始化必然先发 CMD0（GO_IDLE_STATE）
+   把卡拉回 idle，“卡不断电所以 CMD8 会收到 R1=00”的推断不成立。
+
+**实跑（ModelSim 10.1d）**：默认参数 `ALL CHECKS PASSED`；
+`-gINIT_DIV={1,2,3,4} -gLOOP_LIMIT=16 -gTOKEN_LIMIT=2048 -gPOWERUP_DELAY=100` 下**各 62 PASS / 0 FAIL**。
+
+## T12 变异测试：能力边界的诚实记录（2026-10-19）
+
+目的：验证 T12 是否真能杀欠陷，而非永远假绿。全部在独立库 `mutlib_N` 中编译，
+跑 `-gINIT_DIV=2 -gLOOP_LIMIT=16 -gTOKEN_LIMIT=2048 -gPOWERUP_DELAY=100`，完成后已全部删除。
+
+| # | 变异（均针对 `rtl/storage/sd_spi_ctrl.v`） | 结果 |
+|---|---|---|
+| mut1 | 删 `tx_bit_cnt <= 6'd0;` | 62 PASS 0 FAIL（未杀死）|
+| mut2 | 复位不释放读块片选 `cs_n_b <= cs_n_b` | 23 PASS **9 FAIL**（由 T1–T4 杀死，非 T12）|
+| mut3 | 复位时 `tx_active` 保留 | 0 FAIL（未杀死）|
+| mut4 | 复位时 `cs_n_i` 保留 | 0 FAIL（未杀死）|
+| mut5 | 复位时 `xact_busy` 保留 | 0 FAIL（未杀死）|
+| mut6 | 复位时 `div_cnt` 保留（SCK 相位残留）| 0 FAIL（未杀死）|
+| mut7 | 复位时 `rx_shift` 保留 | 0 FAIL（未杀死）|
+| mut8 | 复位时 `tx_shift`/`tx_bit_cnt` 保留 | 0 FAIL（未杀死）|
+| mut9 | 删 `st_init <= I_POWERUP;` | **3 FAIL**（T5 SDSC、T6 R7、T11 无卡，非 T12）|
+| mut10 | 删 `st_blk <= B_IDLE;` | **8 FAIL**（T1/T4/T9/T10 等块读与传输中途复位，非 T12）|
+
+**结论（不得美化）**：T12 全过，但**没有任何一个变异体是被 T12 单独或首个捕获的**。
+mut9/mut10 由既有 T5/T6/T9/T10/T11 捕获，mut2 由 T1–T4 捕获，其余 6 个变异被 RTL
+中其它路径自然吸收。即：T12 目前具备**回归防回退**价值（守护「中途复位可恢复」
+不被后续改坏），但**尚未证明能独立发现新缺陷**。
+不得据此写「T12 证明中途复位健壮」这类超出证据的话。
+
+**测试计数陷阱（吹遭过，勿重犯）**：用 `Select-String -Pattern '^# FAIL|CHECKS FAILED|TIMEOUT'`
+统计得到 `FAIL_lines=3` 的误报——`CHECKS FAILED` 中的 `CHECKS` 也会匹配 `ALL CHECKS PASSED`。
+正确做法是 `Where-Object { $_ -like '*# FAIL:*' }` 精确匹配。
+
+
 ## 问题记录
 
 | 日期 | 问题 | 影响 | 处理 | 状态 |

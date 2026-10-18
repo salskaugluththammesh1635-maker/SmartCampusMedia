@@ -249,6 +249,27 @@ module tb_sd_spi_protocol;
         end
     end
 
+    // 功能：不复位主机，仅等上电计数并重新发起初始化。
+    // 输入：无（用 card_idle 之前的现场）；输出：init_done/init_fail/err_code。
+    // 用途：T12 在中途硬复位之后调用，复位本身由调用者完成，
+    //       否则「中途复位」会被这里的复位吞掉，测不到真正的现场恢复。
+    task rerun_initialization;
+        integer elapsed;
+        begin
+            init_start = 1'b0;
+            blk_start  = 1'b0;
+            repeat (POWERUP_DELAY + 10) @(negedge clk);
+            init_start = 1'b1;
+            @(negedge clk) init_start = 1'b0;
+            elapsed = 0;
+            while (!init_done && !init_fail && elapsed < 1000000) begin
+                @(negedge clk);
+                elapsed = elapsed + 1;
+            end
+            check(init_done || init_fail, "initialization reaches terminal state");
+        end
+    endtask
+
     task start_initialization;
         integer elapsed;
         begin
@@ -381,6 +402,44 @@ module tb_sd_spi_protocol;
         start_initialization;
         check(init_fail && err_code == 1, "no card reports CMD0 retry exhaustion");
         card_present = 1'b1;
+        // T12：主机复位发生在初始化过程之中，而不是初始化完成之后（T7）或
+        // 传输之中（T9）。卡不断电，但 CMD0 本身就是 GO_IDLE_STATE——复位后
+        // 重跑初始化必然先发 CMD0 把卡拉回 idle，因此本场景检验的是主机侧：
+        // FPGA 的序列机/事务引擎/分频器能否从任意中途状态经硬复位恢复干净，
+        // 并在重新初始化后重建与卡的字节边界（不以卡状态被动就绪为前提）。
+        $display("T12: host reset in the middle of initialization, card stays powered");
+        for (scenario = 0; scenario < 5; scenario = scenario + 1) begin
+            card_idle   = (scenario % 2);   // 交替覆盖卡仍 idle / 卡已就绪两种起点
+            polls       = 0;
+            app_pending = 1'b0;
+            busy_polls  = scenario % 3;
+            ncr_bytes   = 1 + (scenario % 4);
+            @(negedge clk) rst_n = 1'b0;
+            repeat (3) @(negedge clk);
+            @(negedge clk) rst_n = 1'b1;
+            repeat (POWERUP_DELAY + 4) @(negedge clk);
+            init_start = 1'b1;
+            @(negedge clk) init_start = 1'b0;
+            if (scenario == 0) begin
+                repeat (16) @(negedge clk);        // 80 空时钟期间：卡尚未收到任何命令
+            end else begin
+                repeat (scenario) @(negedge sd_cs_n); // 第 1..4 个命令窗口
+                repeat (24) @(negedge clk);        // 命令帧或应答正在传输
+            end
+            @(negedge clk) rst_n = 1'b0;           // 中途硬复位，卡不断电
+            repeat (5) @(negedge clk);
+            @(negedge clk) rst_n = 1'b1;
+            rerun_initialization;                  // 复用现场，不再额外复位一次
+            check(init_done && !init_fail, "reset during init window reinitializes live card");
+            if (init_done) begin
+                read_block(32'd10 + scenario);
+                check(received == 512 && byte_errors == 0 && err_code == 0,
+                      "block read after mid-init reset keeps byte alignment");
+            end
+        end
+        card_idle  = 1'b0;
+        ncr_bytes  = 1;
+        busy_polls = 2;
         check(command_errors == 0, "all commands have valid frames and required arguments");
         if (LOOP_LIMIT <= 8) begin
             $display("T8: ACMD41 stays idle until loop limit");
