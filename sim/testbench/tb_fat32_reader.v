@@ -40,6 +40,9 @@ module tb_fat32_reader;
     wire [3:0]  err_code;
     wire [31:0] file_size;
     wire [31:0] first_cluster;
+    wire [31:0] out_data_begin;   // 新增输出：数据区首扇区号
+    wire [31:0] out_fat_begin;    // 新增输出：FAT 表首扇区号
+    wire [7:0]  out_spc;          // 新增输出：每簇扇区数
 
     wire        blk_start;
     wire [31:0] blk_addr;
@@ -63,6 +66,9 @@ module tb_fat32_reader;
         .err_code      (err_code),
         .file_size     (file_size),
         .first_cluster (first_cluster),
+        .out_data_begin(out_data_begin),
+        .out_fat_begin (out_fat_begin),
+        .out_spc       (out_spc),
         .blk_start     (blk_start),
         .blk_addr      (blk_addr),
         .blk_busy      (blk_busy),
@@ -460,6 +466,12 @@ module tb_fat32_reader;
         chk(!fail,      "T01 no failure flag");
         chk(first_cluster == 32'd5,     "T01 first cluster = 5");
         chk(file_size     == 32'd921654,"T01 file size = 921654 (921,654 B)");
+        // 新增输出：默认 BPB(rv=1, spc=1, nf=2, fsz=1) 且分区起点 PART_LBA=4
+        //   fat_begin  = 4 + 1          = 5
+        //   data_begin = 5 + 2 × 1      = 7
+        chk(out_fat_begin  == 32'd5, "T01 out_fat_begin  = 5  (part 4 + reserved 1)");
+        chk(out_data_begin == 32'd7, "T01 out_data_begin = 7  (fat 5 + 2 x 1)");
+        chk(out_spc        == 8'd1,  "T01 out_spc        = 1");
 
         // ---------------- T02 小写短名命中 ----------------
         build_image(SC_BASIC);

@@ -101,7 +101,14 @@ module fat32_reader #(
     input  wire        blk_done,       // 脉冲: 块读完成
     input  wire        blk_err,        // 脉冲: 块读失败
     input  wire [7:0]  data_byte,      // 电平: 块数据字节
-    input  wire        data_valid      // 脉冲: data_byte 有效
+    input  wire        data_valid,     // 脉冲: data_byte 有效
+    // —— 供 img_loader 做簇链遍历的参数（定位成功后稳定，失败时为 X）——
+    //   本模块只负责「找到文件在哪、多大、首簇是谁」，
+    //   真正把文件内容按簇链读出来的是 img_loader；
+    //   后者必须知道数据区起点 / FAT 表起点 / 每簇扇区数才能自己算扇区地址。
+    output wire [31:0] out_data_begin, // 数据区首扇区号（簇 2 所在扇区）
+    output wire [31:0] out_fat_begin,  // FAT 表首扇区号（簇 N 的 FAT 项所在处）
+    output wire [7:0]  out_spc         // 每簇扇区数（2 的幂）
 );
 
     // ------------------------------------------------------------------------
@@ -160,6 +167,16 @@ module fat32_reader #(
 
     // —— [4] 短名期望译码（块④ 输出）——
     reg  [7:0]  exp_byte;     // 当前项内偏移处期望的短名字节（大写形式）
+
+    // —— 对外暴露的簇链遍历参数 ——
+    //   这三个值是 img_loader 自己算扇区地址的唯一依据：
+    //     簇 N 首扇区 = out_data_begin + (N - 2) × out_spc
+    //     FAT 项地址 = out_fat_begin + (N >> 7)，项内偏移 = (N & 127) × 4
+    //   它们由块[2]在 VBR 阶段锁存，块[1] 只在 S_IDLE 清零，故直接 assign 即可。
+    //   注: 必须写在这里（所有 reg 声明之后）——Verilog-2001 先声明后使用。
+    assign out_data_begin = data_begin;
+    assign out_fat_begin  = fat_begin;
+    assign out_spc        = spc;
 
     // ------------- always 块 ① / 共 4 块: 主序列机 ----------------
     // 功能: 驱动「读块请求 → 等完成 → 评估 → 决定下一扇区」的循环，
