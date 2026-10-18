@@ -124,9 +124,12 @@
 
 | 任务 | 状态 | 交付物 |
 |---|---|---|
-| SD 卡初始化与扇区读取 | ⬜ | rtl/storage, storage_test |
-| BMP 解析（24 位非压缩起步） | ⬜ | rtl/storage, bmp_parser_test |
-| SDRAM 帧缓存写入/读出 | ⬜ | rtl/memory, framebuffer_test |
+| SD 卡初始化与扇区读取 | ✅ 仿真通过 | `rtl/storage/sd_spi_ctrl.v`、`tb_sd_spi_protocol`/`tb_sd_spi_ctrl`/`tb_sd_probe` |
+| FAT32 短名定位与簇链遍历 | ✅ 仿真通过 | `rtl/storage/fat32_reader.v`、`tb_fat32_reader` |
+| BMP 解析（24 位非压缩起步） | ✅ 仿真通过 | `rtl/storage/bmp_parser.v`、`tb_bmp_parser` |
+| 跨时钟域 FIFO | ✅ 仿真通过 | `rtl/common/async_fifo.v`、`tb_async_fifo` |
+| SDRAM 帧缓存写入/读出（仲裁层） | 🔶 仿真通过，未上板 | `rtl/storage/framebuf_arbiter.v`、`tb_framebuf_arbiter` |
+| SDRAM 专用 150MHz 时钟 | 🔶 已写，未综合验证 | `rtl/storage/sdram_pll.v` |
 | 完整链路：SD→BMP→SDRAM→HDMI | ⬜ | 单图显示记录 |
 
 **阶段出口准则**：单张图片完整、无失真显示。
@@ -703,6 +706,186 @@ S5 要接 ERAM SDRAM，而控制器跑 150MHz、HDMI 像素域跑 25MHz，两域
 - 顶层尚未例化，`.al` 尚未加条目（按设计 S6 才接入）。
 - 深度取 512（`ADDR_WIDTH=9`）需按帧缓冲突发长度在 S5 集成时复核。
 - m3 类缺陷（同步器级数）不在功能仿真覆盖范围内，需 STA 兜底。
+
+## S5-2 framebuf_arbiter：SDRAM 帧缓冲读写仲裁（2026-10-19）
+
+### 这个模块要解决什么
+SDRAM 控制器的 `app_wr_*` / `app_rd_*` 两组端口**不能同时使用**，且有一个硬性约束：
+`app_*_addr[1:0]` 必须恒为 `2'b00`，**每 4 拍才能跳一次地址**。这条约束决定了仲裁器
+不能"逐拍轮换"——它必须把 4 拍当作**一个不可分割的组**整体调度，否则突发计数器
+被打断，后续拍会落到错误列地址上。
+
+同时，写入侧（`bmp_parser` → `wr_fifo`）和读出侧（`rd_fifo` → HDMI 像素流）的速率
+并不相等，必须保证：
+1. 写不被读彻底饿死（否则整帧刷新被卡住）
+2. 读不被写挤掉（否则屏幕出现可见撕裂）
+3. 控制器刷新（`ref_vld`）期间绝对不能发命令，但**组内进度不能丢**
+
+### 实现
+`rtl/storage/framebuf_arbiter.v`。4 状态 `A_IDLE / A_WR / A_RD / A_GAP`，
+6 个 always 块：主状态机、写命令发出、读命令发出、读数据捕获 + outstanding 计数、
+方向切换间隔、异常锁存。
+
+参数：
+
+| 参数 | 默认值 | 含义 |
+|---|---|---|
+| `ADDR_WIDTH` | 21 | 控制器字地址位宽 |
+| `BUS_TURN_GAP` | 2 | 读写方向切换间隔（拍） |
+| `WR_STARVE_LIMIT` | 256 | 写饥饿保护阈值（拍） |
+| `RD_TIMEOUT` | 1024 | 读 outstanding 超时兜底（拍） |
+| `FRAME_BASE` | 21'd0 | 帧缓冲基地址（字地址，须 4 字节对齐） |
+| `FRAME_WORDS` | 18'd153600 | 一帧的 32bit 字数 = 640×480/2 |
+
+**组原子性**：`wr_grp_active` / `rd_grp_active` 标志 + `wr_last_beat` / `rd_last_beat`
+组完成判据。中途 `ref_vld` 拉起时**原地暂停**（保持组内进度），刷新结束续上。
+
+**地址步长必须是 4，不是 1**。`app_*_addr` 是**字地址**，一个 4 拍组覆盖
+`addr+0..addr+3`，所以组间步长 `wr_addr + {{(ADDR_WIDTH-3){1'b0}}, 3'd4}`，
+回卷判据 `wr_addr >= FRAME_LAST`，其中 `FRAME_LAST = FRAME_BASE + FRAME_WORDS - 18'd4`。
+
+帧尺寸核算：640×480 = 307200 像素，RGB565 每 32bit 字装 2 像素 → **153600 字/帧**
+（需 18 位）= **38400 个 4 拍突发组**。21 位字地址可寻址 2M 字 = 8MB，够放 **13 帧**，
+与 `eram_sdram_reference.md` 手册记载一致。
+
+### 仿真暴露的 4 个真 RTL 缺陷
+
+#### 缺陷 1：`wr_ack` 寄存器输出导致数据重复发送（严重）
+现象：向 FIFO 压入 4 个字，`sim_mem` 里第 2 个字收到的却是第 1 个字的数据。
+最小复现 `tb_mini2.v` 打印命令发出瞬间的地址与数据：
+
+```
+ISSUE#1 addr=0 din=10000000 dm=f (f_rd=0, wr_data=10000000)
+ISSUE#2 addr=0 din=10000000 dm=f (f_rd=1, wr_data=10000001)   ← 重复了第 1 个字
+ISSUE#3 addr=0 din=10000001 dm=f (f_rd=2, wr_data=10000002)
+ISSUE#4 addr=0 din=10000002 dm=f (f_rd=3, wr_data=10000003)
+```
+
+机制：`app_wr_din` 在 `wr_fire` 那一拍采样 FIFO 队头；但 `wr_ack` 原来是寄存器
+（`wr_ack <= wr_real`），要**下一拍**才有效，上游 FIFO 也到下一拍才出队。于是第 2 拍
+采样时队头还没前进，同一个字被发两次。
+
+修法：`wr_ack` 改为**组合输出** —— 端口由 `output reg` 改 `output wire`，删掉 always
+块里的 `wr_ack <= 1'b0` 与 `wr_ack <= wr_real`，加 `assign wr_ack = wr_real;`。
+修复后 4 条命令地址全为 0、数据依次 `10000000/10000001/10000002/10000003`。
+
+#### 缺陷 2：写饥饿保护被优先级顺序废掉
+`A_IDLE` 原判序 `rd_req` 先于 `wr_req || wr_starved`，读侧持续满载时写侧**永远轮不到**，
+饥饿计数涨到阈值也无用。改为 `wr_starved` 最先判：
+
+```verilog
+A_IDLE: if (!bus_ok)       st <= A_IDLE;
+        else if (wr_starved) st <= A_WR;    // 写饿极：强制开路
+        else if (rd_req)     st <= A_RD;    // 读优先
+        else if (wr_req)     st <= A_WR;
+        else                 st <= A_IDLE;
+```
+
+实测（`tb_mini3.v`，读满载 2000 拍同时 `wr_req=1`）：`wr_cmds` 从 0 增长到 **29**，
+`starve` 在 0~257 之间锯齿，每约 256 拍让出一次完整 4 拍组。
+
+#### 缺陷 3：`rd_outstanding` 无超时兜底，会永久卡死
+`rd_may_exit` 要求 `rd_outstanding == 0`。若控制器因故不返回数据（接口错接、控制器
+卡死、上游误用），状态机**永久卡在 A_RD**，整块屏黑掉且无法自恢复。
+`tb_mini3` 中 `rdreq=0` 后 `st=2` 一直不变、`starve` 涨到 772 即为证。
+
+修法：新增 `RD_TIMEOUT` 参数与 `rd_wait_cnt` 计数，
+
+```verilog
+wire rd_timeout = (rd_outstanding != 4'd0) && (rd_wait_cnt >= RD_TIMEOUT[15:0]);
+wire rd_may_exit = !rd_grp_active &&
+                   ((rd_outstanding == 4'd0) || rd_timeout) &&
+                   (!rd_req || wr_starved);
+```
+
+超时分支强制 `rd_outstanding <= 4'd0`，异常锁存块同步 `err <= 1'b1`。
+
+#### 缺陷 4：`rd_outstanding` 位宽回绕，超时永远不触发
+`rd_outstanding` 是 4 位，最大 15。`rd_fire` 的准入条件是 `rd_outstanding != 4'd15`，
+但这是**组合**判据，而 `app_rd_en` 是寄存器、要到下一拍才生效。于是当本拍已是 15 时，
+`app_rd_en` 仍会发出，`15 + 1` **回绕成 0**。
+
+后果极其隐蔽：`rd_outstanding` 归零 → `rd_wait_cnt` 被清零 → `rd_timeout` 永远不成立。
+表现在 T11 探针里就是 `outstanding` 在 4/11/1/8/15/5 之间周期性跳动、`wait_cnt`
+最大只到 14，看上去"读总在正常返回"，实际是计数器自己把自己清零了。
+
+修法：递增改饱和递增，
+
+```verilog
+2'b10: begin
+    if (rd_outstanding != 4'd15)
+        rd_outstanding <= rd_outstanding + 4'd1;
+end
+```
+
+这个缺陷只有**超时用例**能抓到——正常读路径下控制器总会返回数据，回绕和正常递减
+在外部行为上无法区分。
+
+### 验证：14 个场景 / 45 项检查
+`sim/testbench/tb_framebuf_arbiter.v`。测试用小帧 `FRAME_WORDS = 18'd256`（64 组）、
+`RD_LATENCY = 10`、`CLK_PERIOD = 6.667`。
+
+| 用例 | 场景 | 结果 |
+|---|---|---|
+| T01 | 未初始化时禁发一切命令 | PASS |
+| T02 | 写突发组原子性 + 数据落位 | PASS |
+| T03 | 读突发组发 4 条命令 | PASS |
+| T04 | 读写同请求时读优先 | PASS |
+| T05 | 读满载下写饥饿保护生效 | PASS |
+| T06 | 刷新窗口内禁发命令 | PASS |
+| T07 | 组中途刷新，进度不丢 | PASS |
+| T08 | 写满一帧后地址回卷到 `FRAME_BASE` | PASS |
+| T09 | `wr_ack` 只在真消费数据时为 1 | PASS |
+| T10 | 随机压测 800 拍，全部不变量成立 | PASS |
+| T11 | 控制器永不返回数据时能超时自恢复 | PASS |
+| T12 | 补拍携带 `dm=0`，不污染存储 | PASS |
+| T13 | 组内 4 拍地址恒定 | PASS |
+| T14 | 正常操作不误报 `err` | PASS |
+
+测试平台关键设计：写侧必须模拟**真实 FIFO 的队头**——`wr_data` 只在 `wr_ack` 那拍
+之后才换成下一个数（`always @(*) wr_data = fifo_mem[fifo_rd];`，`if (wr_ack) fifo_rd <= fifo_rd + 1;`）。
+若像初版那样每个 negedge 都换 `wr_data`，DUT 采到的是"下一个"字，会看到全体错一位的假失败。
+
+### 变异测试：11/13 杀死，2 个存活且**如实记录为等价/防御性变异**
+
+| # | 变异 | 结果 |
+|---|---|---|
+| m1 | 组间步长 4→1 | KILLED(242)，`app_wr_addr[1:0] != 00` |
+| m2 | `wr_ack` 恒 0 | KILLED（超时），FIFO 队头不前进，`wait(fifo_rd==N)` 永久等待 |
+| m3 | 去掉饥饿保护 | KILLED，`starved write eventually serviced` |
+| m4 | `rd_may_exit` 去掉 `\|\| rd_timeout` | **SURVIVED** |
+| m5 | `rd_timeout` 恒 0 | KILLED(2) |
+| m6 | 补拍不屏蔽 `dm` | KILLED，`made-up beats drive app_wr_dm = 0` |
+| m7 | 回卷阈值放宽 4 字 | KILLED，`address wrapped back to FRAME_BASE` |
+| m8 | `wr_grp_active` 恒 0 | KILLED，`group padded beyond supplied words` |
+| m9 | 刷新违规检测恒假 | **SURVIVED** |
+| m10 | `bus_ok` 不看 `ref_vld` | KILLED(52)，`command during steady ref_vld` |
+| m11 | 饥饿计数不累加 | KILLED |
+| m12 | `rd_grp_active` 恒 0 | KILLED，`exactly 4 read commands for one burst group` |
+| m13 | outstanding 递增去掉饱和判据 | KILLED，`read timeout sets err flag` |
+
+**m4 存活原因（等价变异）**：超时本身会把 `rd_outstanding` 强制清零，所以下一拍
+`rd_outstanding == 0` 已经成立，离开 A_RD 的条件照样满足。`|| rd_timeout` 在
+功能上冗余，只影响 1 拍延迟，外部不可观测。**保留它是为了意图明确**（万一将来
+改动了超时清零逻辑，这一项仍然是有效的兜底），但它确实无法用黑盒测试杀死。
+
+**m9 存活原因（防御性 tripwire）**：这是"刷新期间不该有命令"的**断言式检测**，
+RTL 正确时命令根本漏不出去，黑盒测试无法制造这个场景。要杀死它只能主动注入故障
+或做白盒代码审查。保留它的价值在于：若将来有人改坏了 `bus_ok`，`err` 会立刻亮起，
+比"屏幕偶尔花一下"容易定位得多。
+
+**教训**：变异测试报告必须区分「存活 = 测试不够强」与「存活 = 等价变异 / 防御性代码」。
+把后者写成前者会导致无意义地堆测试；把前者写成后者则是自欺。
+
+### 边界说明
+- **尚未上板**：SDRAM 加密核（`sdr_as_ram.enc.v` 等）需要 MGC-VERIF-SIM-RSA key 才能
+  仿真解密，本模块的验证完全基于**行为级 SDRAM 模型**（10 拍固定读延迟、按字写入）。
+  真实控制器的 `Sdr_busy` / `Sdr_init_ref_vld` 握手尚未联调。
+- **顶层尚未例化** `framebuf_arbiter`，`.al` 也尚未加入条目（按设计 S6 才接入全链）。
+- **`BUS_TURN_GAP` 未做最优性验证**：当前取 2 拍，真实 SDRAM 的 tRTW/tWTR 约束需在
+  上板时用示波器/ILA 复核。
+
+
 
 ## 问题记录
 
