@@ -164,6 +164,9 @@ module sdram_ctrl_wrap #(
     localparam SDR_ADDR_WIDTH = 21;
     localparam SDR_DM_WIDTH   = 4;
 
+    // Sdr_busy 本模块不使用，但必须显式接出。Verilog-2001 要求先声明后使用。
+    wire sdr_busy_unused;
+
     sdr_as_ram #(
         .self_refresh_open (1'b1)
     ) u_sdr_as_ram (
@@ -195,8 +198,6 @@ module sdram_ctrl_wrap #(
         .SDR_DM            (sdram_dm),
         .SDR_DQ            (sdram_dq)
     );
-
-    wire sdr_busy_unused;
 
 `endif
 

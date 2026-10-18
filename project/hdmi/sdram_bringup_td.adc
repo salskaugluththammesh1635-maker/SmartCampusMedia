@@ -1,0 +1,35 @@
+# =============================================================================
+# sdram_bringup_td.adc — SDRAM 150MHz bring-up 验证工程管脚约束
+# -----------------------------------------------------------------------------
+# 【本工程只验证 3 件事】
+#   1. sdram_pll 的 1050MHz VCO → 150MHz 能否被 TD 接受并锁定
+#   2. 150MHz 时钟域的逻辑能否满足建立/保持时间
+#   3. 加密核 sdr_as_ram 能否正常进工程并连上 EG_PHY_SDRAM_2M_32 SIP 原语
+#
+# 【为什么只有 10 个管脚】
+#   EG4S20 的 SDRAM 是**封装内（SiP）**资源，34 个 SDRAM 信号全部在芯片内部
+#   走线，不出 BGA 球。因此 adc 里**不需要也不允许**约束 SDRAM 管脚
+#   —— 这由 EG_PHY_SDRAM_2M_32 原语在综合时自动接管。
+#   本工程只有：时钟 1 + 复位 1 + LED 8 = 10 个 IO。
+#
+# 【管脚来源】与 dmz_eg4s20_hdmi.adc 同一套三源核实结论（见 docs/pending_confirmations.md）
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. 时钟与复位
+# ---------------------------------------------------------------------------
+set_pin_assignment { clk }       { LOCATION = R7; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { rst_n_btn } { LOCATION = E3; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+
+# ---------------------------------------------------------------------------
+# 2. LED ×8（高电平点亮）
+#    用途: led[0] = 读写全通, led[1] = PLL 锁定, led[7:2] = 错误码低 6 位
+# ---------------------------------------------------------------------------
+set_pin_assignment { led[0] } { LOCATION = B14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[1] } { LOCATION = B15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[2] } { LOCATION = B16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[3] } { LOCATION = C15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[4] } { LOCATION = C16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[5] } { LOCATION = E13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[6] } { LOCATION = E16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }
+set_pin_assignment { led[7] } { LOCATION = F16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = NONE; }

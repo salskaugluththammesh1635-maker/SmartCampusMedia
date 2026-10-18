@@ -129,8 +129,8 @@
 | BMP 解析（24 位非压缩起步） | ✅ 仿真通过 | `rtl/storage/bmp_parser.v`、`tb_bmp_parser` |
 | 跨时钟域 FIFO | ✅ 仿真通过 | `rtl/common/async_fifo.v`、`tb_async_fifo` |
 | SDRAM 帧缓存写入/读出（仲裁层） | 🔶 仿真通过，未上板 | `rtl/storage/framebuf_arbiter.v`、`tb_framebuf_arbiter` |
-| SDRAM 控制器封装（加密核 ⇄ 行为模型） | 🔶 仿真通过，未综合验证 | `rtl/storage/sdram_ctrl_wrap.v`、`tb_sdram_ctrl_wrap` |
-| SDRAM 专用 150MHz 时钟 | 🔶 已写，未综合验证 | `rtl/storage/sdram_pll.v` |
+| SDRAM 控制器封装（加密核 ⇄ 行为模型） | 🔶 仿真通过，已综合（150MHz 收敛） | `rtl/storage/sdram_ctrl_wrap.v`、`tb_sdram_ctrl_wrap` |
+| SDRAM 专用 150MHz 时钟 | ✅ TD 综合收敛（SWNS +0.104ns，Fmax 152.4MHz） | `rtl/storage/sdram_pll.v`、`sdram_bringup_top`、`progress.md` §S5-4 |
 | 完整链路：SD→BMP→SDRAM→HDMI | ⬜ | 单图显示记录 |
 
 **阶段出口准则**：单张图片完整、无失真显示。
@@ -1009,6 +1009,143 @@ RTL 正确时命令根本漏不出去，黑盒测试无法制造这个场景。�
 - **行为模型不是真核的位真复制**：地址映射（row/bank/col）在模型里被简化为
   线性索引，真核的 bank 切换惩罚、预充电时序均未建模。因此
   **不能用本模型评估带宽/性能**，只能验证功能与时序契约。
+
+## S5-4：SDRAM 150MHz 链路 bring-up 与 PLL 真缺陷（2026-10-19）
+
+本节回答阶段四最大的前置风险：**150MHz 时钟域到底能不能在 EG4S20 上收敛**。
+结论：**能**，但过程中发现并修掉了两个会让整个 SDRAM 帧缓存方案失效的真缺陷，
+且第一次跑出"0 违例"时是**假绿**——关键时钟根本没被 STA 分析。
+
+### 一、为什么必须单独建验证工程
+
+把 PLL + SDRAM 核与键盘、数码管、HDMI 一起综合，时序报告的关键路径会混入无关逻辑，
+"150MHz 收敛不了到底是 PLL 配置错还是别的逻辑拖累"就说不清。
+单独综合时工程里只有 PLL + SDRAM 核 + 几十行序列机，任何时序问题都能直接归因。
+新增文件：
+
+| 文件 | 作用 |
+|------|------|
+| `rtl/storage/sdram_bringup_top.v` | 验证专用顶层：PLL 复位延时 + `sdram_pll` + 三级复位同步 + `sdram_ctrl_wrap` + 极简读写序列机 + `EG_PHY_SDRAM_2M_32` SIP 原语 |
+| `project/hdmi/sdram_bringup_td.adc` | 仅 10 个管脚（clk=R7、rst_n_btn=E3、led[7:0]）；**无 SDRAM 管脚** |
+| `project/hdmi/sdram_bringup_rw.sdc` | 50MHz 主时钟 + `derive_clocks` + 时钟组声明 |
+| `project/sdram_bringup_td.al` | 独立 TD 工程（7 个 Verilog + ADC + SDC） |
+| `project/flow_sdram_bringup.tcl` | headless 综合→布局→布线→STA→bitgen |
+
+### 二、真缺陷 1：`sdram_pll` 的 150MHz 0° 输出根本没接上
+
+对照官方 `clk_pll.v` 逐线追踪发现（修复前）：
+
+| 信号 | 官方 `clk_pll.v` | 本工程修复前 | 后果 |
+|------|------------------|--------------|------|
+| `clkc` 拼接 | `{open, open, clk2_out, clk1_out, clk0_buf}` | `{open, open, sdram_clk_sft, open, clk0_buf}` ← **C1 是 open** | 150MHz 0° 悬空 |
+| `sdram_clk` 来源 | 应来自 C1 | 实际来自 `EG_LOGIC_BUFG(.i(clk0_buf))` = **C0 12.5MHz** | 对外输出频率错 12 倍 |
+| `fbclk` | `clk0_out`（C0 经 BUFG） | `sdram_clk`（被复用） | 反馈信号被绑死到错误网络 |
+
+后果：整个 SDRAM 子系统会跑在 **12.5MHz**，刷新周期算错 12 倍，必然丢数据。
+修复后：
+
+```verilog
+wire clk0_buf;   // C0 原始输出
+wire clk0_out;   // C0 经 BUFG 的 12.5MHz（仅反馈）
+wire clk1_raw;   // C1 = 150MHz 0°
+wire clk2_raw;   // C2 = 150MHz 180°
+EG_LOGIC_BUFG bufg_feedback (.i(clk0_buf), .o(clk0_out));
+assign sdram_clk     = clk1_raw;
+assign sdram_clk_sft = clk2_raw;
+// .fbclk(clk0_out), .clkc({clk4_unused, clk3_unused, clk2_raw, clk1_raw, clk0_buf})
+```
+
+**这条缺陷的教训**：注释里写着"C1 = 150MHz 0° 供 SDRAM 控制器"，
+代码里 C1 却是 `open`。**注释不能当证据，必须逐线对照官方参考设计**。
+
+### 三、真缺陷 2：SDC 里的 `create_generated_clock` 与 `derive_clocks` 冲突，导致 150MHz 从未进入 STA
+
+初版 SDC 想给 PLL 输出起好记的名字（`clk_sdr` / `clk_sdr_sft`），
+在 `derive_clocks` 之后又写了 `create_generated_clock`。TD 报三层连锁失败：
+
+```
+USR-6122 CRITICAL-WARNING: Clock definition problem.
+          Clock clk_sdr override clock u_pll/pll_inst.clkc[1],
+          as two clocks are defined on the same target pin.
+USR-8159 CRITICAL-WARNING: Command create_generated_clock ... fails.
+USR-8130 CRITICAL-WARNING: No clock match the pattern: clk_sdr.
+```
+
+后果极具欺骗性：**Clock Summary 里只有 50MHz 和 12.5MHz，150MHz 完全不见**，
+`Timing Status` 显示 `SWNS: 9.211ns`（漂亮的正值），
+但那是 50MHz 域的结论，**150MHz 域根本没被分析**。
+
+修复：`derive_clocks` 已能从 `EG_PHY_PLL` 的 `CLKC*_DIV`/`CLKC*_CPHASE` 正确反推频率
+（日志可见 `multiply_by 3.0000` / `phase 180`），**直接用派生的原始名字**，
+不要再 `create_generated_clock`。`set_clock_groups` 也用原始名字：
+
+```
+set_clock_groups -asynchronous \
+    -group [get_clocks {u_pll/pll_inst.clkc[1]}] \
+    -group [get_clocks {u_pll/pll_inst.clkc[2]}]
+```
+
+修复后 Clock Summary 正确出现四颗时钟，`USR-6122/8130/8159` 计数归零，
+**STA coverage 从 95.33% 升到 98.66%**。
+
+### 四、真缺陷 3：LED 输出未寄存，150MHz 下 17 个端点违例
+
+时钟进 STA 之后立刻暴露：**SWNS = -2.102ns，STNS = -11.328ns，Fmax 仅 114.05MHz**。
+关键路径：
+
+```
+Begin: u_sdram_sip.ipclk（SDRAM SIP 读出时钟，150MHz）
+End  : led[2]_syn_4.do[0]（LED 输出 PAD）
+Data Path Delay : 8.564ns（cell 2.575ns 30% / net 5.989ns 70%）
+Logic Level     : 4（LUT5×3 + LUT4×1）
+```
+
+即 **32 位读数据比较器直接串在 SDRAM 读出 → 状态机 → LED 引脚**的组合路径上。
+修复两处（`rtl/storage/sdram_bringup_top.v`）：
+
+1. 读数据比较结果单独打一拍：新增 `rd_en_q` / `rd_mismatch` 寄存器，
+   在 `T_READ` 里改用 `if (rd_en_q) ... if (rd_mismatch) ...`，
+   32 位比较退化为"寄存器 → 1 级 LUT → 寄存器"的短路径。
+2. LED 输出加一级寄存器：`led_reg <= {tst_err[5:0], pll_locked, tst_pass}; assign led = led_reg;`，
+   LED 的 1 拍延迟对肉眼毫无影响。
+
+### 五、收敛结果（实测）
+
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| 150MHz SWNS | **-2.102ns** | **+0.104ns** |
+| 150MHz HWNS | +0.054ns | **+0.151ns** |
+| 150MHz Fmax（R-Period） | **114.05MHz** | **152.39MHz** |
+| 建立违例端点 | **17 个** | **0 个** |
+| STA coverage | 95.33% | **98.66%** |
+| `USR-6122/8130/8159` | 各 2 条 | **0** |
+
+```
+Timing Status
+    SWNS: 0.104ns, STNS: 0.000ns
+    HWNS: 0.151ns, HTNS: 0.000ns
+Clock Summary
+    clk0: 150.015MHz  fanout=178  u_pll/pll_inst.clkc[1]
+    clk2: 150.015MHz  fanout=1    u_pll/pll_inst.clkc[2]
+    clk3:  12.500MHz  fanout=0    u_pll/pll_inst.clkc[0]
+```
+
+资源：`#IO 10/188`、`#lut 160/19600 (0.82%)`、`#reg 194`、`#bram 0`、`#pll 1/4`、`#gclk 1/16`。
+层次表证明 SDRAM 加密核确实进了 bit（不是空盒）：
+`u_sdram / u_sdr_as_ram / le=154 lut=49 seq=141`、`u_pll le=1`。
+
+### 六、仍需上板确认的点（未验证，不得写成已实现）
+
+1. **PLL 是否真的锁定**：`led[1] = pll_locked`，上板看灯即可判断。
+   TD 侧的 `BIT-1002 PLL setting string = 0010` + 时序收敛只能说明配置被接受，不能说明硬件锁得住。
+2. **SDRAM 读写是否真的通**：`led[0] = 测试通过`。仿真用的是行为模型，
+   行为模型按手册时序实现，**不能替代真器件的建立/保持窗口**。
+3. **`PHY-5079` 时钟局部布线**：`clkc[2]`（150MHz 180°，扇出 1，只送 `SDRAM_CLK` 引脚）
+   被标为使用局部布线资源。扇出 1 时通常可接受，但要在板上用示波器看
+   `SDRAM_CLK` 完整性；若读写偶发失败，优先怀疑这条。
+4. **150MHz 的余量只有 0.104ns**（约 1.5%）。S6 全链把 `framebuf_arbiter`、
+   `async_fifo`、`bmp_parser` 都挂到 150MHz 后，**必须重新跑 STA 确认不退化**。
+   本次结论只覆盖"PLL + SDRAM 核 + 极简序列机"这个最小拓扑。
 
 ## 问题记录
 

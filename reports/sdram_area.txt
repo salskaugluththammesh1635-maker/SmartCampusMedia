@@ -1,0 +1,137 @@
+standard
+***Report Model: sdram_bringup_top Device: EG4S20BG256***
+
+IO Statistics
+#IO                        10   out of    188    5.32%
+  #input                    2
+  #output                   8
+  #inout                    0
+
+Utilization Statistics
+#lut                      166   out of  19600    0.85%
+#reg                      194   out of  19600    0.99%
+#le                       267
+  #lut only                73   out of    267   27.34%
+  #reg only               101   out of    267   37.83%
+  #lut&reg                 93   out of    267   34.83%
+#bram                       0   out of     64    0.00%
+  #bram9k                   0
+  #fifo9k                   0
+#bram32k                    0   out of     16    0.00%
+#dsp                        0   out of     29    0.00%
+#pad                       10   out of    188    5.32%
+  #ireg                     0
+  #oreg                     5
+  #treg                     0
+#pll                        1   out of      4   25.00%
+#gclk                       1   out of     16    6.25%
+
+
+Detailed IO Report
+
+    Name       Direction    Location    IOStandard    IOType    DriveStrength    PullType     PackReg   
+     clk         INPUT         R7        LVCMOS33      PAD           N/A          PULLUP       NONE     
+  rst_n_btn      INPUT         E3        LVCMOS33      PAD           N/A          PULLUP       NONE     
+   led[7]       OUTPUT        F16        LVCMOS33      PAD            8            NONE        NONE     
+   led[6]       OUTPUT        E16        LVCMOS33      PAD            8            NONE        NONE     
+   led[5]       OUTPUT        E13        LVCMOS33      PAD            8            NONE        NONE     
+   led[4]       OUTPUT        C16        LVCMOS33      PAD            8            NONE        OREG     
+   led[3]       OUTPUT        C15        LVCMOS33      PAD            8            NONE        OREG     
+   led[2]       OUTPUT        B16        LVCMOS33      PAD            8            NONE        OREG     
+   led[1]       OUTPUT        B15        LVCMOS33      PAD            8            NONE        OREG     
+   led[0]       OUTPUT        B14        LVCMOS33      PAD            8            NONE        OREG     
+     dm0        OUTPUT        S14        LVCMOS25      PAD            8            NONE        OREG     
+     cke        OUTPUT        S18        LVCMOS25      PAD            8            NONE        NONE     
+    we_n        OUTPUT        S19        LVCMOS25      PAD            8            NONE        OREG     
+    cas_n       OUTPUT        S20        LVCMOS25      PAD            8            NONE        OREG     
+    ras_n       OUTPUT        S21        LVCMOS25      PAD            8            NONE        OREG     
+    cs_n        OUTPUT        S22        LVCMOS25      PAD            8            NONE        NONE     
+   addr[9]      OUTPUT        S23        LVCMOS25      PAD            8            NONE        NONE     
+   addr[8]      OUTPUT        S24        LVCMOS25      PAD            8            NONE        NONE     
+   addr[7]      OUTPUT        S25        LVCMOS25      PAD            8            NONE        NONE     
+   addr[6]      OUTPUT        S26        LVCMOS25      PAD            8            NONE        NONE     
+   addr[5]      OUTPUT        S27        LVCMOS25      PAD            8            NONE        OREG     
+   addr[4]      OUTPUT        S28        LVCMOS25      PAD            8            NONE        OREG     
+     dm2        OUTPUT        S29        LVCMOS25      PAD            8            NONE        OREG     
+     dm3        OUTPUT        S61        LVCMOS25      PAD            8            NONE        OREG     
+   addr[3]      OUTPUT        S64        LVCMOS25      PAD            8            NONE        NONE     
+   addr[2]      OUTPUT        S65        LVCMOS25      PAD            8            NONE        NONE     
+   addr[1]      OUTPUT        S66        LVCMOS25      PAD            8            NONE        OREG     
+   addr[0]      OUTPUT        S67        LVCMOS25      PAD            8            NONE        NONE     
+  addr[10]      OUTPUT        S68        LVCMOS25      PAD            8            NONE        OREG     
+    ba[0]       OUTPUT        S69        LVCMOS25      PAD            8            NONE        OREG     
+    ba[1]       OUTPUT        S70        LVCMOS25      PAD            8            NONE        NONE     
+     clk        OUTPUT        S73        LVCMOS25      PAD            8            NONE        NONE     
+     dm1        OUTPUT        S76        LVCMOS25      PAD            8            NONE        OREG     
+    dq[0]        INOUT         S1        LVCMOS25      PAD            8           PULLUP       IREG     
+    dq[6]        INOUT        S11        LVCMOS25      PAD            8           PULLUP       IREG     
+    dq[7]        INOUT        S12        LVCMOS25      PAD            8           PULLUP       IREG     
+    dq[1]        INOUT         S2        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[23]        INOUT        S31        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[22]        INOUT        S32        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[21]        INOUT        S35        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[20]        INOUT        S36        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[19]        INOUT        S37        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[18]        INOUT        S38        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[17]        INOUT        S41        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[16]        INOUT        S42        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[31]        INOUT        S48        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[30]        INOUT        S49        LVCMOS25      PAD            8           PULLUP       IREG     
+    dq[2]        INOUT         S5        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[29]        INOUT        S52        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[28]        INOUT        S53        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[27]        INOUT        S54        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[26]        INOUT        S55        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[25]        INOUT        S58        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[24]        INOUT        S59        LVCMOS25      PAD            8           PULLUP       IREG     
+    dq[3]        INOUT         S6        LVCMOS25      PAD            8           PULLUP       IREG     
+    dq[4]        INOUT         S7        LVCMOS25      PAD            8           PULLUP       IREG     
+    dq[8]        INOUT        S78        LVCMOS25      PAD            8           PULLUP       IREG     
+    dq[9]        INOUT        S79        LVCMOS25      PAD            8           PULLUP       IREG     
+    dq[5]        INOUT         S8        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[10]        INOUT        S82        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[11]        INOUT        S83        LVCMOS25      PAD            8           PULLUP       IREG     
+   dq[12]        INOUT        S84        LVCMOS25      PAD            8           PULLUP     IREG;OREG  
+   dq[13]        INOUT        S85        LVCMOS25      PAD            8           PULLUP     IREG;OREG  
+   dq[14]        INOUT        S88        LVCMOS25      PAD            8           PULLUP     IREG;OREG  
+   dq[15]        INOUT        S89        LVCMOS25      PAD            8           PULLUP     IREG;OREG  
+
+Report Clock Domain Luts:
+
+-----------------------------------------------------------------------------------------------------------------------------
+  Index   |  Name                    |  Frequency   |  LUT As Logic   |  LUT As Shifter   |  LUT As Dram   |  BRAM   |  DSP
+-----------------------------------------------------------------------------------------------------------------------------
+  #1      |  clk                     |  50MHz       |  4              |  0                |  0             |  0      |  0
+  #2      |  u_pll/pll_inst.clkc[1]  |  150MHz      |  69             |  0                |  0             |  0      |  0
+-----------------------------------------------------------------------------------------------------------------------------
+
+Clock Resource Statistics
+Index     ClockNet                                    Type               DriverType         Driver                  Fanout
+#1        u_sdram/u_sdr_as_ram/u1_init_ref/Sdr_clk    Global             pll                u_pll/pll_inst.clkc1    178
+#2        clk_dup_1                                   Global             io                 clk_syn_2.di            5
+#3        u_pll/clk0_buf                              Global             pll                u_pll/pll_inst.clkc0    0
+#4        u_sdram/u_sdr_as_ram/SDRAM_CLK              Global             pll                u_pll/pll_inst.clkc2    0
+
+Report Hierarchy Area:
++-------------------------------------------------------------------------------------------+
+|Instance          |Module            |le      |lut     |ripple  |seq     |bram    |dsp     |
++-------------------------------------------------------------------------------------------+
+|top               |sdram_bringup_top |267     |151     |15      |199     |0       |0       |
+|  u_pll           |sdram_pll         |1       |1       |0       |0       |0       |0       |
+|  u_sdram         |sdram_ctrl_wrap   |153     |55      |5       |140     |0       |0       |
+|    u_sdr_as_ram  |sdr_as_ram        |153     |55      |5       |140     |0       |0       |
+|      u1_init_ref |sdr_init_ref      |88      |19      |5       |79      |0       |0       |
+|      u2_wrrd     |sdr_wrrd          |65      |36      |0       |61      |0       |0       |
++-------------------------------------------------------------------------------------------+
+
+
+DataNet Average Fanout:
+
+   Index     Fanout    Nets  
+    #1         1       221   
+    #2         2        54   
+    #3         3        18   
+    #4         4        14   
+    #5        5-10      22   
+    #6       11-50      10   
+  Average     2.28           

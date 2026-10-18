@@ -75,19 +75,45 @@ module sdram_pll (
     output wire sdram_clk_sft  // 150MHz 180°
 );
 
-    wire clk0_buf;          // C0 通道原始输出（未经全局缓冲），用作反馈源
+    wire clk0_buf;          // C0 通道原始输出（未经全局缓冲），既作反馈源也作 clk0_out
+    wire clk0_out;          // C0 经全局缓冲后的 12.5MHz（仅反馈用，不对外）
+    wire clk1_raw;          // C1 原始输出（150MHz 0°，未走 BUFG）
+    wire clk2_raw;          // C2 原始输出（150MHz 180°，未走 BUFG）
+
+    // -------------------------------------------------------------------------
+    // [0] 悬空端口占位
+    //     Verilog-2001 里 `open` 不是关键字，直接写 .port(open) 会被综合器当作
+    //     隐式 wire 并报 "undeclared symbol 'open'"。因此显式声明悬空信号。
+    //     注意：PLL 原语未使用的输出**不能**留空不接，必须显式终止。
+    // -------------------------------------------------------------------------
+    wire        psdone_unused;
+    wire [7:0]  dout_unused;
+    wire        clk3_unused;
+    wire        clk4_unused;
 
     // -------------------------------------------------------------------------
     // [1] C0 反馈路径：PLL 输出 → BUFG → 回送 fbclk
     //     FEEDBK_PATH="CLKC0_EXT" 要求这一级不能省
+    //     ⚠️ 这一路的输出是 **12.5MHz（C0）**，不是 150MHz。
+    //        它只用于 fbclk 反馈，绝不能当作 sdram_clk 使用。
     // -------------------------------------------------------------------------
     EG_LOGIC_BUFG bufg_feedback (
         .i (clk0_buf),
-        .o (sdram_clk)
+        .o (clk0_out)
     );
 
     // -------------------------------------------------------------------------
-    // [2] PLL 本体
+    // [2] 150MHz 0° / 180° 的全局缓冲
+    //     与官方 clk_pll.v 的差异说明：官方直接把 clk1_out/clk2_out 从 PLL
+    //     原语引出到顶层端口，由 TD 在布局时自动插入全局缓冲。
+    //     本工程同样直接引出（见下方 assign），保持与官方一致。
+    //     若综合后时序报告显示这两个时钟未上 GCLK，才需要手工加 BUFG。
+    // -------------------------------------------------------------------------
+    assign sdram_clk     = clk1_raw;   // C1 = 150MHz 0°
+    assign sdram_clk_sft = clk2_raw;   // C2 = 150MHz 180°
+
+    // -------------------------------------------------------------------------
+    // [3] PLL 本体
     //     VCO = (50/4) × 84 = 12.5 × 84 = 1050 MHz
     //      C0 = 1050/84 = 12.5 MHz   （仅作反馈，不对外使用）
     //      C1 = 1050/7  = 150 MHz    （0°）
@@ -138,15 +164,15 @@ module sdram_pll (
         .psdown   (1'b0),
         .psstep   (1'b0),
         .psclksel (3'b000),
-        .psdone   (open),
+        .psdone   (psdone_unused),
         .dclk     (1'b0),
         .dcs      (1'b0),
         .dwe      (1'b0),
         .di       (8'b0000_0000),
         .daddr    (6'b000000),
-        .do       ({open, open, open, open, open, open, open, open}),
-        .fbclk    (sdram_clk),              // C0 外部反馈（关键）
-        .clkc     ({open, open, sdram_clk_sft, open, clk0_buf})  // {C4,C3,C2,C1,C0}
+        .do       (dout_unused),
+        .fbclk    (clk0_out),               // C0 经 BUFG 反馈（官方同款，关键）
+        .clkc     ({clk4_unused, clk3_unused, clk2_raw, clk1_raw, clk0_buf})
     );
 
 endmodule
