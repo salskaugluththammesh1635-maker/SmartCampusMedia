@@ -28,6 +28,7 @@ $map = [ordered]@{
     # ===== 仅 hdmi_td（阶段四存储链）=====
     'rtl\storage\sd_spi_ctrl.v'     = @('project\hdmi\sd_spi_ctrl.v')
     'rtl\storage\sd_probe.v'        = @('project\hdmi\sd_probe.v')
+    'rtl\storage\fat32_reader.v'    = @('project\hdmi\fat32_reader.v')
     # ===== 仅 hdmi_td =====
     'rtl\top\dmz_eg4s20_hdmi_top.v' = @('project\hdmi\dmz_eg4s20_hdmi_top.v')
     'rtl\video\hdmi\hdmi_pll.v'     = @('project\hdmi\hdmi_pll.v')
