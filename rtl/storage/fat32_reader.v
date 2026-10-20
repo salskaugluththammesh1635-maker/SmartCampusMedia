@@ -12,7 +12,7 @@
 //                顺序读 size 字节」这一件简单事。
 //
 // 【二、本模块功能】
-//   一句话职责: 只读 FAT32 定位器——MBR → VBR/BPB → 根目录短名匹配，
+//   一句话职责: 只读 FAT32 定位器——MBR 或 LBA0 的 VBR → BPB → 根目录短名匹配，
 //              输出目标文件的首簇号与字节大小。
 //   关键特性:
 //     · 只读：不写 FAT、不写目录、不碰数据区，最坏情况是找不到文件
@@ -130,6 +130,7 @@ module fat32_reader #(
     reg  [2:0]  st;           // 【状态】S_* 六态
     reg  [1:0]  stage;        // 【阶段】ST_* 四态，表示当前在读什么
     reg  [31:0] cur_lba;      // 【当前扇区】本次读块请求的扇区号
+    reg  [31:0] volume_lba;   // FAT32 volume base: partition LBA, or zero for a direct VBR
     reg  [31:0] fat_begin;    // 【FAT 区起点】= 分区起始 + 保留扇区
     reg  [31:0] data_begin;   // 【数据区起点】= fat_begin + num_fats × fat_size
     reg  [31:0] dir_cluster;  // 【目录簇号】根目录当前遍历到的簇号
@@ -143,6 +144,9 @@ module fat32_reader #(
     reg  [9:0]  byte_cnt;     // 【块内字节计数】0~512，512 = 块收完
     reg  [15:0] mbr_sign;     // 【MBR 签名】{第511字节, 第510字节}，期望 16'hAA55
     reg  [31:0] part_lba;     // 【分区起始 LBA】MBR 分区表项0 偏移 8~11（绝对 454~457）
+    reg  [15:0] bytes_per_sec; // BPB fields used to distinguish a direct FAT32 VBR from MBR code
+    reg  [15:0] root_entries;
+    reg  [15:0] fat16_size;
     reg  [15:0] reserved_s;   // 【保留扇区数】VBR +0x0E（2B），FAT 起点相对量
     reg  [7:0]  spc;          // 【每簇扇区数】VBR +0x0D（1B），须为 2 的幂
     reg  [7:0]  num_fats;     // 【FAT 份数】VBR +0x10（1B），通常 2
@@ -167,6 +171,7 @@ module fat32_reader #(
 
     // —— [4] 短名期望译码（块④ 输出）——
     reg  [7:0]  exp_byte;     // 当前项内偏移处期望的短名字节（大写形式）
+    wire        sector0_is_fat32;
 
     // —— 对外暴露的簇链遍历参数 ——
     //   这三个值是 img_loader 自己算扇区地址的唯一依据：
@@ -177,6 +182,14 @@ module fat32_reader #(
     assign out_data_begin = data_begin;
     assign out_fat_begin  = fat_begin;
     assign out_spc        = spc;
+    // A 55AA signature alone does not distinguish MBR from VBR. Require a
+    // consistent 512-byte FAT32 BPB before accepting a volume at card LBA 0.
+    assign sector0_is_fat32 = bytes_per_sec == 16'd512 &&
+                             root_entries == 16'd0 && fat16_size == 16'd0 &&
+                             reserved_s != 16'd0 && fat_size != 32'd0 &&
+                             (num_fats == 8'd1 || num_fats == 8'd2) &&
+                             spc != 8'd0 && (spc & (spc - 8'd1)) == 8'd0 &&
+                             root_cluster >= 32'd2 && root_cluster <= 32'h0FFF_FFEF;
 
     // ------------- always 块 ① / 共 4 块: 主序列机 ----------------
     // 功能: 驱动「读块请求 → 等完成 → 评估 → 决定下一扇区」的循环，
@@ -189,6 +202,7 @@ module fat32_reader #(
             st            <= S_IDLE;
             stage         <= ST_MBR;
             cur_lba       <= 32'd0;
+            volume_lba    <= 32'd0;
             fat_begin     <= 32'd0;
             data_begin    <= 32'd0;
             dir_cluster   <= 32'd0;
@@ -221,6 +235,7 @@ module fat32_reader #(
                             st       <= S_FAIL;
                         end else begin
                             busy      <= 1'b1;
+                            volume_lba <= 32'd0;
                             stage     <= ST_MBR;
                             next_lba  <= 32'd0;         // LBA 0 = MBR
                             cap_clr   <= 1'b1;          // 清上一轮的捕获残留
@@ -253,10 +268,16 @@ module fat32_reader #(
                             if (mbr_sign != 16'hAA55) begin
                                 err_code <= 4'd1;       // 不是 MBR
                                 st       <= S_FAIL;
+                            end else if (sector0_is_fat32) begin
+                                // Sector zero already contains the BPB. Evaluate it
+                                // next cycle without clearing or rereading its fields.
+                                volume_lba <= 32'd0;
+                                stage      <= ST_VBR;
                             end else if (part_lba == 32'd0) begin
                                 err_code <= 4'd2;       // 分区表项无效
                                 st       <= S_FAIL;
                             end else begin
+                                volume_lba <= part_lba;
                                 stage     <= ST_VBR;
                                 next_lba  <= part_lba;
                                 cap_clr   <= 1'b1;
@@ -279,14 +300,14 @@ module fat32_reader #(
                                 // fat_begin  = part + reserved
                                 // data_begin = fat_begin + num_fats × fat_size
                                 // 簇 N 首扇区 = data_begin + (N-2) × spc
-                                fat_begin   <= part_lba + {16'd0, reserved_s};
-                                data_begin  <= part_lba + {16'd0, reserved_s}
+                                fat_begin   <= volume_lba + {16'd0, reserved_s};
+                                data_begin  <= volume_lba + {16'd0, reserved_s}
                                              + ({24'd0, num_fats} * fat_size);
                                 dir_cluster <= root_cluster;
                                 dir_sec_idx <= 8'd0;
                                 dir_fat_cnt <= 8'd0;
                                 stage       <= ST_DIR;
-                                next_lba    <= part_lba + {16'd0, reserved_s}
+                                next_lba    <= volume_lba + {16'd0, reserved_s}
                                              + ({24'd0, num_fats} * fat_size)
                                              + ((root_cluster - 32'd2) * {24'd0, spc});
                                 cap_clr     <= 1'b1;
@@ -375,6 +396,9 @@ module fat32_reader #(
             byte_cnt    <= 10'd0;
             mbr_sign    <= 16'd0;
             part_lba    <= 32'd0;
+            bytes_per_sec <= 16'd0;
+            root_entries <= 16'd0;
+            fat16_size  <= 16'd0;
             reserved_s  <= 16'd0;
             spc         <= 8'd0;
             num_fats    <= 8'd0;
@@ -406,6 +430,32 @@ module fat32_reader #(
             fat_entry   <= 32'd0;
         end else if (data_valid) begin
             byte_cnt <= byte_cnt + 10'd1;
+            // Capture BPB fields during sector-zero detection as well as VBR reads.
+            if (stage == ST_MBR || stage == ST_VBR) begin
+                case (byte_cnt)
+                    10'd11: bytes_per_sec[7:0]    <= data_byte;
+                    10'd12: bytes_per_sec[15:8]   <= data_byte;
+                    10'd13: spc                   <= data_byte;
+                    10'd14: reserved_s[7:0]       <= data_byte;
+                    10'd15: reserved_s[15:8]      <= data_byte;
+                    10'd16: num_fats              <= data_byte;
+                    10'd17: root_entries[7:0]     <= data_byte;
+                    10'd18: root_entries[15:8]    <= data_byte;
+                    10'd22: fat16_size[7:0]       <= data_byte;
+                    10'd23: fat16_size[15:8]      <= data_byte;
+                    10'd36: fat_size[7:0]         <= data_byte;
+                    10'd37: fat_size[15:8]        <= data_byte;
+                    10'd38: fat_size[23:16]       <= data_byte;
+                    10'd39: fat_size[31:24]       <= data_byte;
+                    10'd44: root_cluster[7:0]     <= data_byte;
+                    10'd45: root_cluster[15:8]    <= data_byte;
+                    10'd46: root_cluster[23:16]   <= data_byte;
+                    10'd47: root_cluster[31:24]   <= data_byte;
+                    10'd510: vbr_sign[7:0]        <= data_byte;
+                    10'd511: vbr_sign[15:8]       <= data_byte;
+                    default: begin end
+                endcase
+            end
             case (stage)
                 // ---- MBR: 分区表项0 起始 LBA 在 454~457，签名在 510/511 ----
                 ST_MBR: begin
@@ -416,26 +466,8 @@ module fat32_reader #(
                     else if (byte_cnt == 10'd510) mbr_sign[7:0]   <= data_byte;
                     else if (byte_cnt == 10'd511) mbr_sign[15:8]  <= data_byte;
                 end
-                // ---- VBR/BPB: 逐字段摘取（偏移见 docs/sd_spi_reference.md §6.1）----
-                ST_VBR: begin
-                    case (byte_cnt)
-                        10'd13: spc[7:0]            <= data_byte; // +0x0D
-                        10'd14: reserved_s[7:0]     <= data_byte; // +0x0E 低
-                        10'd15: reserved_s[15:8]    <= data_byte; // +0x0E 高
-                        10'd16: num_fats            <= data_byte; // +0x10
-                        10'd36: fat_size[7:0]       <= data_byte; // +0x24 字节 0
-                        10'd37: fat_size[15:8]      <= data_byte; // +0x24 字节 1
-                        10'd38: fat_size[23:16]     <= data_byte; // +0x24 字节 2
-                        10'd39: fat_size[31:24]     <= data_byte; // +0x24 字节 3
-                        10'd44: root_cluster[7:0]   <= data_byte; // +0x2C 字节 0
-                        10'd45: root_cluster[15:8]  <= data_byte; // +0x2C 字节 1
-                        10'd46: root_cluster[23:16] <= data_byte; // +0x2C 字节 2
-                        10'd47: root_cluster[31:24] <= data_byte; // +0x2C 字节 3
-                        10'd510: vbr_sign[7:0]      <= data_byte;
-                        10'd511: vbr_sign[15:8]     <= data_byte;
-                        default: begin end
-                    endcase
-                end
+                // VBR/BPB fields are captured above for both initial layouts.
+                ST_VBR: begin end
                 // ---- DIR: 32B 一项，逐项解析（512/32 = 16 项，不跨扇区）----
                 ST_DIR: begin
                     if (!dir_end) begin

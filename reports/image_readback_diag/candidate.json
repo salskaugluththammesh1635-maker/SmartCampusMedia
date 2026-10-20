@@ -1,0 +1,63 @@
+{
+  "checkedAt": "2026-10-20T12:20:32.890211+08:00",
+  "status": "diagnostic_board_failed_white_readback",
+  "errors": [],
+  "path": "project\\image_readback_diag_td_Runs\\phy_1\\image_readback_diag.bit",
+  "bytes": 629649,
+  "sha256": "22E9ECC45E85C15490584BC63131910B2248974C73EACC449CDB87ECC4AFF357",
+  "build_inputs_match": true,
+  "project_sha256_after_build": "E3A79A076E23C21D6D8A2D35C29AACBD38AFFD1B1D53F68839279B34C7163DCA",
+  "setup_wns_ns": -7.232,
+  "hold_wns_ns": 0.023,
+  "sdram_self_setup_ns": 0.12,
+  "sdram_self_hold_ns": 0.03,
+  "timing_passed": false,
+  "simulation": [
+    {
+      "log": "path_boundaries.txt",
+      "exitCode": 0,
+      "name": "path_boundaries",
+      "checks": 6184,
+      "passed": true
+    },
+    {
+      "log": "path_full_vga.txt",
+      "exitCode": 0,
+      "name": "path_full_vga",
+      "checks": 614406,
+      "passed": true
+    }
+  ],
+  "readback_unit": {
+    "errors": 0,
+    "checks": 12,
+    "status": "passed",
+    "sources": [
+      {
+        "sha256": "EE76CB3E36B8BE69C564A25E1FD6925AC5BDFC2FF4CB3183AB40595F56E12D6A",
+        "path": "rtl/storage/image_readback_diag.v"
+      },
+      {
+        "sha256": "954290B76E35A33561C268895D5D0075BF5E03D6A87E92DC1A15FF718D097DA8",
+        "path": "rtl/storage/sdram_ctrl_wrap.v"
+      },
+      {
+        "sha256": "D55113F40DECD61991EA77F48D4006BCA0ADE5E58BCE863973FA164905EF845F",
+        "path": "sim/testbench/tb_image_readback_diag.v"
+      }
+    ],
+    "log": "simulation.txt"
+  },
+  "board_feedback": {
+    "source": "user_report",
+    "digits": "7711",
+    "led_on": [
+      0,
+      1,
+      2,
+      6
+    ],
+    "central_red": false,
+    "result": "direct_scan_white_only_compare_failed_or_timeout"
+  }
+}

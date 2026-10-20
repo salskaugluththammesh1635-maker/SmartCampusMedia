@@ -1,0 +1,423 @@
+{
+  "checkedAt": "2026-10-20T10:42:37.069054+08:00",
+  "status": "blocked_by_sdram_timing",
+  "failures": [],
+  "simulations": {
+    "frontend": {
+      "passed": true,
+      "tests": [
+        {
+          "passed": true,
+          "name": "sd_protocol_default",
+          "exitCode": 0,
+          "passLines": 62,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_sd_spi_protocol"
+          ],
+          "log": "sd_protocol_default.txt"
+        },
+        {
+          "passed": true,
+          "name": "sd_protocol_fast",
+          "exitCode": 0,
+          "passLines": 64,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-gINIT_DIV=2",
+            "-gLOOP_LIMIT=4",
+            "-gTOKEN_LIMIT=256",
+            "-gPOWERUP_DELAY=100",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_sd_spi_protocol"
+          ],
+          "log": "sd_protocol_fast.txt"
+        },
+        {
+          "passed": true,
+          "name": "sd_spi_ctrl",
+          "exitCode": 0,
+          "passLines": 23,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_sd_spi_ctrl"
+          ],
+          "log": "sd_spi_ctrl.txt"
+        },
+        {
+          "passed": true,
+          "name": "sd_probe",
+          "exitCode": 0,
+          "passLines": 14,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_sd_probe"
+          ],
+          "log": "sd_probe.txt"
+        },
+        {
+          "passed": true,
+          "name": "fat32_reader",
+          "exitCode": 0,
+          "passLines": 40,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_fat32_reader"
+          ],
+          "log": "fat32_reader.txt"
+        },
+        {
+          "passed": true,
+          "name": "bmp_parser",
+          "exitCode": 0,
+          "passLines": 37,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_bmp_parser"
+          ],
+          "log": "bmp_parser.txt"
+        },
+        {
+          "passed": true,
+          "name": "img_loader",
+          "exitCode": 0,
+          "passLines": 43,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_img_loader"
+          ],
+          "log": "img_loader.txt"
+        },
+        {
+          "passed": true,
+          "name": "player_ctrl",
+          "exitCode": 0,
+          "passLines": 85,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_player_ctrl"
+          ],
+          "log": "player_ctrl.txt"
+        }
+      ]
+    },
+    "storage": {
+      "passed": true,
+      "tests": [
+        {
+          "name": "tb_async_fifo",
+          "status": "passed",
+          "exitCode": 0,
+          "log": "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\s6_integration\\storage\\tb_async_fifo.log",
+          "seconds": 1.108,
+          "checks": 24,
+          "errors": 0,
+          "cases": 8,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_async_fifo"
+          ]
+        },
+        {
+          "name": "tb_framebuf_arbiter",
+          "status": "passed",
+          "exitCode": 0,
+          "log": "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\s6_integration\\storage\\tb_framebuf_arbiter.log",
+          "seconds": 0.994,
+          "checks": 46756,
+          "errors": 0,
+          "cases": 15,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_framebuf_arbiter"
+          ]
+        },
+        {
+          "name": "tb_sdram_ctrl_wrap",
+          "status": "passed",
+          "exitCode": 0,
+          "log": "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\s6_integration\\storage\\tb_sdram_ctrl_wrap.log",
+          "seconds": 1.506,
+          "checks": 154771,
+          "errors": 0,
+          "cases": 12,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_sdram_ctrl_wrap"
+          ]
+        },
+        {
+          "name": "tb_pix_reader",
+          "status": "passed",
+          "exitCode": 0,
+          "log": "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\s6_integration\\storage\\tb_pix_reader.log",
+          "seconds": 1.923,
+          "checks": 108,
+          "errors": 0,
+          "cases": 8,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_pix_reader"
+          ]
+        },
+        {
+          "name": "tb_pix_reader_vga",
+          "status": "passed",
+          "exitCode": 0,
+          "log": "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\s6_integration\\storage\\tb_pix_reader_vga.log",
+          "seconds": 153.067,
+          "checks": 64,
+          "errors": 0,
+          "cases": 5,
+          "arguments": [
+            "-c",
+            "-quiet",
+            "-onfinish",
+            "stop",
+            "-gPIX_PER_LINE=640",
+            "-gLINES=480",
+            "-gH_FP=16",
+            "-gH_SYNC=96",
+            "-gH_BP=48",
+            "-gV_FP=10",
+            "-gV_SYNC=2",
+            "-gV_BP=33",
+            "-gFIFO_AW=9",
+            "-gLEVEL_HI=384",
+            "-gSTRESS=0",
+            "-do",
+            "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+            "work.tb_pix_reader"
+          ]
+        }
+      ]
+    },
+    "simulation": {
+      "passed": true,
+      "tests": [
+        {
+          "log": "image_player.txt",
+          "exitCode": 0,
+          "name": "image_player",
+          "checks": 6202,
+          "passed": true
+        },
+        {
+          "log": "image_player_full.txt",
+          "exitCode": 0,
+          "name": "image_player_full",
+          "checks": 614404,
+          "passed": true
+        }
+      ]
+    }
+  },
+  "clocks": {
+    "pixel_25MHz": true,
+    "serializer_125MHz": true,
+    "sdram_150MHz": true,
+    "sdram_shift_150MHz": true
+  },
+  "timing": {
+    "passed": false,
+    "setupWnsNs": -7.232,
+    "holdWnsNs": 0.023
+  },
+  "buildInputs": [
+    {
+      "path": "project\\hdmi_td.al",
+      "sha256": "9C99FAE42D570C598561E2F1A4BB6D35A222897EC1B11B4F67D2111CE3F1A3AA"
+    },
+    {
+      "path": "ip\\local\\sdram\\global_def.v",
+      "sha256": "C4C7A02C5C70C9A6B75D2710C97706886A9DD22F10587A7F466C3A5206563F31"
+    },
+    {
+      "path": "ip\\local\\sdram\\sdr_wrrd.enc.v",
+      "sha256": "C7D7FE07D75F66AA88D9F986B3006319C995162434F104F9990664B374CDFDD2"
+    },
+    {
+      "path": "ip\\local\\sdram\\sdr_init_ref.enc.v",
+      "sha256": "622432952E6838AAD5A10BC8092FDF2C89E60173E04310ABFE442EF98AD52F7D"
+    },
+    {
+      "path": "ip\\local\\sdram\\sdr_as_ram.enc.v",
+      "sha256": "A3555C3D2A6675DA55055651F00CB60102239042ED3E5DF06970BFEE88FFD7F1"
+    },
+    {
+      "path": "project\\hdmi\\sdram_pll.v",
+      "sha256": "0550CF2E1253D9D7CC655EA7C07D80FD50F3099AA4BDA74F683630E0FA253AA4"
+    },
+    {
+      "path": "project\\hdmi\\sdram_ctrl_wrap.v",
+      "sha256": "954290B76E35A33561C268895D5D0075BF5E03D6A87E92DC1A15FF718D097DA8"
+    },
+    {
+      "path": "project\\hdmi\\async_fifo.v",
+      "sha256": "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0"
+    },
+    {
+      "path": "project\\hdmi\\fat32_reader.v",
+      "sha256": "D6E77072253A610394B45177E4A535F44EC8B56B4ADEA8A37C26C2D5EA66AFE4"
+    },
+    {
+      "path": "project\\hdmi\\bmp_parser.v",
+      "sha256": "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB"
+    },
+    {
+      "path": "project\\hdmi\\img_loader.v",
+      "sha256": "2CF9190F637075F17F73B9DB33B29278D14E131EDA89E7AF09B470E4633E9DAA"
+    },
+    {
+      "path": "project\\hdmi\\framebuf_arbiter.v",
+      "sha256": "CD56B24FCB78971A34FA275927EA1AA711C31960DEB6A1902B4737BA47F282CC"
+    },
+    {
+      "path": "project\\hdmi\\image_player.v",
+      "sha256": "DACEF829916BBA25C5B115B691015A704824404D89E79EA6CADB59507F2184B5"
+    },
+    {
+      "path": "project\\hdmi\\pix_reader.v",
+      "sha256": "61356313865C217CD7E09EB4D9D47D6ADE543266CD45F2F0A888A662D14530E7"
+    },
+    {
+      "path": "project\\hdmi\\player_ctrl.v",
+      "sha256": "783E6B02E6CF1DC9605158C5329E3F7220BC619A85B34C4BA8AB3E17A4961880"
+    },
+    {
+      "path": "project\\hdmi\\seg_decoder.v",
+      "sha256": "6F1DA53AB11F98BB21D1702600298B4C4289D90FB2F797C6A34BC9E3AB2BEBBE"
+    },
+    {
+      "path": "project\\hdmi\\seg_scan4.v",
+      "sha256": "C52400B473FEA87A8F4247A93504704C6D83AECFF583B2F3EBDC8FC3DE66F5DE"
+    },
+    {
+      "path": "project\\hdmi\\key_matrix_4x4.v",
+      "sha256": "6681F062E709D25D50718A26A52E3D04EDFB3524D058E13A807B87C6A0A2E43F"
+    },
+    {
+      "path": "project\\hdmi\\buzzer_tone.v",
+      "sha256": "85938B2D6733E1F1AD80CCFCF01E68B34D6A033C32433BBA47CBE133B862D627"
+    },
+    {
+      "path": "project\\hdmi\\pwm_audio_out.v",
+      "sha256": "524BFBDFEE7D008C66E0A00E7342D830BFFE4969D63EE1428EFBFE4AE5CA5551"
+    },
+    {
+      "path": "project\\hdmi\\sd_spi_ctrl.v",
+      "sha256": "D507BB8ECC9A6F7C9DC968D7F4DF7AD5743887439839DB4DCA07AB41080B28BC"
+    },
+    {
+      "path": "project\\hdmi\\sd_probe.v",
+      "sha256": "D682FDA21D2D674B234629BEA8C81DB1D9B97CF1289DA246AD00F6AEA0497DAF"
+    },
+    {
+      "path": "project\\hdmi\\video_timing_gen.v",
+      "sha256": "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78"
+    },
+    {
+      "path": "project\\hdmi\\test_pattern_gen.v",
+      "sha256": "E66964539E132C2A4F64D5CF6BFAF049F198900182912A2F999E2B89DD21AA47"
+    },
+    {
+      "path": "project\\hdmi\\hdmi_pll.v",
+      "sha256": "7E2D6DC53492DAD0751DAE041358A7E80C040729572C2103B6D66F1BD1914240"
+    },
+    {
+      "path": "project\\hdmi\\dmz_eg4s20_hdmi_top.v",
+      "sha256": "37AE376DF66F8E08CBC70F5AF515E4433BD1F1B4D2D15DA0F76D34394B38D2AC"
+    },
+    {
+      "path": "project\\hdmi\\hdmi_tx.vhd",
+      "sha256": "C347B7DDA1AF24504FB32DB1D8F13970B4F09E95C28F721D58FAB716B9D1EA43"
+    },
+    {
+      "path": "project\\hdmi\\enc\\DVITransmitter.enc.vhd",
+      "sha256": "FA009E816FC717374679DBA8096C518DC6F3FFBC2389D440A1724D9487EC1674"
+    },
+    {
+      "path": "project\\hdmi\\enc\\SerializerN_1_lvds.enc.vhd",
+      "sha256": "D5FB9B03E33A0E43398E1E963036BBD87FD386C23AF1B79F23E3D32E87B1DD63"
+    },
+    {
+      "path": "project\\hdmi\\enc\\SerializerN_1_lvds_dat.enc.vhd",
+      "sha256": "2215E28372D39D6CB155F5B87FEB39FA578CCA39223CEDB9E712CA7413D7783E"
+    },
+    {
+      "path": "project\\hdmi\\enc\\TMDSEncoder.enc.vhd",
+      "sha256": "F87572D7CE8539276E280C411FE46F42F3282210D7C53601CFD6C8ECB8C71BEB"
+    },
+    {
+      "path": "project\\hdmi\\dmz_eg4s20_hdmi.adc",
+      "sha256": "7E8BE80E064B8CC8CEFA251F81F384FE51A8DC8786354E2CE260D14A4ED52368"
+    },
+    {
+      "path": "project\\hdmi\\dmz_eg4s20_hdmi.sdc",
+      "sha256": "ECB1995A40690B6503DD20CB21668EEC3FBF342CAF77C2AC52F6FF4587B9E0BD"
+    }
+  ],
+  "candidateBit": {
+    "path": "project\\hdmi_td_Runs\\phy_1\\hdmi_td.bit",
+    "sha256": "DF84E7EE7122DF18745FDF02338DD13A2FD214F4312AAADD306F812E7166993A"
+  }
+}

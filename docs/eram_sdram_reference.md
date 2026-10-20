@@ -42,6 +42,8 @@ sdr_as_ram  (加密顶层)      例化二者，仲裁刷新与读写，输出 SD
 
 物理侧：SDRAM_CLK、SDR_RAS/CAS/WE、SDR_BA[1:0]、SDR_ADDR[10:0]、SDR_DM[3:0]、SDR_DQ[31:0]。
 
+**实测核接口补充（2026-10-20）：DM 会透传到物理 DQM，读取也会被屏蔽。没有写命令时必须将 App_wr_dm 置 0；仅有效的全屏蔽补写拍置 F。** 旧仲裁器在读取期间置 F 导致管脚功能模型返回高阻；单项修正后整帧真实核仿真通过，板上仍待回测，见 [读取 DQM 修正](image_dm_fix_2026-10-20.md)。
+
 ## 4. 时序行为（关键约束）
 
 - **读延迟固定 10 拍**：App_rd_en+addr 后，第 10 个 Sdr_clk 拍起 Sdr_rd_en/有效数据连续流出。
@@ -86,4 +88,4 @@ sdr_as_ram  (加密顶层)      例化二者，仲裁刷新与读写，输出 SD
 2. 写帧调度：读流（显示侧）优先连续，写侧在行/帧消隐窗口成块突发；写前检查 Sdr_init_ref_vld。
 3. 地址生成严格 4 拍一跳（addr[1:0]=00）；突发长度取 4 的倍数。
 4. 双缓冲可选：64Mbit 容量允许 ping-pong 双帧（各 786KB×2，地址 0 / 0x60000 起）。
-5. STA：150MHz 域加入 SDC（create_generated_clock 挂新 PLL 输出 + set_clock_groups 扩展三组 exclusive）。
+5. STA（2026-10-20 更正）：用 `derive_clocks` 派生 PLL 时钟，不重复定义输出。仅两颗独立 PLL 之间分异步组；同一 SDRAM PLL 的 0°/180°关系必须保留，SiP 读写路径也须接受检查。历史 bring-up 切断这两路后得到的正余量不能证明 SDRAM 接口时序通过。

@@ -1,0 +1,5 @@
+# Captured sector bytes are a replay fixture; keep their content out of text diffs.
+/reports/sd_card_2110/data.hex -diff
+
+# Preserve the original formatting of generated validation reports.
+/reports/** -whitespace

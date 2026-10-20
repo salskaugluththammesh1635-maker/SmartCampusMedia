@@ -1,0 +1,20 @@
+{
+  "errors": 0,
+  "checks": 12,
+  "status": "passed",
+  "sources": [
+    {
+      "sha256": "EE76CB3E36B8BE69C564A25E1FD6925AC5BDFC2FF4CB3183AB40595F56E12D6A",
+      "path": "rtl/storage/image_readback_diag.v"
+    },
+    {
+      "sha256": "954290B76E35A33561C268895D5D0075BF5E03D6A87E92DC1A15FF718D097DA8",
+      "path": "rtl/storage/sdram_ctrl_wrap.v"
+    },
+    {
+      "sha256": "D55113F40DECD61991EA77F48D4006BCA0ADE5E58BCE863973FA164905EF845F",
+      "path": "sim/testbench/tb_image_readback_diag.v"
+    }
+  ],
+  "log": "simulation.txt"
+}

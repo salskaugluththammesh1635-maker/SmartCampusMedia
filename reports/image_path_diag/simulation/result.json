@@ -1,0 +1,67 @@
+﻿{
+    "startedAt":  "2026-10-20T11:56:12.8830490+08:00",
+    "status":  "passed",
+    "sources":  [
+                    {
+                        "sha256":  "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0",
+                        "path":  "rtl/common/async_fifo.v"
+                    },
+                    {
+                        "sha256":  "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78",
+                        "path":  "rtl/video/video_timing_gen.v"
+                    },
+                    {
+                        "sha256":  "CD56B24FCB78971A34FA275927EA1AA711C31960DEB6A1902B4737BA47F282CC",
+                        "path":  "rtl/storage/framebuf_arbiter.v"
+                    },
+                    {
+                        "sha256":  "954290B76E35A33561C268895D5D0075BF5E03D6A87E92DC1A15FF718D097DA8",
+                        "path":  "rtl/storage/sdram_ctrl_wrap.v"
+                    },
+                    {
+                        "sha256":  "61356313865C217CD7E09EB4D9D47D6ADE543266CD45F2F0A888A662D14530E7",
+                        "path":  "rtl/storage/pix_reader.v"
+                    },
+                    {
+                        "sha256":  "D6E77072253A610394B45177E4A535F44EC8B56B4ADEA8A37C26C2D5EA66AFE4",
+                        "path":  "rtl/storage/fat32_reader.v"
+                    },
+                    {
+                        "sha256":  "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB",
+                        "path":  "rtl/storage/bmp_parser.v"
+                    },
+                    {
+                        "sha256":  "2CF9190F637075F17F73B9DB33B29278D14E131EDA89E7AF09B470E4633E9DAA",
+                        "path":  "rtl/storage/img_loader.v"
+                    },
+                    {
+                        "sha256":  "147FCFC3B62E835CBFB98FFA36CF635733D846E0E6CCC476C37130BD92023AAB",
+                        "path":  "rtl/storage/image_path_probe.v"
+                    },
+                    {
+                        "sha256":  "C19BCD2B86EE106A8AE025F9E9E0BE4CFE5A7788F9B4F56D0D5A245D90C26283",
+                        "path":  "project/image_path_diag/image_player_path_diag.v"
+                    },
+                    {
+                        "sha256":  "5C130B5C51C3EC1726844A6EE856EABD9E1CFB7971FCF8EE9BB46CFDA753FF5F",
+                        "path":  "project/image_path_diag/tb_image_path_diag.v"
+                    }
+                ],
+    "tests":  [
+                  {
+                      "log":  "path_boundaries.txt",
+                      "exitCode":  0,
+                      "name":  "path_boundaries",
+                      "checks":  6178,
+                      "passed":  true
+                  },
+                  {
+                      "log":  "path_full_vga.txt",
+                      "exitCode":  0,
+                      "name":  "path_full_vga",
+                      "checks":  614405,
+                      "passed":  true
+                  }
+              ],
+    "finishedAt":  "2026-10-20T11:59:22.3986867+08:00"
+}

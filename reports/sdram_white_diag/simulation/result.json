@@ -1,0 +1,20 @@
+﻿{
+    "startedAt":  "2026-10-20T10:39:25.6372163+08:00",
+    "status":  "passed",
+    "sources":  [
+                    {
+                        "sha256":  "E221DCCA4F659218E9C7F68BE37E5D69611B9CC191E39351DFB81B170FD73230",
+                        "path":  "rtl/storage/sdram_frame_diag.v"
+                    },
+                    {
+                        "sha256":  "954290B76E35A33561C268895D5D0075BF5E03D6A87E92DC1A15FF718D097DA8",
+                        "path":  "rtl/storage/sdram_ctrl_wrap.v"
+                    },
+                    {
+                        "sha256":  "3A212550D07FED1548C42D4C3823FA7C483CC86A80DB025A29EDE4BB13D5E733",
+                        "path":  "sim/testbench/tb_sdram_frame_diag.v"
+                    }
+                ],
+    "exitCode":  0,
+    "finishedAt":  "2026-10-20T10:39:34.2755365+08:00"
+}

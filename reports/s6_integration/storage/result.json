@@ -1,0 +1,155 @@
+﻿{
+    "suite":  "All",
+    "fullVgaRequested":  true,
+    "startedAt":  "2026-10-20T01:09:58.2691549+08:00",
+    "modelSimPath":  "D:\\Quartus_APP\\modelsim_ase\\win32aloem",
+    "compileExit":  0,
+    "status":  "passed",
+    "sources":  [
+                    {
+                        "path":  "rtl\\common\\async_fifo.v",
+                        "sha256":  "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0"
+                    },
+                    {
+                        "path":  "rtl\\video\\video_timing_gen.v",
+                        "sha256":  "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78"
+                    },
+                    {
+                        "path":  "rtl\\storage\\framebuf_arbiter.v",
+                        "sha256":  "CD56B24FCB78971A34FA275927EA1AA711C31960DEB6A1902B4737BA47F282CC"
+                    },
+                    {
+                        "path":  "rtl\\storage\\sdram_ctrl_wrap.v",
+                        "sha256":  "954290B76E35A33561C268895D5D0075BF5E03D6A87E92DC1A15FF718D097DA8"
+                    },
+                    {
+                        "path":  "rtl\\storage\\pix_reader.v",
+                        "sha256":  "61356313865C217CD7E09EB4D9D47D6ADE543266CD45F2F0A888A662D14530E7"
+                    },
+                    {
+                        "path":  "sim\\testbench\\tb_async_fifo.v",
+                        "sha256":  "04ED01CD93C6989CC51A4A34BB8CBB619753547126D90854A4CB41B809D39EA9"
+                    },
+                    {
+                        "path":  "sim\\testbench\\tb_framebuf_arbiter.v",
+                        "sha256":  "A70FBC356FF94F88018A112271793048C1BD4B104C9682A9BB5A90584BD641BA"
+                    },
+                    {
+                        "path":  "sim\\testbench\\tb_sdram_ctrl_wrap.v",
+                        "sha256":  "80448FFD15DFC451C36F8D2280A05C180F95019006D0901FB3F5D79DF0AC8A02"
+                    },
+                    {
+                        "path":  "sim\\testbench\\tb_pix_reader.v",
+                        "sha256":  "EEC27BA266D0CFF45C5B13015F396B9315A02C3E1D710F78A3C42DCEC117E28D"
+                    }
+                ],
+    "tests":  [
+                  {
+                      "name":  "tb_async_fifo",
+                      "status":  "passed",
+                      "exitCode":  0,
+                      "log":  "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\s6_integration\\storage\\tb_async_fifo.log",
+                      "seconds":  1.108,
+                      "checks":  24,
+                      "errors":  0,
+                      "cases":  8,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_async_fifo"
+                                    ]
+                  },
+                  {
+                      "name":  "tb_framebuf_arbiter",
+                      "status":  "passed",
+                      "exitCode":  0,
+                      "log":  "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\s6_integration\\storage\\tb_framebuf_arbiter.log",
+                      "seconds":  0.994,
+                      "checks":  46756,
+                      "errors":  0,
+                      "cases":  15,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_framebuf_arbiter"
+                                    ]
+                  },
+                  {
+                      "name":  "tb_sdram_ctrl_wrap",
+                      "status":  "passed",
+                      "exitCode":  0,
+                      "log":  "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\s6_integration\\storage\\tb_sdram_ctrl_wrap.log",
+                      "seconds":  1.506,
+                      "checks":  154771,
+                      "errors":  0,
+                      "cases":  12,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_sdram_ctrl_wrap"
+                                    ]
+                  },
+                  {
+                      "name":  "tb_pix_reader",
+                      "status":  "passed",
+                      "exitCode":  0,
+                      "log":  "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\s6_integration\\storage\\tb_pix_reader.log",
+                      "seconds":  1.923,
+                      "checks":  108,
+                      "errors":  0,
+                      "cases":  8,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_pix_reader"
+                                    ]
+                  },
+                  {
+                      "name":  "tb_pix_reader_vga",
+                      "status":  "passed",
+                      "exitCode":  0,
+                      "log":  "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\s6_integration\\storage\\tb_pix_reader_vga.log",
+                      "seconds":  153.067,
+                      "checks":  64,
+                      "errors":  0,
+                      "cases":  5,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-gPIX_PER_LINE=640",
+                                        "-gLINES=480",
+                                        "-gH_FP=16",
+                                        "-gH_SYNC=96",
+                                        "-gH_BP=48",
+                                        "-gV_FP=10",
+                                        "-gV_SYNC=2",
+                                        "-gV_BP=33",
+                                        "-gFIFO_AW=9",
+                                        "-gLEVEL_HI=384",
+                                        "-gSTRESS=0",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_pix_reader"
+                                    ]
+                  }
+              ],
+    "finishedAt":  "2026-10-20T01:12:37.1620321+08:00"
+}

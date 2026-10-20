@@ -45,13 +45,14 @@
 //   2) **写通道无反压**：`app_wr_en` 拉高即写，本模块不提供 ready。
 //      调用方（framebuf_arbiter）必须自己保证不在刷新窗口内发写命令。
 //   3) **读写不可同时**：同一条数据总线，读周期与写周期必须完全分开。
-//   4) **`app_*_addr[1:0]` 必须恒 `2'b00`**：地址以 128bit（4×32bit）为单元，
-//      每 4 拍才可跳一次地址。
+//   4) 四字组的首址必须对齐，组内地址由首址累加。上层仲裁器选择四拍恒基址；
+//      官方可读驱动也使用基址+拍号，不能把“每拍低两位都为零”写成硬核要求。
 //   5) **`ref_vld` 是唯一流控**：`sdr_busy` 官方标注"暂不使用"，不要拿它判。
 //   6) **`app_wr_dm` 语义**：`dm[n]=1` 表示**屏蔽** `din[8n+7:8n]` 字节。
 //      全写时置 `4'b0000`（注意：官方例程 `app_wrrd.v` 里用的是 `4'b0000`，
 //      与 `docs/eram_sdram_reference.md` §3 表格里写的"屏蔽时置 4'b1111"
 //      表述方向相反，**以本处为准**：1=屏蔽，0=写）。
+//      加密核把 DM 也送到物理 DQM，读出同样受它屏蔽；没有写命令时必须置 0。
 //
 // 【五、时钟】
 //   本模块工作在 `sdram_clk`（150MHz，`sdram_pll` 的 C1 输出）单一时钟域。
@@ -83,7 +84,7 @@ module sdram_ctrl_wrap #(
     // ---------------- 控制器状态 ----------------
     output wire        init_done,    // 初始化完成，可以开始读写
     output wire        ref_vld,      // 刷新进行中（高 = 必须避让）
-    output wire        busy,         // = !init_done，给上层一个正向语义
+    output wire        busy,         // = !init_done | ref_vld
 
     // ---------------- 用户侧（接 framebuf_arbiter）----------------
     input  wire        app_wr_en,
@@ -116,7 +117,7 @@ module sdram_ctrl_wrap #(
     // -------------------------------------------------------------------------
     // busy 的正向语义：加密核给的是 init_done，这里补一个 busy 方便上层
     // -------------------------------------------------------------------------
-    assign busy = ~init_done;
+    assign busy = ~init_done | ref_vld;
 
     // 仿真模式下 SDR_CKE 常量（与官方 top.v 一致：self_refresh_open=1 时恒 1）
     assign sdram_cke = 1'b1;
@@ -207,11 +208,13 @@ endmodule
 // =============================================================================
 // sdram_behavior_model — SDRAM 控制器行为模型（仅仿真）
 // =============================================================================
-// 与真实加密核的**时序等价性**（这是本模型存在的唯一理由）：
+// 行为验证用模型，不是加密核的周期等价替代；真核与上板仍须单独验证：
 //   - 上电后有 INIT_CYCLES 拍的初始化期，期间 init_done=0
 //   - 读延迟**固定 10 拍**（与手册 §4 一致）
 //   - 写立即生效（与真核"拉高即写"一致）
-//   - 周期性拉 ref_vld 模拟自刷新，持续 REF_VLD_CYCLES 拍
+//   - 周期性拉 ref_vld 模拟自刷新，严格持续 REF_VLD_CYCLES 拍
+//   - 组内暂停保留已接受拍的相位，仅是本模型假设，不是已核实的真核保证
+//   - SIM_MEM_WORDS 必须为二的幂；数组低位索引按仿真容量镜像回绕
 //   - **刷新期间忽略一切读写命令**（真核是"用户必须避让"，模型选择
 //     "忽略"而不是"缓存"，这样上层如果漏了避让会**丢数据**而不是侥幸通过，
 //     更容易在仿真里暴露问题）
@@ -243,12 +246,21 @@ module sdram_behavior_model #(
     localparam MEM_AW = $clog2(SIM_MEM_WORDS);
 
     reg [15:0] init_cnt;
-    reg [15:0] ref_cnt;
+    reg [31:0] ref_cnt;
     reg        ref_active;
 
     // 读延迟移位链
     reg [31:0] rd_lat_data [0:RD_LATENCY-1];
     reg        rd_lat_vld  [0:RD_LATENCY-1];
+
+    // 每四个实际接受的命令锁存一次首址；组内暂停不推进相位。
+    // 读写独立计数，连续两组同址和帧首重启均不依赖地址变化。
+    reg [1:0] wr_phase, rd_phase;
+    reg [20:0] wr_group_base, rd_group_base;
+    wire [20:0] wr_eff_addr = (wr_phase == 0) ? app_wr_addr :
+                             wr_group_base + {19'd0, wr_phase};
+    wire [20:0] rd_eff_addr = (rd_phase == 0) ? app_rd_addr :
+                             rd_group_base + {19'd0, rd_phase};
 
     // 读输出直连移位链队首：保证 app_rd_en 之后**第 10 拍**即有效
     // （若再用一级寄存器会变成第 11 拍，与手册不符）
@@ -264,6 +276,10 @@ module sdram_behavior_model #(
             init_cnt    <= 16'd0;
             ref_cnt     <= 16'd0;
             ref_active  <= 1'b0;
+            wr_phase <= 2'd0;
+            rd_phase <= 2'd0;
+            wr_group_base <= 21'd0;
+            rd_group_base <= 21'd0;
             for (i = 0; i < RD_LATENCY; i = i + 1) begin
                 rd_lat_data[i] <= 32'd0;
                 rd_lat_vld[i]  <= 1'b0;
@@ -274,33 +290,34 @@ module sdram_behavior_model #(
                 init_cnt <= init_cnt + 16'd1;
             else
                 init_done <= 1'b1;
-
             // ---------- 周期刷新 ----------
             if (!ref_active) begin
-                if (ref_cnt >= REFRESH_PERIOD[15:0]) begin
-                    ref_cnt    <= 16'd0;
+                if (ref_cnt >= REFRESH_PERIOD) begin
+                    ref_cnt    <= 32'd0;
                     ref_active <= 1'b1;
                     ref_vld    <= 1'b1;
                 end else begin
-                    ref_cnt <= ref_cnt + 16'd1;
+                    ref_cnt <= ref_cnt + 32'd1;
                 end
             end else begin
-                if (ref_cnt >= REF_VLD_CYCLES[15:0]) begin
+                if (ref_cnt >= REF_VLD_CYCLES-1) begin
                     ref_active <= 1'b0;
                     ref_vld    <= 1'b0;
-                    ref_cnt    <= 16'd0;
+                    ref_cnt    <= 32'd0;
                 end else begin
-                    ref_cnt <= ref_cnt + 16'd1;
+                    ref_cnt <= ref_cnt + 32'd1;
                 end
             end
 
             // ---------- 写：立即生效，dm 逐字节屏蔽 ----------
             // dm[n]=1 表示屏蔽对应字节（与 APUG011 一致）
             if (app_wr_en && init_done && !ref_vld) begin
-                if (!app_wr_dm[0]) mem[app_wr_addr[MEM_AW-1:0]][7:0]   <= app_wr_din[7:0];
-                if (!app_wr_dm[1]) mem[app_wr_addr[MEM_AW-1:0]][15:8]  <= app_wr_din[15:8];
-                if (!app_wr_dm[2]) mem[app_wr_addr[MEM_AW-1:0]][23:16] <= app_wr_din[23:16];
-                if (!app_wr_dm[3]) mem[app_wr_addr[MEM_AW-1:0]][31:24] <= app_wr_din[31:24];
+                if (wr_phase == 0) wr_group_base <= app_wr_addr;
+                wr_phase <= wr_phase + 2'd1;
+                if (!app_wr_dm[0]) mem[wr_eff_addr[MEM_AW-1:0]][7:0]   <= app_wr_din[7:0];
+                if (!app_wr_dm[1]) mem[wr_eff_addr[MEM_AW-1:0]][15:8]  <= app_wr_din[15:8];
+                if (!app_wr_dm[2]) mem[wr_eff_addr[MEM_AW-1:0]][23:16] <= app_wr_din[23:16];
+                if (!app_wr_dm[3]) mem[wr_eff_addr[MEM_AW-1:0]][31:24] <= app_wr_din[31:24];
             end
 
             // ---------- 读：10 拍固定延迟 ----------
@@ -309,8 +326,12 @@ module sdram_behavior_model #(
                 rd_lat_data[i] <= rd_lat_data[i+1];
                 rd_lat_vld[i]  <= rd_lat_vld[i+1];
             end
-            rd_lat_data[RD_LATENCY-1] <= mem[app_rd_addr[MEM_AW-1:0]];
-            rd_lat_vld[RD_LATENCY-1]  <= app_rd_en && init_done && !ref_vld;
+            rd_lat_data[RD_LATENCY-1] <= mem[rd_eff_addr[MEM_AW-1:0]];
+            rd_lat_vld[RD_LATENCY-1] <= app_rd_en && init_done && !ref_vld;
+            if (app_rd_en && init_done && !ref_vld) begin
+                if (rd_phase == 0) rd_group_base <= app_rd_addr;
+                rd_phase <= rd_phase + 2'd1;
+            end
 
         end
     end

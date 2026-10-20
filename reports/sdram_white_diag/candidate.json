@@ -1,0 +1,16 @@
+{
+  "status": "diagnostic_board_pass_reported_timing_still_failed",
+  "path": "project\\sdram_frame_diag_td_Runs\\phy_1\\sdram_frame_diag.bit",
+  "bytes": 629641,
+  "sha256": "563BA6BAE379F84A69AF83D010AC5A31C4FC8F98BEAA1F93A17EDE0C5A9433DE",
+  "build_inputs_match": true,
+  "setup_wns_ns": -7.359,
+  "hold_wns_ns": 0.046,
+  "simulation": "passed",
+  "board_feedback": {
+    "source": "user_report",
+    "led_on": [0, 1],
+    "result": "full_frame_compare_passed",
+    "scope": "standalone continuous full-frame BIST; image pipeline not verified"
+  }
+}

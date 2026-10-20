@@ -1,0 +1,14 @@
+{
+  "source": "user_report",
+  "recorded_at": "2026-10-20T13:36:28+08:00",
+  "bit_path": "project/image_dm_fix_td_Runs/phy_1/image_dm_fix.bit",
+  "bit_sha256": "C1CD8EE33F8E882C6EAA40C1385A8E26F88F72C045F14A76FEF87E6A4E250B15",
+  "raw_reply": "7777 LED012345 出现",
+  "digits": "7777",
+  "led_on": [0, 1, 2, 3, 4, 5],
+  "central_red_visible": true,
+  "result": "functional_board_pass_reported",
+  "scope": "Known white/red BMP loaded from SD, continuous full-frame comparison and HDMI image display on the reported board run",
+  "timing_acceptance": false,
+  "long_term_stability_verified": false
+}

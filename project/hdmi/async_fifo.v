@@ -115,7 +115,7 @@ module async_fifo #(
     //     否则会丢弃数据且指针错位
     // -------------------------------------------------------------------------
     always @(*) begin
-        wr_bin_next = wr_bin + {{(PTR_W-1){1'b0}}, (wr_en && !wr_full)};
+        wr_bin_next = (wr_en && !wr_full) ? (wr_bin + 1'b1) : wr_bin;
     end
 
     always @(posedge wr_clk or negedge wr_rst_n) begin
@@ -133,9 +133,15 @@ module async_fifo #(
     // -------------------------------------------------------------------------
     // 组合块：纯阻塞赋值，与下方时序块严格分离（满足 lint E1）
     always @(*) begin
-        wr_gray_next      = wr_bin_next ^ (wr_bin_next >> 1);
-        wr_full_next      = (wr_gray_next ==
-                             {~rd_gray_wr2[PTR_W-1:PTR_W-2], rd_gray_wr2[PTR_W-3:0]});
+        // 先计算前进后的指针与比较结果，使使能只进入末级选择器。
+        wr_gray_next = (wr_bin + 1'b1) ^ ((wr_bin + 1'b1) >> 1);
+        wr_full_next = (wr_gray_next ==
+                       {~rd_gray_wr2[PTR_W-1:PTR_W-2], rd_gray_wr2[PTR_W-3:0]});
+        if (!wr_en || wr_full) begin
+            wr_gray_next = wr_gray;
+            wr_full_next = (wr_gray ==
+                           {~rd_gray_wr2[PTR_W-1:PTR_W-2], rd_gray_wr2[PTR_W-3:0]});
+        end
     end
 
     always @(posedge wr_clk or negedge wr_rst_n) begin
@@ -152,7 +158,7 @@ module async_fifo #(
     // [4] 读侧二进制指针
     // -------------------------------------------------------------------------
     always @(*) begin
-        rd_bin_next = rd_bin + {{(PTR_W-1){1'b0}}, (rd_en && !rd_empty)};
+        rd_bin_next = (rd_en && !rd_empty) ? (rd_bin + 1'b1) : rd_bin;
     end
 
     always @(posedge rd_clk or negedge rd_rst_n) begin
@@ -169,8 +175,12 @@ module async_fifo #(
     //     （读指针追上写指针 = 已读空）
     // -------------------------------------------------------------------------
     always @(*) begin
-        rd_gray_next = rd_bin_next ^ (rd_bin_next >> 1);
+        rd_gray_next = (rd_bin + 1'b1) ^ ((rd_bin + 1'b1) >> 1);
         rd_empty_next = (rd_gray_next == wr_gray_rd2);
+        if (!rd_en || rd_empty) begin
+            rd_gray_next = rd_gray;
+            rd_empty_next = (rd_gray == wr_gray_rd2);
+        end
     end
 
     always @(posedge rd_clk or negedge rd_rst_n) begin

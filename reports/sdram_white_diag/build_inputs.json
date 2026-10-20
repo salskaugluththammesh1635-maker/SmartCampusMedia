@@ -1,0 +1,38 @@
+[
+  {
+    "sha256": "E221DCCA4F659218E9C7F68BE37E5D69611B9CC191E39351DFB81B170FD73230",
+    "path": "rtl/storage/sdram_frame_diag.v"
+  },
+  {
+    "sha256": "0550CF2E1253D9D7CC655EA7C07D80FD50F3099AA4BDA74F683630E0FA253AA4",
+    "path": "rtl/storage/sdram_pll.v"
+  },
+  {
+    "sha256": "954290B76E35A33561C268895D5D0075BF5E03D6A87E92DC1A15FF718D097DA8",
+    "path": "rtl/storage/sdram_ctrl_wrap.v"
+  },
+  {
+    "sha256": "C4C7A02C5C70C9A6B75D2710C97706886A9DD22F10587A7F466C3A5206563F31",
+    "path": "ip/local/sdram/global_def.v"
+  },
+  {
+    "sha256": "A3555C3D2A6675DA55055651F00CB60102239042ED3E5DF06970BFEE88FFD7F1",
+    "path": "ip/local/sdram/sdr_as_ram.enc.v"
+  },
+  {
+    "sha256": "C7D7FE07D75F66AA88D9F986B3006319C995162434F104F9990664B374CDFDD2",
+    "path": "ip/local/sdram/sdr_wrrd.enc.v"
+  },
+  {
+    "sha256": "622432952E6838AAD5A10BC8092FDF2C89E60173E04310ABFE442EF98AD52F7D",
+    "path": "ip/local/sdram/sdr_init_ref.enc.v"
+  },
+  {
+    "sha256": "F6930C18DA52FEE83297763CBC09B93D4363845937562D87D232BB650C8E5AD3",
+    "path": "constraints/sdram_frame_diag.sdc"
+  },
+  {
+    "sha256": "45F8773D0DE4EE8830915F7EF7682F8C34880CAC80026E4C480F44FCFF8E21A0",
+    "path": "constraints/sdram_frame_diag.adc"
+  }
+]

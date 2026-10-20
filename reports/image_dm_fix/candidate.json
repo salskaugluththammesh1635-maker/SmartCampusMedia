@@ -1,0 +1,84 @@
+{
+  "checkedAt": "2026-10-20T18:39:56.177511+08:00",
+  "status": "functional_board_pass_reported_timing_failed",
+  "errors": [],
+  "path": "project\\image_dm_fix_td_Runs\\phy_1\\image_dm_fix.bit",
+  "bytes": 629642,
+  "sha256": "C1CD8EE33F8E882C6EAA40C1385A8E26F88F72C045F14A76FEF87E6A4E250B15",
+  "build_inputs_match": true,
+  "project_sha256_after_build": "3CD4084538347772B70EC32C2776CC4036DF1A976A2489EC7104D8BFA4761C8F",
+  "setup_wns_ns": -7.232,
+  "hold_wns_ns": 0.03,
+  "sdram_self_setup_ns": 0.108,
+  "sdram_self_hold_ns": 0.03,
+  "timing_passed": false,
+  "simulation": [
+    {
+      "log": "path_boundaries.txt",
+      "exitCode": 0,
+      "name": "path_boundaries",
+      "checks": 6184,
+      "passed": true
+    },
+    {
+      "log": "path_full_vga.txt",
+      "exitCode": 0,
+      "name": "path_full_vga",
+      "checks": 614406,
+      "passed": true
+    }
+  ],
+  "readback_unit": {
+    "status": "passed",
+    "sources": [
+      {
+        "sha256": "EE76CB3E36B8BE69C564A25E1FD6925AC5BDFC2FF4CB3183AB40595F56E12D6A",
+        "path": "rtl/storage/image_readback_diag.v"
+      },
+      {
+        "sha256": "6435BD47F74A33D2A94690CAED8492311B4436C6783CA00F4045F34F14F30EEF",
+        "path": "rtl/storage/sdram_ctrl_wrap.v"
+      },
+      {
+        "sha256": "D55113F40DECD61991EA77F48D4006BCA0ADE5E58BCE863973FA164905EF845F",
+        "path": "sim/testbench/tb_image_readback_diag.v"
+      }
+    ],
+    "exitCode": 0,
+    "checks": 12,
+    "errors": 0,
+    "log": "simulation.txt"
+  },
+  "real_core_checks": 614406,
+  "arbiter_regression": [
+    {
+      "name": "tb_framebuf_arbiter",
+      "checks": 50900,
+      "errors": 0,
+      "cases": 15,
+      "status": "passed"
+    }
+  ],
+  "fix": "Drive DQM=0 when no application write is accepted; use DQM=F only for masked make-up writes",
+  "board_feedback": {
+    "source": "user_report",
+    "recorded_at": "2026-10-20T13:36:28+08:00",
+    "bit_path": "project/image_dm_fix_td_Runs/phy_1/image_dm_fix.bit",
+    "bit_sha256": "C1CD8EE33F8E882C6EAA40C1385A8E26F88F72C045F14A76FEF87E6A4E250B15",
+    "raw_reply": "7777 LED012345 \u51fa\u73b0",
+    "digits": "7777",
+    "led_on": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "central_red_visible": true,
+    "result": "functional_board_pass_reported",
+    "scope": "Known white/red BMP loaded from SD, continuous full-frame comparison and HDMI image display on the reported board run",
+    "timing_acceptance": false,
+    "long_term_stability_verified": false
+  }
+}

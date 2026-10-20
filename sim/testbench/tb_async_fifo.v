@@ -52,6 +52,7 @@ module tb_async_fifo;
     // 统计
     // -------------------------------------------------------------------------
     integer errors       = 0;
+    integer checks       = 0;
     integer wr_cnt       = 0;      // 成功写入次数
     integer rd_cnt       = 0;      // 成功读出次数
     integer gray_err     = 0;      // 格雷码单 bit 断言失败次数
@@ -262,6 +263,7 @@ module tb_async_fifo;
         input        cond;
         input [8*72:1] msg;
         begin
+            checks = checks + 1;
             if (cond) begin
                 $display("PASS: %0s", msg);
             end else begin
@@ -495,6 +497,7 @@ module tb_async_fifo;
         $display("  full stall    = %0d", full_stall);
         $display("  empty stall   = %0d", empty_stall);
         $display("  errors        = %0d", errors);
+        $display("SUMMARY: checks=%0d errors=%0d cases=8", checks, errors);
         if (errors == 0) begin
             $display("ALL CHECKS PASSED: async_fifo");
         end else begin

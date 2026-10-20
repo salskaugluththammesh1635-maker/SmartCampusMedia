@@ -34,8 +34,11 @@ $map = [ordered]@{
     'rtl\storage\framebuf_arbiter.v'                   = @('project\hdmi\framebuf_arbiter.v')
     'rtl\storage\sdram_pll.v'                          = @('project\hdmi\sdram_pll.v')
     'rtl\storage\sdram_ctrl_wrap.v'                    = @('project\hdmi\sdram_ctrl_wrap.v')
-'rtl\storage\sdram_bringup_top.v'                  = @('project\hdmi\sdram_bringup_top.v')
-'rtl\storage\img_loader.v'                         = @('project\hdmi\img_loader.v')
+    'rtl\storage\sdram_bringup_top.v'                  = @('project\hdmi\sdram_bringup_top.v')
+    'rtl\storage\img_loader.v'                         = @('project\hdmi\img_loader.v')
+    'rtl\storage\image_player.v'                       = @('project\hdmi\image_player.v')
+    'rtl\storage\pix_reader.v'                         = @('project\hdmi\pix_reader.v')
+    'rtl\control\player_ctrl.v'                        = @('project\hdmi\player_ctrl.v')
     # ===== 仅 hdmi_td =====
     'rtl\top\dmz_eg4s20_hdmi_top.v'                    = @('project\hdmi\dmz_eg4s20_hdmi_top.v')
     'rtl\video\hdmi\hdmi_pll.v'                        = @('project\hdmi\hdmi_pll.v')

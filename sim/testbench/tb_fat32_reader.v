@@ -336,6 +336,7 @@ module tb_fat32_reader;
             wr16(L_MBR, 9'd510, mbrsig);
 
             // ---- VBR / BPB（LBA 1）----
+            wr16(L_VBR, 9'd11, 16'd512);               // bytes_per_sector
             wr8 (L_VBR, 9'd13, sp);                    // sectors_per_cluster
             wr16(L_VBR, 9'd14, rsv);                   // reserved_sectors
             wr8 (L_VBR, 9'd16, nf);                    // num_fats
@@ -622,6 +623,47 @@ module tb_fat32_reader;
         $display("  T17: fail=%b err=%0d", fail, err_code);
         chk(fail && !found,           "T17 reserved-range FAT entry rejected");
         chk(err_code == 4'd3,         "T17 err = 3 (chain error)");
+
+        // ---------------- T18 FAT32 directly at card LBA 0 ----------------
+        // Real card layout: no partition table, VBR occupies sector 0.
+        build_image(SC_BASIC);
+        for (i = 0; i < 6*512; i = i + 1) disk[i] = disk[4*512+i];
+        do_reset;
+        fire_start(9'd1);
+        wait_terminal;
+        chk(found && !fail, "T18 unpartitioned FAT32 volume finds IMG001.BMP");
+        chk(first_cluster == 32'd5 && file_size == 32'd921654,
+            "T18 file metadata preserved");
+        chk(out_fat_begin == 32'd1 && out_data_begin == 32'd3 && out_spc == 8'd1,
+            "T18 unpartitioned FAT/data addresses use volume base zero");
+
+        // ---------------- T19 VBR boot code is not a partition table ----------------
+        build_image(SC_BASIC);
+        for (i = 0; i < 6*512; i = i + 1) disk[i] = disk[4*512+i];
+        wr32(16'd0, 9'd454, 32'h12345678);
+        do_reset;
+        fire_start(9'd1);
+        wait_terminal;
+        chk(found && !fail, "T19 VBR boot code at MBR offsets does not redirect reads");
+        chk(out_fat_begin == 32'd1 && out_data_begin == 32'd3,
+            "T19 boot code does not become the volume base");
+
+        // ---------------- T20/T21 require a FAT32 BPB before accepting LBA 0 ----------------
+        build_image(SC_BASIC);
+        for (i = 0; i < 6*512; i = i + 1) disk[i] = disk[4*512+i];
+        wr16(16'd0, 9'd11, 16'd1024);
+        do_reset;
+        fire_start(9'd1);
+        wait_terminal;
+        chk(fail && err_code == 4'd2, "T20 non-512-byte direct volume rejected");
+
+        build_image(SC_BASIC);
+        for (i = 0; i < 6*512; i = i + 1) disk[i] = disk[4*512+i];
+        wr16(16'd0, 9'd17, 16'd512);
+        do_reset;
+        fire_start(9'd1);
+        wait_terminal;
+        chk(fail && err_code == 4'd2, "T21 FAT16-style root directory is not FAT32");
 
         // ---------------- 收尾 ----------------
         $display("");

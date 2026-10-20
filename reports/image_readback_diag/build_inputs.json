@@ -1,0 +1,162 @@
+[
+  {
+    "path": "ip/local/sdram/global_def.v",
+    "sha256": "C4C7A02C5C70C9A6B75D2710C97706886A9DD22F10587A7F466C3A5206563F31"
+  },
+  {
+    "path": "ip/local/sdram/sdr_wrrd.enc.v",
+    "sha256": "C7D7FE07D75F66AA88D9F986B3006319C995162434F104F9990664B374CDFDD2"
+  },
+  {
+    "path": "ip/local/sdram/sdr_init_ref.enc.v",
+    "sha256": "622432952E6838AAD5A10BC8092FDF2C89E60173E04310ABFE442EF98AD52F7D"
+  },
+  {
+    "path": "ip/local/sdram/sdr_as_ram.enc.v",
+    "sha256": "A3555C3D2A6675DA55055651F00CB60102239042ED3E5DF06970BFEE88FFD7F1"
+  },
+  {
+    "path": "rtl/common/seg_decoder.v",
+    "sha256": "6F1DA53AB11F98BB21D1702600298B4C4289D90FB2F797C6A34BC9E3AB2BEBBE"
+  },
+  {
+    "path": "rtl/display/seg_scan4.v",
+    "sha256": "C52400B473FEA87A8F4247A93504704C6D83AECFF583B2F3EBDC8FC3DE66F5DE"
+  },
+  {
+    "path": "rtl/input/key_matrix_4x4.v",
+    "sha256": "6681F062E709D25D50718A26A52E3D04EDFB3524D058E13A807B87C6A0A2E43F"
+  },
+  {
+    "path": "rtl/audio/buzzer_tone.v",
+    "sha256": "85938B2D6733E1F1AD80CCFCF01E68B34D6A033C32433BBA47CBE133B862D627"
+  },
+  {
+    "path": "rtl/audio/pwm_audio_out.v",
+    "sha256": "524BFBDFEE7D008C66E0A00E7342D830BFFE4969D63EE1428EFBFE4AE5CA5551"
+  },
+  {
+    "path": "rtl/common/async_fifo.v",
+    "sha256": "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0"
+  },
+  {
+    "path": "rtl/video/video_timing_gen.v",
+    "sha256": "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78"
+  },
+  {
+    "path": "rtl/video/test_pattern_gen.v",
+    "sha256": "E66964539E132C2A4F64D5CF6BFAF049F198900182912A2F999E2B89DD21AA47"
+  },
+  {
+    "path": "rtl/video/hdmi/hdmi_pll.v",
+    "sha256": "7E2D6DC53492DAD0751DAE041358A7E80C040729572C2103B6D66F1BD1914240"
+  },
+  {
+    "path": "rtl/storage/sdram_pll.v",
+    "sha256": "0550CF2E1253D9D7CC655EA7C07D80FD50F3099AA4BDA74F683630E0FA253AA4"
+  },
+  {
+    "path": "rtl/storage/sdram_ctrl_wrap.v",
+    "sha256": "954290B76E35A33561C268895D5D0075BF5E03D6A87E92DC1A15FF718D097DA8"
+  },
+  {
+    "path": "rtl/storage/framebuf_arbiter.v",
+    "sha256": "CD56B24FCB78971A34FA275927EA1AA711C31960DEB6A1902B4737BA47F282CC"
+  },
+  {
+    "path": "rtl/storage/pix_reader.v",
+    "sha256": "61356313865C217CD7E09EB4D9D47D6ADE543266CD45F2F0A888A662D14530E7"
+  },
+  {
+    "path": "rtl/storage/sd_spi_ctrl.v",
+    "sha256": "D507BB8ECC9A6F7C9DC968D7F4DF7AD5743887439839DB4DCA07AB41080B28BC"
+  },
+  {
+    "path": "rtl/storage/sd_probe.v",
+    "sha256": "D682FDA21D2D674B234629BEA8C81DB1D9B97CF1289DA246AD00F6AEA0497DAF"
+  },
+  {
+    "path": "rtl/storage/fat32_reader.v",
+    "sha256": "D6E77072253A610394B45177E4A535F44EC8B56B4ADEA8A37C26C2D5EA66AFE4"
+  },
+  {
+    "path": "rtl/storage/bmp_parser.v",
+    "sha256": "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB"
+  },
+  {
+    "path": "rtl/storage/img_loader.v",
+    "sha256": "2CF9190F637075F17F73B9DB33B29278D14E131EDA89E7AF09B470E4633E9DAA"
+  },
+  {
+    "path": "rtl/control/player_ctrl.v",
+    "sha256": "783E6B02E6CF1DC9605158C5329E3F7220BC619A85B34C4BA8AB3E17A4961880"
+  },
+  {
+    "path": "rtl/storage/image_path_probe.v",
+    "sha256": "147FCFC3B62E835CBFB98FFA36CF635733D846E0E6CCC476C37130BD92023AAB"
+  },
+  {
+    "path": "project/image_readback_diag/image_player_readback_diag.v",
+    "sha256": "A5F0FB6D9264603F647D474D8BB89EE8C2F399DBE79B55E6E1457B8FE78D7DA9"
+  },
+  {
+    "path": "project/image_readback_diag/dmz_eg4s20_readback_diag_top.v",
+    "sha256": "0C8F99D6A9F2286C0CEA2D58DD9F0168E2C22F7035AD34A86A0161381E1DF069"
+  },
+  {
+    "path": "rtl/storage/image_readback_diag.v",
+    "sha256": "EE76CB3E36B8BE69C564A25E1FD6925AC5BDFC2FF4CB3183AB40595F56E12D6A"
+  },
+  {
+    "path": "rtl/video/hdmi/hdmi_tx.vhd",
+    "sha256": "C347B7DDA1AF24504FB32DB1D8F13970B4F09E95C28F721D58FAB716B9D1EA43"
+  },
+  {
+    "path": "ip/local/hdmi/enc/DVITransmitter.enc.vhd",
+    "sha256": "FA009E816FC717374679DBA8096C518DC6F3FFBC2389D440A1724D9487EC1674"
+  },
+  {
+    "path": "ip/local/hdmi/enc/SerializerN_1_lvds.enc.vhd",
+    "sha256": "D5FB9B03E33A0E43398E1E963036BBD87FD386C23AF1B79F23E3D32E87B1DD63"
+  },
+  {
+    "path": "ip/local/hdmi/enc/SerializerN_1_lvds_dat.enc.vhd",
+    "sha256": "2215E28372D39D6CB155F5B87FEB39FA578CCA39223CEDB9E712CA7413D7783E"
+  },
+  {
+    "path": "ip/local/hdmi/enc/TMDSEncoder.enc.vhd",
+    "sha256": "F87572D7CE8539276E280C411FE46F42F3282210D7C53601CFD6C8ECB8C71BEB"
+  },
+  {
+    "path": "constraints/dmz_eg4s20_hdmi.adc",
+    "sha256": "7E8BE80E064B8CC8CEFA251F81F384FE51A8DC8786354E2CE260D14A4ED52368"
+  },
+  {
+    "path": "constraints/dmz_eg4s20_hdmi.sdc",
+    "sha256": "ECB1995A40690B6503DD20CB21668EEC3FBF342CAF77C2AC52F6FF4587B9E0BD"
+  },
+  {
+    "path": "project/image_path_diag/image_player_path_diag.v",
+    "sha256": "C19BCD2B86EE106A8AE025F9E9E0BE4CFE5A7788F9B4F56D0D5A245D90C26283"
+  },
+  {
+    "path": "project/image_path_diag/dmz_eg4s20_image_diag_top.v",
+    "sha256": "1FFC2632EAE30C419513BA482054C78D87BB2C2C049087AE8BB86A47C82B6F0A"
+  },
+  {
+    "path": "project/image_path_diag/tb_image_path_diag.v",
+    "sha256": "5C130B5C51C3EC1726844A6EE856EABD9E1CFB7971FCF8EE9BB46CFDA753FF5F"
+  },
+  {
+    "path": "scripts/prepare_image_readback_diag.py",
+    "sha256": "B257F2D6FB42352D14B3B7DC28ADBF0E0A769A455CFB1AFF965FEDE77B6187D4"
+  },
+  {
+    "path": "project/flow_image_readback_diag.tcl",
+    "sha256": "50E29D85AD6DB23BF7500D966C5DF9B4B6F5D0C317045B3139313A642698C289"
+  },
+  {
+    "path": "project/image_readback_diag/tb_image_readback_diag.v",
+    "sha256": "0B494F799506B4A51460188CED31A67D4E81C1C3AB6A8778B4AE0A5CB58A39C9"
+  }
+]

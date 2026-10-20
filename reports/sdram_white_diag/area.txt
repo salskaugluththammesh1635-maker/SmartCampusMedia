@@ -1,0 +1,69 @@
+standard
+***Report Model: sdram_frame_diag_top Device: EG4S20BG256***
+
+IO Statistics
+#IO                        10   out of    188    5.32%
+  #input                    2
+  #output                   8
+  #inout                    0
+
+Utilization Statistics
+#lut                      368   out of  19600    1.88%
+#reg                      473   out of  19600    2.41%
+#le                       622
+  #lut only               149   out of    622   23.95%
+  #reg only               254   out of    622   40.84%
+  #lut&reg                219   out of    622   35.21%
+#bram                       0   out of     64    0.00%
+  #bram9k                   0
+  #fifo9k                   0
+#bram32k                    0   out of     16    0.00%
+#dsp                        0   out of     29    0.00%
+#pad                       10   out of    188    5.32%
+  #ireg                     0
+  #oreg                     8
+  #treg                     0
+#pll                        1   out of      4   25.00%
+#gclk                       1   out of     16    6.25%
+
+Report Clock Domain Luts:
+
+-----------------------------------------------------------------------------------------------------------------------------
+  Index   |  Name                    |  Frequency   |  LUT As Logic   |  LUT As Shifter   |  LUT As Dram   |  BRAM   |  DSP
+-----------------------------------------------------------------------------------------------------------------------------
+  #1      |  clk                     |  50MHz       |  4              |  0                |  0             |  0      |  0
+  #2      |  u_pll/pll_inst.clkc[1]  |  150MHz      |  178            |  0                |  0             |  0      |  0
+  #3      |  u_pll/pll_inst.clkc[2]  |  150MHz      |  1              |  0                |  0             |  0      |  0
+-----------------------------------------------------------------------------------------------------------------------------
+
+Clock Resource Statistics
+Index     ClockNet                           Type               DriverType         Driver                  Fanout
+#1        u_bist/clk                         Global             pll                u_pll/pll_inst.clkc1    371
+#2        clk_dup_1                          Global             io                 clk_syn_2.di            5
+#3        u_memory/u_sdr_as_ram/SDRAM_CLK    Global             pll                u_pll/pll_inst.clkc2    0
+#4        u_pll/clk0_buf                     Global             pll                u_pll/pll_inst.clkc0    0
+
+Report Hierarchy Area:
++----------------------------------------------------------------------------------------------+
+|Instance          |Module               |le      |lut     |ripple  |seq     |bram    |dsp     |
++----------------------------------------------------------------------------------------------+
+|top               |sdram_frame_diag_top |622     |296     |72      |481     |0       |0       |
+|  u_bist          |sdram_frame_bist     |243     |153     |57      |114     |0       |0       |
+|  u_memory        |sdram_ctrl_wrap      |344     |125     |10      |338     |0       |0       |
+|    u_sdr_as_ram  |sdr_as_ram           |344     |125     |10      |338     |0       |0       |
+|      u1_init_ref |sdr_init_ref         |83      |32      |10      |78      |0       |0       |
+|      u2_wrrd     |sdr_wrrd             |261     |93      |0       |260     |0       |0       |
+|  u_pll           |sdram_pll            |1       |1       |0       |0       |0       |0       |
++----------------------------------------------------------------------------------------------+
+
+
+DataNet Average Fanout:
+
+   Index     Fanout    Nets  
+    #1         1       542   
+    #2         2        90   
+    #3         3        52   
+    #4         4        29   
+    #5        5-10      38   
+    #6       11-50      18   
+  Average     2.08           

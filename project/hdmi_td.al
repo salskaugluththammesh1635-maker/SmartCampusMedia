@@ -50,7 +50,7 @@
                     <Attr Name="CompileOrder" Val="5"/>
                 </FileInfo>
             </File>
-            <File Path="hdmi/sd_spi_ctrl.v">
+            <File Path="hdmi/video_timing_gen.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
@@ -58,7 +58,7 @@
                     <Attr Name="CompileOrder" Val="6"/>
                 </FileInfo>
             </File>
-            <File Path="hdmi/sd_probe.v">
+            <File Path="hdmi/test_pattern_gen.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
@@ -66,15 +66,7 @@
                     <Attr Name="CompileOrder" Val="7"/>
                 </FileInfo>
             </File>
-            <File Path="hdmi/video_timing_gen.v">
-                <FileInfo>
-                    <Attr Name="UsedInSyn" Val="true"/>
-                    <Attr Name="UsedInP&R" Val="true"/>
-                    <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="8"/>
-                </FileInfo>
-            </File>
-            <File Path="hdmi/test_pattern_gen.v">
+            <File Path="hdmi/hdmi_pll.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
@@ -82,20 +74,12 @@
                     <Attr Name="CompileOrder" Val="9"/>
                 </FileInfo>
             </File>
-            <File Path="hdmi/hdmi_pll.v">
-                <FileInfo>
-                    <Attr Name="UsedInSyn" Val="true"/>
-                    <Attr Name="UsedInP&R" Val="true"/>
-                    <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="11"/>
-                </FileInfo>
-            </File>
             <File Path="hdmi/dmz_eg4s20_hdmi_top.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="16"/>
+                    <Attr Name="CompileOrder" Val="14"/>
                 </FileInfo>
             </File>
         </Verilog>
@@ -105,7 +89,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="10"/>
+                    <Attr Name="CompileOrder" Val="8"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/enc/DVITransmitter.enc.vhd">
@@ -113,7 +97,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="12"/>
+                    <Attr Name="CompileOrder" Val="10"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/enc/SerializerN_1_lvds.enc.vhd">
@@ -121,7 +105,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="13"/>
+                    <Attr Name="CompileOrder" Val="11"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/enc/SerializerN_1_lvds_dat.enc.vhd">
@@ -129,7 +113,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="14"/>
+                    <Attr Name="CompileOrder" Val="12"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/enc/TMDSEncoder.enc.vhd">
@@ -137,7 +121,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="15"/>
+                    <Attr Name="CompileOrder" Val="13"/>
                 </FileInfo>
             </File>
         </VHDL>

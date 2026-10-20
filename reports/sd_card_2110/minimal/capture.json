@@ -1,0 +1,30 @@
+{
+  "layout": "FAT32 volume at card LBA 0",
+  "sector_count": 1,
+  "fat_begin": 32,
+  "data_begin": 30704,
+  "sectors_per_cluster": 8,
+  "entries": [
+    {
+      "short_name": "SYSTEM~1   ",
+      "attributes": 22,
+      "first_cluster": 3,
+      "size": 0
+    },
+    {
+      "short_name": "IMG001  BMP",
+      "attributes": 32,
+      "first_cluster": 6,
+      "size": 921654
+    }
+  ],
+  "target": {
+    "short_name": "IMG001  BMP",
+    "attributes": 32,
+    "first_cluster": 6,
+    "size": 921654
+  },
+  "file_sha256": "2cdabf23949a64533fc92a4dee3a70a9556f882875a9be9b74d7b017cff0bd92",
+  "raw_file_matches_source": true,
+  "purpose": "Only the real card's sector 0; demonstrates failure before any directory or image sector is requested"
+}

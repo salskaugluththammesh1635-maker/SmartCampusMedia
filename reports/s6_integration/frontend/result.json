@@ -1,0 +1,193 @@
+﻿{
+    "startedAt":  "2026-10-20T01:55:26.2636347+08:00",
+    "status":  "passed",
+    "sources":  [
+                    {
+                        "sha256":  "D507BB8ECC9A6F7C9DC968D7F4DF7AD5743887439839DB4DCA07AB41080B28BC",
+                        "path":  "rtl/storage/sd_spi_ctrl.v"
+                    },
+                    {
+                        "sha256":  "D682FDA21D2D674B234629BEA8C81DB1D9B97CF1289DA246AD00F6AEA0497DAF",
+                        "path":  "rtl/storage/sd_probe.v"
+                    },
+                    {
+                        "sha256":  "D6E77072253A610394B45177E4A535F44EC8B56B4ADEA8A37C26C2D5EA66AFE4",
+                        "path":  "rtl/storage/fat32_reader.v"
+                    },
+                    {
+                        "sha256":  "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB",
+                        "path":  "rtl/storage/bmp_parser.v"
+                    },
+                    {
+                        "sha256":  "2CF9190F637075F17F73B9DB33B29278D14E131EDA89E7AF09B470E4633E9DAA",
+                        "path":  "rtl/storage/img_loader.v"
+                    },
+                    {
+                        "sha256":  "783E6B02E6CF1DC9605158C5329E3F7220BC619A85B34C4BA8AB3E17A4961880",
+                        "path":  "rtl/control/player_ctrl.v"
+                    },
+                    {
+                        "sha256":  "6B801C90B702E8EF4603B65AB96B51EB52585DB705AD44302CA9FC37EFA6E80F",
+                        "path":  "sim/testbench/tb_sd_spi_protocol.v"
+                    },
+                    {
+                        "sha256":  "507A9D051ACE7724E97755F9EF802A0CA8942BE8F763FC0E51D0CD4FF3E574D4",
+                        "path":  "sim/testbench/tb_sd_spi_ctrl.v"
+                    },
+                    {
+                        "sha256":  "01975E83F925CFFB10D1F49818B39A726BD72485CF676C5AF92BC10CAC67ACFC",
+                        "path":  "sim/testbench/tb_sd_probe.v"
+                    },
+                    {
+                        "sha256":  "46E6664A10EDFDE8BE78ADA1CF3FAC8E36AFAF943764083C2A3A41781D15EC3B",
+                        "path":  "sim/testbench/tb_fat32_reader.v"
+                    },
+                    {
+                        "sha256":  "9A0E42EC3EC77342B2D05C790A6C01221BA36ADA8913300A73F9DF4E1661938B",
+                        "path":  "sim/testbench/tb_bmp_parser.v"
+                    },
+                    {
+                        "sha256":  "C6037B8438A649E4C1C0FB846734A69832771FFBB4E6C24D6FDA1802ACB11008",
+                        "path":  "sim/testbench/tb_img_loader.v"
+                    },
+                    {
+                        "sha256":  "0745FDD655B1A25245B4A6322B9CEDDEC6D4A48B183799996189E8C7996D370E",
+                        "path":  "sim/testbench/tb_player_ctrl.v"
+                    }
+                ],
+    "tests":  [
+                  {
+                      "passed":  true,
+                      "name":  "sd_protocol_default",
+                      "exitCode":  0,
+                      "passLines":  62,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_sd_spi_protocol"
+                                    ],
+                      "log":  "sd_protocol_default.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "sd_protocol_fast",
+                      "exitCode":  0,
+                      "passLines":  64,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-gINIT_DIV=2",
+                                        "-gLOOP_LIMIT=4",
+                                        "-gTOKEN_LIMIT=256",
+                                        "-gPOWERUP_DELAY=100",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_sd_spi_protocol"
+                                    ],
+                      "log":  "sd_protocol_fast.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "sd_spi_ctrl",
+                      "exitCode":  0,
+                      "passLines":  23,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_sd_spi_ctrl"
+                                    ],
+                      "log":  "sd_spi_ctrl.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "sd_probe",
+                      "exitCode":  0,
+                      "passLines":  14,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_sd_probe"
+                                    ],
+                      "log":  "sd_probe.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "fat32_reader",
+                      "exitCode":  0,
+                      "passLines":  40,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_fat32_reader"
+                                    ],
+                      "log":  "fat32_reader.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "bmp_parser",
+                      "exitCode":  0,
+                      "passLines":  37,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_bmp_parser"
+                                    ],
+                      "log":  "bmp_parser.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "img_loader",
+                      "exitCode":  0,
+                      "passLines":  43,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_img_loader"
+                                    ],
+                      "log":  "img_loader.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "player_ctrl",
+                      "exitCode":  0,
+                      "passLines":  85,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_player_ctrl"
+                                    ],
+                      "log":  "player_ctrl.txt"
+                  }
+              ],
+    "finishedAt":  "2026-10-20T01:56:48.3318609+08:00"
+}

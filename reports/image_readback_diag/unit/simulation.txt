@@ -1,0 +1,13 @@
+Reading D:/Quartus_APP/modelsim_ase/tcl/vsim/pref.tcl 
+
+# 10.1d
+
+# vsim -do {run -all; quit -f -code 0} -c -onfinish stop -quiet work.tb_image_readback_diag 
+# run -all 
+# SUMMARY: checks=12 errors=0
+# ALL CHECKS PASSED: image_readback_unit
+# ** Note: $finish    : D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_image_readback_diag.v(61)
+#    Time: 3846282 ps  Iteration: 1  Instance: /tb_image_readback_diag
+# Break in Module tb_image_readback_diag at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_image_readback_diag.v line 61
+# Stopped at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_image_readback_diag.v line 61 
+#  quit -f -code 0 

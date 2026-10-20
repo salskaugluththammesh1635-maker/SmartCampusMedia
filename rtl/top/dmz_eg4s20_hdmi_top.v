@@ -1,127 +1,9 @@
-// =============================================================================
-// dmz_eg4s20_hdmi_top.v — 阶段三：HDMI 视频输出系统顶层
-// =============================================================================
-// 【一、在整体系统中的功能】
-//   所属层次 : 顶层（Top Level）—— 整个 HDMI 工程的"总装配图"
-//   工程归属 : project/hdmi_td.al（HDMI 工程，器件 EG4S20BG256）
-//   数据流位置:
-//       50MHz 晶振(球 R7)
-//            ↓
-//       hdmi_pll ──────→ 25MHz 像素时钟 + 125MHz 串化时钟（严格 5 倍）
-//            ↓
-//       video_timing_gen ──→ 行同步 hs / 场同步 vs / 数据有效 de / 有效区坐标
-//            ↓
-//       test_pattern_gen ──→ RGB888 像素流（8 种测试图案）
-//            ↓
-//       hdmi_tx(VHDL 桥接层) ──→ DVITransmitter(加密核) ──→ TMDS 差分 ──→ 显示器
-//   并行支路:
-//       key_matrix_4x4 ──→ 图案切换（KEY4/KEY5）+ 蜂鸣器提示音触发
-//       seg_decoder + seg_scan4 ──→ 数码管显示当前图案号
-//       LED ──→ 高 4 位显示图案号 / bit4 显示 PLL 锁定状态
-//   为什么需要它:
-//     把 7 个子模块装配成可综合的完整系统，并集中处理"全局性事务"
-//     （时钟生成、复位策略、时钟域划分），使各子模块保持纯粹、可复用。
-//     若没有顶层，每个子模块都要自己关心 PLL、复位、管脚分配，无法复用。
-//
-// 【二、本模块功能】
-//   一句话职责: 实现 640×480@60Hz 测试图案 → HDMI TMDS 输出的完整链路，
-//               支持按键切换 8 种测试图案 + PWM 音频测试音 + SD 卡链路探针。
-//   关键特性:
-//     - 全系统单一时钟域（25MHz 像素时钟）：从根上规避跨时钟域（CDC）问题，
-//       键盘/数码管/LED/蜂鸣器/视频全部同域，无需任何同步器
-//     - PLL 锁定后才释放系统复位；复位同步器采用"异步置位、同步释放"，
-//       消除复位撤除时刻的亚稳态风险
-//     - PLL 锁定状态引到 LED[4]：现场调试时无需示波器即可判断时钟是否正常
-//
-// 【三、接口与内部结构】
-//   端口一览:
-//     输入  clk           : 50MHz 系统时钟（球 R7）
-//     输入  rst_n_btn     : 复位按键（球 E3，低有效）
-//     输出  key_row[3:0]  : 矩阵键盘行扫描输出（E10/C10/F9/D9，低电平选通）
-//     输入  key_col[3:0]  : 矩阵键盘列输入（E11/D11/C11/F10，板上 10k 上拉）
-//     输出  led[7:0]      : LED 指示（B14/B15/B16/C15/C16/E13/E16/F16，高电平点亮）
-//     输出  seg_data[7:0] : 数码管段选（A4/A6/B8/E8/A7/B5/A8/C8，高电平点亮）
-//     输出  seg_cs[3:0]   : 数码管位选（C9/B6/A5/A3，低电平选通）
-//     输出  buzzer        : 蜂鸣器（球 H11，低电平响）
-//     输出  sd_cs_n/sck/mosi : SD 卡 SPI（F13/F15/F14，阶段四探针链路）
-//     输入  sd_miso       : SD 卡数据回传（球 D14）
-//     输入  sd_cd         : SD 卡插入检测（球 E15，无卡=1，本版未参与逻辑）
-//     输出  audio_pwm     : PWM 音频（球 F3，板载低通+功放，基础要求③）
-//     输出  HDMI_*_P ×4   : TMDS 差分正端（P1/N1/P4/J3，IOSTANDARD=LVDS33）
-//
-//   内部逻辑块（共 13 块，按信号流顺序）:
-//     [1] PLL 复位延时发生器      always @(posedge clk or negedge rst_n_btn)
-//           功能: 上电后延时约 2.5us 释放 PLL 复位，等 50MHz 参考时钟稳定
-//           输入: clk, rst_n_btn              输出: pll_reset
-//     [2] hdmi_pll               子模块例化
-//           功能: 由 50MHz 生成 25MHz 像素时钟与 125MHz 串化时钟（严格 5 倍）
-//           输入: clk, pll_reset              输出: clk_pixel, clk_5x, locked
-//     [3] 复位同步器              always @(posedge clk_pixel or negedge rst_n_pll)
-//           功能: 三级移位链实现"异步置位、同步释放"
-//           输入: clk_pixel, rst_n_pll         输出: rst_n（全系统复位）
-//     [4] key_matrix_4x4         子模块例化
-//           功能: 4×4 键盘扫描 + 20ms 逐键消抖 + 按下事件输出
-//           输入: clk_pixel, rst_n, key_col    输出: key_event, key_code, key_state
-//     [5] 图案选择器              always @(posedge clk_pixel or negedge rst_n)
-//           功能: KEY4 减一 / KEY5 加一，循环切换 8 种图案（3 位自动回绕）
-//           输入: key_event, key_code          输出: pattern_sel[2:0]
-//     [6] video_timing_gen       子模块例化
-//           功能: 640×480@60Hz 时序发生（hs/vs/de/有效区坐标）
-//           输入: clk_pixel, rst_n             输出: hs, vs, de, active_x/y, frame_start
-//     [7] test_pattern_gen       子模块例化
-//           功能: 依 pattern_sel 生成 8 种测试图案的 RGB888 像素
-//           输入: clk_pixel, de, active_x/y, pattern_sel   输出: pr/pg/pb[7:0]
-//     [8] hdmi_tx                子模块例化（VHDL 桥接，内部调用 DVITransmitter 加密核）
-//           功能: RGB888 → 8b/10b 编码 → 并串转换 → TMDS 差分输出
-//           输入: clk_pixel, clk_5x, rst_n, hs/vs/de, {pr,pg,pb}
-//           输出: HDMI_CLK_P, HDMI_D0_P, HDMI_D1_P, HDMI_D2_P
-//     [9] 状态显示与提示音       子模块例化 + assign
-//           功能: 数码管显示图案号（其余三位熄灭）/ LED 显示图案号与锁定状态 /
-//                 按键时蜂鸣器短鸣 100ms
-//           输入: pattern_sel, key_event, locked
-//           输出: seg_data, seg_cs, led, buzzer
-//     [10] pwm_audio_out         子模块例化
-//           功能: DDS 三角波测试音 → 8bit PWM → 板载音频通路（基础要求③）
-//           输入: clk_pixel, rst_n            输出: audio_pwm
-//     [11] sd_spi_ctrl + sd_probe 子模块例化（阶段四 S2 探针链路）
-//           功能: 初始化 SD 卡 → 读扇区 0 → 校验 MBR 签名 0x55AA
-//           输入: sd_miso                     输出: sd_cs_n, sd_sck, sd_mosi
-//     [12] 状态上报               assign + 子模块例化
-//           功能: LED 低 4 位报 SD 状态（[0]=成功 [3]=失败 [2:1]=错误码高位）；
-//                 数码管次右位显示探针结果（0=进行中 1=成功 2~8=错误码）
-//           输入: probe_ok/fail/err, seg_pat  输出: led, seg_data, seg_cs
-//
-// 【四、设计思路与范式】
-//   主要范式 : 结构化装配（Structural）—— 顶层只做例化与连线，不含算法逻辑
-//   次要范式 :
-//     - 打拍/移位 : [1] PLL 复位延时计数器、[3] 复位同步器（异步置位、同步释放）
-//     - 组合译码  : [9b] LED 位拼接（纯 assign 组合逻辑）
-//   为什么这样写:
-//     把所有"全局性事务"（时钟生成、复位策略、时钟域划分）集中到顶层处理，
-//     子模块因此可以保持纯粹 —— 它们不关心 PLL、不关心复位从哪来，只专注
-//     自己的功能。这样才能做到"独立仿真、跨工程复用"：本项目
-//     seg_decoder / seg_scan4 / key_matrix_4x4 / buzzer_tone 四个模块
-//     就被最小系统（bringup_td）与 HDMI（hdmi_td）两个工程同时使用。
-//   关键写法要点:
-//     1) 顶层不写算法。若某段小逻辑超过十几行，就该拆成独立模块
-//        （本文件的内联逻辑仅剩"计数器/选择器/位拼接"这类三五行的小事）
-//     2) 复位策略集中在此: PLL 锁定 → 复位同步释放 → 分发给所有子模块
-//     3) 时钟域划分在此确定: 本设计只有 clk_pixel 一个时钟域，
-//        因此全文件没有任何跨时钟域同步器 —— 这是**刻意选择**而非遗漏
-//   范式认读方法: 见 docs/design_patterns.md
-//
-// 【板级事实】来源: 底板引脚说明 3.3 + 底板例程 hdmi.adc（与核心板原理图三源一致）
-//   HDMI_CLK_P=P1  HDMI_D0_P=N1  HDMI_D1_P=P4  HDMI_D2_P=J3（均 LVDS33）
-//   板载 HDMI-019S 座 + AZ1045-04F ESD 阵列，无需转接板；无 DDC → 不做 EDID
-//
-// 【实现路径说明】HDMI 发送采用官方 DVITransmitter 加密核（与底板例程
-//   10_VGA_hdmi_tx_display_MB 同源、与官方赛题参考实现技术同族）。
-//   备选自研路径已探明：SF2_LOGIC_HS_OSERDES 原语 + sim_release/eg4 仿真库，
-//   可自写 8b/10b 编码器实现完全可仿真的自主 TMDS，留作后续替换。
-// =============================================================================
+// 阶段四 S6：SD/FAT32/BMP -> SiP SDRAM -> HDMI 图片播放顶层。
+// 单缓冲装载期间显示测试图；上板结果须单独记录。管脚依据 constraints/。
 `timescale 1ns / 1ps
-
-module dmz_eg4s20_hdmi_top (
+module dmz_eg4s20_hdmi_top #(
+    parameter [4:0] GALLERY_COUNT = 5'd1 // 已配置的连续素材数，1..31；尚未自动扫描图库
+) (
     // ---- 系统时钟 / 复位 ----
     input  wire        clk,            // 50MHz, 球 R7
     input  wire        rst_n_btn,      // RSTn 按键, 球 E3, 低有效
@@ -135,7 +17,7 @@ module dmz_eg4s20_hdmi_top (
     output wire [3:0]  seg_cs,         // C9,B6,A5,A3
     // ---- 蜂鸣器（低电平响）----
     output wire        buzzer,         // H11
-    // ---- SD 卡（SPI 模式，阶段四 S2 探针链路）----
+    // ---- SD 卡（SPI 模式，启动探针后接 FAT32/BMP 扇区读取）----
     output wire        sd_cs_n,        // F13, 片选（低有效）
     output wire        sd_sck,         // F15, SPI 时钟
     output wire        sd_mosi,        // F14, 主出从入（CMD 线）
@@ -150,344 +32,137 @@ module dmz_eg4s20_hdmi_top (
     output wire        HDMI_D2_P       // J3
 );
 
-    // -------------------------------------------------------------------------
-    // [1] PLL 复位延时发生器
-    //     功能: 上电后让 PLL 保持复位约 2.5us（8 位计数器计满 128 拍 @50MHz），
-    //           等外部晶振起振稳定后再释放，避免 PLL 锁到未稳定的参考时钟
-    //     输入: clk, rst_n_btn        输出: pll_reset（高有效）
-    // -------------------------------------------------------------------------
-    reg [7:0] pll_rst_cnt;  // 【PLL 复位延时计数器】上电后从 0 数到 128（2.56µs @50MHz）
-                            //   作用: 让 PLL 在电源与晶振稳定前保持复位状态，
-                            //         避免锁到尚未稳定的参考时钟（这是 PLL 的标准启动流程）
-                            //   判据: 计到第 8 位为 1（即 128 拍）后释放 pll_reset
-
-    // ---------------- always 块 ① / 共 3 块: PLL 复位延时计数 ----------------
-    // 功能: 上电后计数 128 拍（≈2.56µs @50MHz），期间保持 pll_reset 为高，
-    //       等外部晶振起振稳定后再释放 PLL —— 避免 PLL 锁到未稳定的参考时钟
-    // 输入: clk, rst_n_btn        输出: pll_rst_cnt（pll_reset 取自其最高位）
+    // 50MHz 参考时钟同时送两颗 PLL；视频不依赖 SDRAM PLL 是否锁定。
+    reg [7:0] pll_rst_cnt;
     always @(posedge clk or negedge rst_n_btn) begin
-        if (!rst_n_btn)
-            pll_rst_cnt <= 8'd0;
-        else if (!pll_rst_cnt[7])
-            pll_rst_cnt <= pll_rst_cnt + 8'd1;
+        if(!rst_n_btn) pll_rst_cnt <= 0;
+        else if(!pll_rst_cnt[7]) pll_rst_cnt <= pll_rst_cnt + 1'b1;
     end
-
     wire pll_reset = ~pll_rst_cnt[7];
-                            // 【PLL 复位信号】高有效: 计数未满（bit7 = 0）期间保持为高
-                            //   作用: 上电或按键复位时把 PLL 按住，等参考时钟稳定后再放行
-
-    // -------------------------------------------------------------------------
-    // [2] hdmi_pll —— 时钟发生器
-    //     功能: 50MHz → 25MHz 像素时钟 + 125MHz 串化时钟（严格 5 倍关系）
-    //     输入: clk, pll_reset        输出: clk_pixel, clk_5x, locked
-    // -------------------------------------------------------------------------
-    wire clk_pixel;         // 【25MHz 像素时钟】本工程的**唯一系统时钟**
-                            //   作用: 驱动键盘/视频时序/数码管/蜂鸣器/TMDS 像素侧
-    wire clk_5x;            // 【125MHz 串化时钟】= 5 × clk_pixel（严格 5 倍关系）
-                            //   作用: 仅供 TMDS 并串转换器使用（不驱动任何逻辑）
-    wire locked;            // 【PLL 锁定指示】1 = PLL 已锁定、时钟稳定可用
-                            //   作用: ① 作为系统复位的释放条件 ② 引到 LED[4] 供现场判断
-
-    hdmi_pll u_pll (
-        .refclk    (clk),
-        .reset     (pll_reset),
-        .extlock   (locked),
-        .clk_pixel (clk_pixel),
-        .clk_5x    (clk_5x)
-    );
-
-    wire rst_n_pll = locked & rst_n_btn;
-                            // 【PLL 侧复位】低有效: PLL 已锁定 且 复位键未按下
-                            //   作用: 作为复位同步器的异步置位源 —— 任一条件不满足即复位
-
-    // -------------------------------------------------------------------------
-    // [3] 复位同步器
-    //     功能: 三级移位链实现"异步置位、同步释放"——复位立即生效（异步），
-    //           但撤除时刻与 clk_pixel 对齐（同步），避免亚稳态
-    //     输入: clk_pixel, rst_n_pll  输出: rst_n（低有效，供全系统使用）
-    // -------------------------------------------------------------------------
-    reg [2:0] rst_sync;     // 【复位同步移位链】三级串联，每拍向高位补 1
-                            //   作用: 实现"异步置位、同步释放"—— 复位立即生效（异步），
-                            //         但撤除时刻与 clk_pixel 对齐（同步），规避亚稳态
-
-    // ------------- always 块 ② / 共 3 块: 复位同步释放 -------------
-    // 功能: 当 PLL 未锁定或按键按下时全部清 0（复位立即生效）；
-    //       否则每拍把 1 向高位移动，三级之后 rst_n 才变高（释放与时钟对齐）
-    // 输入: clk_pixel, rst_n_pll      输出: rst_sync（rst_n 取自最高位）
-    always @(posedge clk_pixel or negedge rst_n_pll) begin
-        if (!rst_n_pll)
-            rst_sync <= 3'b000;
-        else
-            rst_sync <= {rst_sync[1:0], 1'b1};
+    wire clk_pixel, clk_5x, locked, clk_sdr, clk_sdr_sft, sdram_locked;
+    hdmi_pll u_pll (.refclk(clk), .reset(pll_reset), .extlock(locked),
+        .clk_pixel(clk_pixel), .clk_5x(clk_5x));
+    sdram_pll u_sdram_pll (.refclk(clk), .reset(pll_reset), .extlock(sdram_locked),
+        .sdram_clk(clk_sdr), .sdram_clk_sft(clk_sdr_sft));
+    wire rst_async_pix = rst_n_btn && locked;
+    wire rst_async_sdr = rst_n_btn && locked && sdram_locked;
+    reg [2:0] rst_sync_pix, rst_sync_sdr;
+    always @(posedge clk_pixel or negedge rst_async_pix) begin
+        if(!rst_async_pix) rst_sync_pix <= 0;
+        else rst_sync_pix <= {rst_sync_pix[1:0],1'b1};
     end
-
-    wire rst_n = rst_sync[2];
-                            // 【全系统复位】低有效，且已与 clk_pixel 同步释放
-                            //   作用: 分发给所有子模块（键盘 / 视频 / 显示 / 蜂鸣器 / HDMI）
-
-    // -------------------------------------------------------------------------
-    // [4] key_matrix_4x4 —— 键盘扫描
-    //     功能: 4×4 矩阵扫描 + 逐键 20ms 消抖 + 按下沿事件输出
-    //     输入: clk_pixel, rst_n, key_col    输出: key_event, key_code, key_state
-    //     注: 时钟参数改为 25MHz（全系统统一像素时钟域），消抖时长仍为 20ms
-    // -------------------------------------------------------------------------
-    wire        key_event;  // 【按键事件】单拍脉冲，1 = 有键刚被按下（来自键盘模块）
-    wire [3:0]  key_code;   // 【键号】0~15，标识具体是哪个键被按下
-    wire [15:0] key_state;  // 【键状态位图】16 键的稳定状态（本顶层未使用，
-                            //   综合时会自动优化掉；保留连接便于将来扩展）
-
-    key_matrix_4x4 #(
-        .CLK_FREQ_HZ (25_000_000),
-        .DEBOUNCE_MS (20)
-    ) u_key (
-        .clk       (clk_pixel),
-        .rst_n     (rst_n),
-        .key_row   (key_row),
-        .key_col   (key_col),
-        .key_event (key_event),
-        .key_code  (key_code),
-        .key_state (key_state)
-    );
-
-    // -------------------------------------------------------------------------
-    // [5] 图案选择器
-    //     功能: KEY4 上一个图案 / KEY5 下一个图案（3 位自然回绕）
-    //     输入: key_event, key_code   输出: pattern_sel[2:0]
-    //     注: 键位分配遵循规范——不得与其他模块复用同一按键
-    //         （KEY0~KEY3 留给阶段五的播放控制，KEY15 留给应急）
-    // -------------------------------------------------------------------------
-    reg [2:0] pattern_sel;  // 【当前测试图案编号】0~7，决定 test_pattern_gen 输出哪种图
-                            //   3 位正好对应 8 种图案，加减时自然回绕（0-1→7，7+1→0）
-
-    // ------------- always 块 ③ / 共 3 块: 测试图案选择 -------------
-    // 功能: KEY4 切到上一个图案、KEY5 切到下一个图案
-    // 输入: clk_pixel, rst_n, key_event, key_code      输出: pattern_sel
-    // 说明: KEY0~KEY3 留给播放控制，此处只用 KEY4/KEY5 —— 避免同一按键被两个功能复用
+    always @(posedge clk_sdr or negedge rst_async_sdr) begin
+        if(!rst_async_sdr) rst_sync_sdr <= 0;
+        else rst_sync_sdr <= {rst_sync_sdr[1:0],1'b1};
+    end
+    wire rst_n = rst_sync_pix[2];
+    wire key_event; wire [3:0] key_code;
+    key_matrix_4x4 #(.CLK_FREQ_HZ(25_000_000), .DEBOUNCE_MS(20)) u_key (
+        .clk(clk_pixel), .rst_n(rst_n), .key_row(key_row), .key_col(key_col),
+        .key_event(key_event), .key_code(key_code), .key_state());
+    // KEY0/1=上一张/下一张；KEY2=轮播；KEY3=模式；KEY15=应急；KEY4/5=测试图；KEY6=音频。
+    reg [2:0] pattern_sel;
     always @(posedge clk_pixel or negedge rst_n) begin
-        if (!rst_n)
-            pattern_sel <= 3'd0;
-        else if (key_event && (key_code == 4'd4))
-            pattern_sel <= pattern_sel - 3'd1;      // KEY4 上一图案
-        else if (key_event && (key_code == 4'd5))
-            pattern_sel <= pattern_sel + 3'd1;      // KEY5 下一图案
+        if(!rst_n) pattern_sel <= 0;
+        else if(key_event && key_code==4) pattern_sel <= pattern_sel-1'b1;
+        else if(key_event && key_code==5) pattern_sel <= pattern_sel+1'b1;
     end
+    wire sd_ok, sd_fail;
+    wire [3:0] probe_err;
+    wire [4:0] img_index;
+    wire [8:0] loader_index;
+    wire switch_req, auto_play;
+    wire [1:0] mode;
+    player_ctrl #(.CLK_FREQ_HZ(25_000_000)) u_ctrl (
+        .clk(clk_pixel), .rst_n(rst_n), .key_event(key_event), .key_code(key_code),
+        .gallery_count(GALLERY_COUNT), .gallery_valid(sd_ok), .img_index(img_index),
+        .loader_index(loader_index), .img_switch_req(switch_req), .auto_play_en(auto_play),
+        .mode(mode), .status_led());
+    wire hs, vs, de, vblank;
+    wire [10:0] active_x; wire [9:0] active_y;
+    video_timing_gen u_vtg (.pixel_clk(clk_pixel), .rst_n(rst_n), .hs(hs), .vs(vs), .de(de),
+        .active_x(active_x), .active_y(active_y), .frame_start(), .vblank(vblank));
+    wire [7:0] pr, pg, pb;
+    test_pattern_gen u_pat (.pixel_clk(clk_pixel), .rst_n(rst_n), .de(de),
+        .active_x(active_x), .active_y(active_y), .pattern_sel(pattern_sel), .user_color(24'd0),
+        .rgb_r(pr), .rgb_g(pg), .rgb_b(pb));
 
-    // -------------------------------------------------------------------------
-    // [6] video_timing_gen —— 视频时序发生
-    //     功能: 产生 640×480@60Hz 的 hs/vs/de 与有效区坐标
-    //     输入: clk_pixel, rst_n      输出: hs, vs, de, active_x/y, frame_start
-    // -------------------------------------------------------------------------
-    wire        hs, vs, de; // 【视频同步】hs=行同步, vs=场同步, de=数据有效（来自 video_timing_gen）
-    wire [10:0] active_x;   // 【有效区 X 坐标】0~639（仅 de=1 时有效）
-    wire [9:0]  active_y;   // 【有效区 Y 坐标】0~479（仅 de=1 时有效）
-    wire        frame_start;// 【帧起始脉冲】每帧一个单拍（预留给阶段四双缓冲切换）
+    // 启动阶段沿用已验证的 SD 探针；成功后把扇区服务独占交给图片链路。
+    wire init_start, init_done, init_fail;
+    wire [3:0] sd_err;
+    wire sd_busy, sd_blk_done, sd_blk_err, sd_dvalid;
+    wire [7:0] sd_dbyte;
+    wire probe_start, player_start;
+    wire [31:0] probe_addr, player_addr;
+    sd_spi_ctrl #(.CLK_FREQ_HZ(25_000_000)) u_sd (
+        .clk(clk_pixel), .rst_n(rst_n), .init_start(init_start), .init_done(init_done),
+        .init_fail(init_fail), .err_code(sd_err), .blk_start(sd_ok ? player_start : probe_start),
+        .blk_addr(sd_ok ? player_addr : probe_addr), .blk_busy(sd_busy),
+        .blk_done(sd_blk_done), .blk_err(sd_blk_err), .data_byte(sd_dbyte), .data_valid(sd_dvalid),
+        .sd_cs_n(sd_cs_n), .sd_sck(sd_sck), .sd_mosi(sd_mosi), .sd_miso(sd_miso));
+    sd_probe #(.CLK_FREQ_HZ(25_000_000), .PROBE_DELAY_CYCLES(200_000)) u_probe (
+        .clk(clk_pixel), .rst_n(rst_n), .init_start(init_start), .init_done(init_done),
+        .init_fail(init_fail), .err_code(sd_err), .blk_start(probe_start), .blk_addr(probe_addr),
+        .blk_busy(sd_busy), .blk_done(sd_blk_done), .blk_err(sd_blk_err),
+        .data_byte(sd_dbyte), .data_valid(sd_dvalid), .sd_ok(sd_ok), .sd_fail(sd_fail), .err_latch(probe_err));
 
-    video_timing_gen u_vtg (
-        .pixel_clk   (clk_pixel),
-        .rst_n       (rst_n),
-        .hs          (hs),
-        .vs          (vs),
-        .de          (de),
-        .active_x    (active_x),
-        .active_y    (active_y),
-        .frame_start (frame_start)
-    );
+    wire [15:0] image565;
+    wire image_pixel_valid, image_ready, image_loading, image_failed;
+    wire [3:0] image_error;
+    wire [2:0] reader_status;
+    wire sdram_clk_w, sdram_cke_w, sdram_cs_n_w, sdram_ras_n_w, sdram_cas_n_w, sdram_we_n_w;
+    wire [1:0] sdram_ba_w; wire [10:0] sdram_addr_w;
+    wire [3:0] sdram_dm_w; wire [31:0] sdram_dq_w;
+    image_player u_player (
+        .pix_clk(clk_pixel), .rst_n_pix(rst_n), .sdr_clk(clk_sdr), .sdr_clk_sft(clk_sdr_sft),
+        .rst_n_sdr(rst_sync_sdr[2]), .sd_ready(sd_ok), .sd_failed(sd_fail), .blk_busy(sd_busy),
+        .load_req(switch_req), .image_index(loader_index), .blk_start(player_start), .blk_addr(player_addr),
+        .blk_done(sd_blk_done), .blk_err(sd_blk_err), .data_byte(sd_dbyte), .data_valid(sd_dvalid),
+        .de(de), .scan_y(vblank ? 10'd480 : active_y), .rgb565(image565), .pixel_valid(image_pixel_valid),
+        .image_ready(image_ready), .loading(image_loading), .failed(image_failed), .error_code(image_error),
+        .reader_status(reader_status), .sdram_clk(sdram_clk_w), .sdram_cke(sdram_cke_w),
+        .sdram_cs_n(sdram_cs_n_w), .sdram_ras_n(sdram_ras_n_w), .sdram_cas_n(sdram_cas_n_w),
+        .sdram_we_n(sdram_we_n_w), .sdram_ba(sdram_ba_w), .sdram_addr(sdram_addr_w),
+        .sdram_dm(sdram_dm_w), .sdram_dq(sdram_dq_w));
+    // SiP SDRAM 在 FPGA 封装内部，不增加板级 SDRAM IO。
+    EG_PHY_SDRAM_2M_32 u_sdram_sip (
+        .clk(sdram_clk_w), .ras_n(sdram_ras_n_w), .cas_n(sdram_cas_n_w), .we_n(sdram_we_n_w),
+        .addr(sdram_addr_w), .ba(sdram_ba_w), .dq(sdram_dq_w), .cs_n(sdram_cs_n_w),
+        .dm0(sdram_dm_w[0]), .dm1(sdram_dm_w[1]), .dm2(sdram_dm_w[2]), .dm3(sdram_dm_w[3]), .cke(sdram_cke_w));
+    // RGB565 位复制扩展回 RGB888，与 de 同拍。应急模式优先显示红屏并鸣叫。
+    wire [23:0] image888 = {image565[15:11],image565[15:13],image565[10:5],image565[10:9],
+                           image565[4:0],image565[4:2]};
+    wire [23:0] video_rgb = !de ? 24'd0 : ((mode==2) ? 24'hFF0000 :
+        ((image_ready && image_pixel_valid) ? image888 : {pr,pg,pb}));
+    hdmi_tx #(.FAMILY("EG4")) u_hdmi (
+        .PXLCLK_I(clk_pixel), .PXLCLK_5X_I(clk_5x), .RST_N(rst_n),
+        .VGA_HS(hs), .VGA_VS(vs), .VGA_DE(de), .VGA_RGB(video_rgb),
+        .HDMI_CLK_P(HDMI_CLK_P), .HDMI_D2_P(HDMI_D2_P), .HDMI_D1_P(HDMI_D1_P), .HDMI_D0_P(HDMI_D0_P));
+    buzzer_tone #(.CLK_FREQ_HZ(25_000_000)) u_buzz (
+        .clk(clk_pixel), .rst_n(rst_n), .tone_sel(mode==2 ? 2'd2 : 2'd1), .trig(key_event), .buzzer_out(buzzer));
+    reg audio_muted;
+    always @(posedge clk_pixel or negedge rst_n) begin
+        if(!rst_n) audio_muted <= 1'b0;
+        else if(key_event && key_code==6) audio_muted <= ~audio_muted;
+    end
+    pwm_audio_out #(.CLK_FREQ_HZ(25_000_000)) u_audio (
+        .clk(clk_pixel), .rst_n(rst_n), .mute(audio_muted), .audio_pwm(audio_pwm));
 
-    // -------------------------------------------------------------------------
-    // [7] test_pattern_gen —— 测试图案发生器
-    //     功能: 依 pattern_sel 组合译码出 8 种图案的 RGB888 像素
-    //     输入: clk_pixel, de, active_x/y, pattern_sel, user_color
-    //     输出: pr/pg/pb[7:0]（24 位 RGB888）
-    //     注: 纯组合输出，与 de/坐标严格同拍（避免 1 像素相位偏移）
-    // -------------------------------------------------------------------------
-    wire [7:0] pr, pg, pb;  // 【测试图案像素】红/绿/蓝各 8 位，由 test_pattern_gen 组合输出
-                            //   注意: 它与 de/坐标**同拍**产生，不可再寄存
-                            //         （否则整幅图会向右偏移 1 个像素）
-
-    test_pattern_gen #(
-        .H_ACTIVE (11'd640),
-        .V_ACTIVE (10'd480)
-    ) u_pat (
-        .pixel_clk   (clk_pixel),
-        .rst_n       (rst_n),
-        .de          (de),
-        .active_x    (active_x),
-        .active_y    (active_y),
-        .pattern_sel (pattern_sel),
-        .user_color  (24'h00_00_00),        // 纯色模式用黑色（阶段五接状态叠加）
-        .rgb_r       (pr),
-        .rgb_g       (pg),
-        .rgb_b       (pb)
-    );
-
-    // -------------------------------------------------------------------------
-    // [8] hdmi_tx —— TMDS 发送（VHDL 桥接层 → DVITransmitter 加密核）
-    //     功能: RGB888 + 同步信号 → 8b/10b 编码 → 并串转换 → TMDS 差分输出
-    //     输入: clk_pixel, clk_5x, rst_n, hs/vs/de, {pr,pg,pb}
-    //     输出: HDMI_CLK_P, HDMI_D0_P, HDMI_D1_P, HDMI_D2_P
-    //     注: RST_N 低有效（官方顶层把它恒接 0 = 永不复位；
-    //         本工程接的是 PLL 锁定后同步释放的 rst_n，更严谨）
-    // -------------------------------------------------------------------------
-    hdmi_tx #(
-        .FAMILY ("EG4")
-    ) u_hdmi (
-        .PXLCLK_I    (clk_pixel),
-        .PXLCLK_5X_I (clk_5x),
-        .RST_N       (rst_n),
-        .VGA_HS      (hs),
-        .VGA_VS      (vs),
-        .VGA_DE      (de),
-        .VGA_RGB     ({pr, pg, pb}),
-        .HDMI_CLK_P  (HDMI_CLK_P),
-        .HDMI_D2_P   (HDMI_D2_P),
-        .HDMI_D1_P   (HDMI_D1_P),
-        .HDMI_D0_P   (HDMI_D0_P)
-    );
-
-    // -------------------------------------------------------------------------
-    // [9a] 图案号段码（数码管实际扫描在 [12] 状态上报段统一驱动）
-    //      功能: pattern_sel 经 seg_decoder 译码，供 [12] 的 seg_scan4 使用
-    //      注: 段码为高电平点亮（2026-10-17 上板修正）→ 8'h00 表示该位全灭
-    // -------------------------------------------------------------------------
-    wire [6:0] seg_pat;     // 【图案号段码】pattern_sel 经 seg_decoder 译码后的 7 段码
-                            //   位序 {g,f,e,d,c,b,a}，高电平点亮
-    seg_decoder u_dec_pat (
-        .bin_data ({1'b0, pattern_sel}),
-        .seg_data (seg_pat)
-    );
-
-    // -------------------------------------------------------------------------
-    // [9b] LED 指示（实际拼接在 [12] 状态上报段 —— probe_* 线在 [11] 声明，
-    //      vlog 要求先声明后引用，故 assign 统一放 [12]）
-    //      功能: bit7~5 = 图案号, bit4 = PLL 锁定指示（现场调试关键信号）,
-    //            低 4 位 = SD 探针状态（阶段四 S2 起）
-    // -------------------------------------------------------------------------
-    // -------------------------------------------------------------------------
-    // -------------------------------------------------------------------------
-    // [9c] 蜂鸣器提示音
-    //      功能: 每次按键短鸣 100ms（C5≈523Hz），作为操作反馈
-    //      输入: clk_pixel, rst_n, key_event   输出: buzzer（低电平响）
-    // -------------------------------------------------------------------------
-    buzzer_tone #(
-        .CLK_FREQ_HZ (25_000_000)
-    ) u_buzz (
-        .clk        (clk_pixel),
-        .rst_n      (rst_n),
-        .tone_sel   (2'd1),                 // 按键音模式
-        .trig       (key_event),
-        .buzzer_out (buzzer)
-    );
-
-    // -------------------------------------------------------------------------
-    // [10] PWM 音频输出 —— 赛规基础要求③（音频通路）
-    //      功能: DDS 合成 440Hz 三角波测试音 → 8bit PWM 调制 → 板载低通+功放
-    //      输入: clk_pixel, rst_n               输出: audio_pwm（球 F3）
-    //      注: 与蜂鸣器分工 —— H11 蜂鸣器出按键提示音（方波），
-    //          F3 音频座出持续测试音（验证音频通路）；驱动不同器件互不冲突
-    // -------------------------------------------------------------------------
-    pwm_audio_out #(
-        .CLK_FREQ_HZ (25_000_000),
-        .FREQ_HZ     (440)
-    ) u_audio (
-        .clk       (clk_pixel),
-        .rst_n     (rst_n),
-        .mute      (1'b0),                  // 现阶段常开；阶段五接播放控制
-        .audio_pwm (audio_pwm)
-    );
-
-    // -------------------------------------------------------------------------
-    // [11] SD 卡探针链路 —— 阶段四 S2（链路验证，不动 HDMI 显示链）
-    //      功能: sd_probe 序列机驱动 sd_spi_ctrl 完成"初始化 → 读扇区 0 →
-    //            校验 MBR 签名 0x55AA"，结果上 LED/数码管现场可读
-    //      输入: sd_miso, sd_cd    输出: sd_cs_n/sd_sck/sd_mosi（球 F13/F15/F14）
-    //      注: sd_cd（E15，无卡=1 插卡=0）本版仅引到顶层预留，未参与逻辑；
-    //          成功时 LED[0] 亮，失败时 LED[3:1] 显示错误码二进制
-    // -------------------------------------------------------------------------
-    wire        sd_init_done;   // 【初始化完成指示】来自 sd_spi_ctrl（电平）
-    wire        sd_init_fail;   // 【初始化失败指示】来自 sd_spi_ctrl（电平）
-    wire [3:0]  sd_err;         // 【错误码】来自 sd_spi_ctrl（电平，本模块只读）
-    wire        sd_blk_done;    // 【读块完成脉冲】
-    wire        sd_blk_err;     // 【读块失败脉冲】
-    wire [7:0]  sd_dbyte;       // 【块数据字节】
-    wire        sd_dvalid;      // 【块数据有效脉冲】
-    wire        sd_busy;        // 【读块进行中】预留观察
-    wire        probe_init_start, probe_blk_start;  // 【探针发起脉冲】
-    wire [31:0] probe_blk_addr;                     // 【探针扇区号】恒 0（MBR）
-    wire        probe_ok, probe_fail;               // 【探针终态】成功/失败锁定
-    wire [3:0]  probe_err;                          // 【探针错误码】锁存版
-
-    sd_spi_ctrl #(
-        .CLK_FREQ_HZ (25_000_000)
-    ) u_sd (
-        .clk        (clk_pixel),
-        .rst_n      (rst_n),
-        .init_start (probe_init_start),
-        .init_done  (sd_init_done),
-        .init_fail  (sd_init_fail),
-        .err_code   (sd_err),
-        .blk_start  (probe_blk_start),
-        .blk_addr   (probe_blk_addr),
-        .blk_busy   (sd_busy),
-        .blk_done   (sd_blk_done),
-        .blk_err    (sd_blk_err),
-        .data_byte  (sd_dbyte),
-        .data_valid (sd_dvalid),
-        .sd_cs_n    (sd_cs_n),
-        .sd_sck     (sd_sck),
-        .sd_mosi    (sd_mosi),
-        .sd_miso    (sd_miso)
-    );
-
-    sd_probe #(
-        .CLK_FREQ_HZ        (25_000_000),
-        .PROBE_DELAY_CYCLES (200_000)       // 8ms@25MHz > POWERUP 静默期 5.24ms
-    ) u_probe (
-        .clk        (clk_pixel),
-        .rst_n      (rst_n),
-        .init_start (probe_init_start),
-        .init_done  (sd_init_done),
-        .init_fail  (sd_init_fail),
-        .err_code   (sd_err),
-        .blk_start  (probe_blk_start),
-        .blk_addr   (probe_blk_addr),
-        .blk_busy   (sd_busy),
-        .blk_done   (sd_blk_done),
-        .blk_err    (sd_blk_err),
-        .data_byte  (sd_dbyte),
-        .data_valid (sd_dvalid),
-        .sd_ok      (probe_ok),
-        .sd_fail    (probe_fail),
-        .err_latch  (probe_err)
-    );
-
-    // -------------------------------------------------------------------------
-    // [12] 状态上报（LED / 数码管）
-    //      LED[7:5]=图案号 LED[4]=PLL锁定 LED[3]=sd_fail LED[2:1]=错误码高位
-    //      LED[0]=sd_ok —— 阶段四 S2 起低 4 位由 SD 探针接管
-    //      数码管最右位: 图案号；次右位: 探针未完成(=0)显 0 / 成功(=1)显 1 /
-    //                    失败显错误码 2~8（1 号错误码=无卡会与成功混淆，
-    //                    但无卡时 LED[3]=1 且 LED[0]=0，可区分）
-    // -------------------------------------------------------------------------
-    assign led = {pattern_sel, locked, probe_fail, probe_err[3:2], probe_ok};
-
-    wire [6:0] seg_status;  // 【状态段码】SD 探针结果经 seg_decoder 译码
-    seg_decoder u_dec_sd (
-        .bin_data ({1'b0, probe_ok ? 4'd1 : probe_err}),   // 0=未完成 1=成功 2~8=错误码
-        .seg_data (seg_status)
-    );
-
-    seg_scan4 #(
-        .CLK_FREQ_HZ (25_000_000),
-        .SCAN_HZ     (1000)
-    ) u_seg (
-        .clk      (clk_pixel),
-        .rst_n    (rst_n),
-        .dig0     ({1'b0, seg_pat}),        // 最右位: 图案号（DP 灭）
-        .dig1     ({1'b0, seg_status}),     // 次右位: SD 探针状态（DP 灭）
-        .dig2     (8'h00),                  // 以下两位熄灭
-        .dig3     (8'h00),
-        .seg_data (seg_data),
-        .seg_cs   (seg_cs)
-    );
-
+    // LED[7:0] = 失败、装载、SDRAM锁定、HDMI锁定、应急、FIFO异常、轮播、图片就绪。
+    reg [1:0] sdram_lock_pix;
+    always @(posedge clk_pixel or negedge rst_n) begin
+        if(!rst_n) sdram_lock_pix <= 0;
+        else sdram_lock_pix <= {sdram_lock_pix[0],sdram_locked};
+    end
+    assign led = {sd_fail || image_failed, image_loading, sdram_lock_pix[1], locked,
+                  mode==2, |reader_status[1:0], auto_play, image_ready};
+    wire [6:0] seg0, seg1, seg2, seg3;
+    wire [3:0] error_value = sd_fail ? probe_err : image_error;
+    seg_decoder u_dec0 (.bin_data({1'b0,pattern_sel}), .seg_data(seg0));
+    seg_decoder u_dec1 (.bin_data(loader_index[3:0]), .seg_data(seg1));
+    seg_decoder u_dec2 (.bin_data(error_value), .seg_data(seg2));
+    seg_decoder u_dec3 (.bin_data(sd_fail ? 4'd1 : (image_failed ? 4'd2 : 4'd0)), .seg_data(seg3));
+    seg_scan4 #(.CLK_FREQ_HZ(25_000_000), .SCAN_HZ(1000)) u_seg (
+        .clk(clk_pixel), .rst_n(rst_n), .dig0({1'b0,seg0}), .dig1({1'b0,seg1}),
+        .dig2({1'b0,seg2}), .dig3({1'b0,seg3}), .seg_data(seg_data), .seg_cs(seg_cs));
 endmodule

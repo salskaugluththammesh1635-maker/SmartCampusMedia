@@ -1,0 +1,68 @@
+﻿{
+    "suite":  "Arbiter",
+    "fullVgaRequested":  false,
+    "startedAt":  "2026-10-20T13:26:33.8318647+08:00",
+    "modelSimPath":  "D:\\Quartus_APP\\modelsim_ase\\win32aloem",
+    "compileExit":  0,
+    "status":  "passed",
+    "sources":  [
+                    {
+                        "path":  "rtl\\common\\async_fifo.v",
+                        "sha256":  "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0"
+                    },
+                    {
+                        "path":  "rtl\\video\\video_timing_gen.v",
+                        "sha256":  "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78"
+                    },
+                    {
+                        "path":  "rtl\\storage\\framebuf_arbiter.v",
+                        "sha256":  "2D7C1ABA3DB79C30A11CFE7ECABD6E1BC8DB7CC57262E2F103A74267D0405D74"
+                    },
+                    {
+                        "path":  "rtl\\storage\\sdram_ctrl_wrap.v",
+                        "sha256":  "6435BD47F74A33D2A94690CAED8492311B4436C6783CA00F4045F34F14F30EEF"
+                    },
+                    {
+                        "path":  "rtl\\storage\\pix_reader.v",
+                        "sha256":  "61356313865C217CD7E09EB4D9D47D6ADE543266CD45F2F0A888A662D14530E7"
+                    },
+                    {
+                        "path":  "sim\\testbench\\tb_async_fifo.v",
+                        "sha256":  "04ED01CD93C6989CC51A4A34BB8CBB619753547126D90854A4CB41B809D39EA9"
+                    },
+                    {
+                        "path":  "sim\\testbench\\tb_framebuf_arbiter.v",
+                        "sha256":  "107A7CA2DBB429D10C2EDB327AB21111BAD3862025AFAA2F32A3DF75282DE417"
+                    },
+                    {
+                        "path":  "sim\\testbench\\tb_sdram_ctrl_wrap.v",
+                        "sha256":  "80448FFD15DFC451C36F8D2280A05C180F95019006D0901FB3F5D79DF0AC8A02"
+                    },
+                    {
+                        "path":  "sim\\testbench\\tb_pix_reader.v",
+                        "sha256":  "EEC27BA266D0CFF45C5B13015F396B9315A02C3E1D710F78A3C42DCEC117E28D"
+                    }
+                ],
+    "tests":  [
+                  {
+                      "name":  "tb_framebuf_arbiter",
+                      "status":  "passed",
+                      "exitCode":  0,
+                      "log":  "D:\\FPGA_Compelate\\SmartCampusMedia\\reports\\dm_mask_fix\\arbiter\\tb_framebuf_arbiter.log",
+                      "seconds":  0.935,
+                      "checks":  50900,
+                      "errors":  0,
+                      "cases":  15,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_framebuf_arbiter"
+                                    ]
+                  }
+              ],
+    "finishedAt":  "2026-10-20T13:26:35.0700698+08:00"
+}

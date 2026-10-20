@@ -1,0 +1,42 @@
+{
+  "capture_source": "\\\\.\\E:",
+  "partition_offset_bytes_from_windows": 0,
+  "sector0_sha256": "5117340b50cd228153f201e7555b0cffb2676168a8614b60253f3eeea8199522",
+  "signature": "55aa",
+  "jump": "eb5890",
+  "oem": "mkfs.fat",
+  "bytes_per_sector": 512,
+  "sectors_per_cluster": 8,
+  "reserved_sectors": 32,
+  "fat_count": 2,
+  "total_sectors": 15728640,
+  "fat_size_sectors": 15336,
+  "root_cluster": 2,
+  "filesystem_type_text": "FAT32   ",
+  "partition_table": [
+    {
+      "index": 0,
+      "type": 0,
+      "start_lba": 0,
+      "sectors": 0
+    },
+    {
+      "index": 1,
+      "type": 0,
+      "start_lba": 0,
+      "sectors": 0
+    },
+    {
+      "index": 2,
+      "type": 0,
+      "start_lba": 0,
+      "sectors": 0
+    },
+    {
+      "index": 3,
+      "type": 0,
+      "start_lba": 0,
+      "sectors": 0
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+﻿{
+    "startedAt":  "2026-10-20T01:35:40.0397354+08:00",
+    "status":  "failed",
+    "sources":  [
+                    {
+                        "sha256":  "E98B4EF321D46D2BBEDBAB5D3C675987858D2F2A2E7E73A75DA345227802F57D",
+                        "path":  "rtl/storage/fat32_reader.v"
+                    },
+                    {
+                        "sha256":  "2CF9190F637075F17F73B9DB33B29278D14E131EDA89E7AF09B470E4633E9DAA",
+                        "path":  "rtl/storage/img_loader.v"
+                    },
+                    {
+                        "sha256":  "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB",
+                        "path":  "rtl/storage/bmp_parser.v"
+                    },
+                    {
+                        "sha256":  "873A806FEFC62A363971960944814FA95DC61195A6E9381BE1506E20CE9BE2BA",
+                        "path":  "sim/testbench/tb_sd_card_replay.v"
+                    }
+                ],
+    "capture":  [
+                    {
+                        "sha256":  "5D0F568D2FF4B1464CB73F6ED1F4363D2F8676114249FB7A342E2F7402C3C05F",
+                        "path":  "lba.hex"
+                    },
+                    {
+                        "sha256":  "818D7BBB25B70514E2A2A98BD0DED7F22452F3ABDAA31AF18E0CF3691C58D745",
+                        "path":  "data.hex"
+                    },
+                    {
+                        "sha256":  "8EE1BC8F96947776B29A186926A6BBC7835FA9279224CEC9157BDBD05027A6DB",
+                        "path":  "capture.json"
+                    }
+                ],
+    "exitCode":  0,
+    "finishedAt":  "2026-10-20T01:35:41.3308494+08:00"
+}

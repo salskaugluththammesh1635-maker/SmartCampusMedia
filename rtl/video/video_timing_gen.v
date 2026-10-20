@@ -108,6 +108,7 @@ module video_timing_gen #(
     output reg         de,           // 数据有效
     output reg  [10:0] active_x,     // 有效区 X 0~639
     output reg  [9:0]  active_y,     // 有效区 Y 0~479
+    output reg         vblank,       // 垂直消隐，与 de 同拍，不受水平消隐影响
     output reg         frame_start   // 帧起始单拍脉冲（有效区首行前）
 );
 
@@ -195,12 +196,14 @@ module video_timing_gen #(
     always @(posedge pixel_clk or negedge rst_n) begin
         if (!rst_n) begin
             de          <= 1'b0;
+            vblank      <= 1'b1;
             active_x    <= 11'd0;
             active_y    <= 10'd0;
             frame_start <= 1'b0;
         end
         else begin
             de          <= de_c;
+            vblank      <= !v_act;
             active_x    <= de_c ? (h_cnt - H_ACT_START) : 11'd0;
             active_y    <= de_c ? (v_cnt - V_ACT_START) : 10'd0;
             // 帧起始脉冲: 在"有效区首行开始前"的最后一个像素位置发出

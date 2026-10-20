@@ -1,807 +1,676 @@
 // =============================================================================
-// tb_framebuf_arbiter.v — framebuf_arbiter 自检测试平台
+// tb_framebuf_arbiter.v — 以实际接受事件为中心的独立、自检测试平台
 // =============================================================================
-// 【测试目标】
-//   1. 复位后与控制器未初始化期间，绝不向控制器发任何命令
-//   2. 写：4 拍突发组原子性（组内地址恒定，第 4 拍后才跳地址，步长 4）
-//   3. 读：4 拍突发组原子性 + outstanding 计数正确回收
-//   4. 读优先：读侧持续有请求时，写侧只能插空
-//   5. 写饥饿保护：读侧满载时写侧仍能得到服务
-//   6. 刷新避让：ref_vld 期间绝不发命令，且不丢失组内进度
-//   7. 读写绝不重叠：任意一拍不允许 app_wr_en 与 app_rd_en 同时为 1
-//   8. 地址回卷：写完一帧后回到 FRAME_BASE
-//   9. wr_ack 与 app_wr_en 同拍（wr_ack 是"真消费了 FIFO 数据"的标志）
-//  10. rd_valid 跟随 sdr_rd_en（晚一拍，与 rd_data 对齐）
-//
-// 【关键位宽语义】
-//   app_*_addr 是**字地址**；一个突发组覆盖 addr+0..addr+3 四个字，
-//   因此 addr[1:0] 恒 00、组间步长 4。
-//
-// 【写侧驱动模型（至关重要）】
-//   `wr_data` 必须模拟**真实 FIFO 的队头**：只在 `wr_ack` 那拍之后才换成
-//   下一个数据。初版 tb 在每个 negedge 都换数据，导致 DUT 采集到的是
-//   "下一个"字而非队头字 —— 这是测试平台缺陷，不是 RTL 缺陷。
-//
-// 【刷新违规判定】
-//   `ref_vld` 在 negedge 改变，而 `app_wr_en` 是**上一拍**决定的寄存器输出。
-//   若在 negedge 立刻拉高 ref_vld 然后检查同一拍，会误判 DUT 违规。
-//   正确做法：在 posedge 采样，并且 ref_vld 已稳定至少一拍。
-// =============================================================================
+// FIFO 仅在 wr_ack 的上升沿消费队头；参考控制器仅在 app_*_en 有效时接受。
+// 写/读组独立锁存首址并按四个接受拍推进；DM=1 屏蔽对应字节。
+// 所有等待均有本地上限，另有全局 guard；失败绝不输出通过标记。
 `timescale 1ns / 1ps
 
 module tb_framebuf_arbiter;
+    localparam ADDR_WIDTH = 21;
+    localparam BUS_TURN_GAP = 2;
+    localparam WR_STARVE_LIMIT = 32;
+    localparam FRAME_BASE = 21'd0;
+    localparam FRAME_WORDS = 256;
+    localparam RD_LATENCY = 10;
+    localparam RD_TIMEOUT = 1024;
+    localparam MEM_WORDS = 1024;
+    localparam FIFO_WORDS = 4096;
+    localparam CLK_PERIOD = 6.667;
 
-    localparam ADDR_WIDTH      = 21;
-    localparam BUS_TURN_GAP    = 2;
-    localparam WR_STARVE_LIMIT = 256;
-    localparam FRAME_BASE      = 21'd0;
-    localparam FRAME_WORDS     = 18'd256;   // 测试小帧：64 组 = 256 字
-    localparam FRAME_GROUPS    = 64;
-    localparam RD_LATENCY      = 10;
+    reg clk = 1'b0;
+    reg rst_n;
+    reg sdr_init_done;
+    reg ref_vld;
+    reg wr_enable;
+    wire wr_req;
+    wire [31:0] wr_data;
+    reg [3:0] wr_dm;
+    wire wr_ack;
+    reg rd_req;
+    reg rd_restart;
+    reg [ADDR_WIDTH-1:0] rd_base;
+    wire [31:0] rd_data;
+    wire rd_valid, rd_idle, rd_restart_done, rd_ack;
+    wire app_wr_en, app_rd_en;
+    wire [ADDR_WIDTH-1:0] app_wr_addr, app_rd_addr;
+    wire [31:0] app_wr_din;
+    wire [3:0] app_wr_dm;
+    wire sdr_rd_en;
+    wire [31:0] sdr_rd_dout;
+    wire busy, err;
 
-    localparam CLK_PERIOD = 6.667;   // 150MHz
+    reg [31:0] fifo_mem [0:FIFO_WORDS-1];
+    integer fifo_tail = 0;
+    integer fifo_used = 0;
+    reg [31:0] sim_mem [0:MEM_WORDS-1];
+    reg [1:0] model_wr_phase;
+    reg [1:0] model_rd_phase;
+    reg [ADDR_WIDTH-1:0] model_wr_base;
+    reg [ADDR_WIDTH-1:0] model_rd_base;
+    wire [ADDR_WIDTH-1:0] model_wr_effective;
+    wire [ADDR_WIDTH-1:0] model_rd_effective;
+    reg [RD_LATENCY-1:0] read_pipe_valid;
+    reg [31:0] read_pipe_data [0:RD_LATENCY-1];
+    reg drop_returns;
+    reg inject_return;
+    reg allow_err;
+    integer model_index;
 
-    // -------------------------------------------------------------------------
-    // DUT 端口
-    // -------------------------------------------------------------------------
-    reg                   clk;
-    reg                   rst_n;
-    reg                   sdr_init_done;
-    reg                   ref_vld;
-    reg                   wr_req;
-    reg  [31:0]           wr_data;
-    reg  [3:0]            wr_dm;
-    wire                  wr_ack;
-    reg                   rd_req;
-    wire [31:0]           rd_data;
-    wire                  rd_valid;
-    wire                  app_wr_en;
-    wire [ADDR_WIDTH-1:0] app_wr_addr;
-    wire [31:0]           app_wr_din;
-    wire [3:0]            app_wr_dm;
-    wire                  app_rd_en;
-    wire [ADDR_WIDTH-1:0] app_rd_addr;
-    reg                   sdr_rd_en;
-    reg  [31:0]           sdr_rd_dout;
-    wire                  busy;
-    wire                  err;
+    integer checks = 0;
+    integer errors = 0;
+    integer cases_done = 0;
+    integer cycle_count = 0;
+    integer wr_cmds = 0;
+    integer rd_cmds = 0;
+    integer rd_acks = 0;
+    integer rd_returns = 0;
+    integer delivered = 0;
+    integer padded_writes = 0;
+    integer done_count = 0;
+    integer expected_outstanding = 0;
+    integer max_outstanding = 0;
+    integer expected_wr_addr = 0;
+    integer expected_rd_addr = 0;
+    integer last_direction = 0;
+    integer command_gap = 0;
+    integer captured_restart_base = 0;
+    reg restart_pending_reference = 1'b0;
+    reg sampled_return;
+    reg sampled_read;
+    reg sampled_spurious;
+    reg sampled_fault;
+    reg [31:0] sampled_data;
+    integer i, guard, snapshot, snapshot2;
+    reg [31:0] lfsr;
 
-    initial clk = 1'b0;
     always #(CLK_PERIOD / 2.0) clk = ~clk;
+    assign wr_req = wr_enable && (fifo_used < fifo_tail);
+    assign wr_data = (fifo_used < fifo_tail && fifo_used < FIFO_WORDS)
+                     ? fifo_mem[fifo_used] : 32'd0;
+    assign model_wr_effective = (model_wr_phase == 0)
+                               ? app_wr_addr : model_wr_base + model_wr_phase;
+    assign model_rd_effective = (model_rd_phase == 0)
+                               ? app_rd_addr : model_rd_base + model_rd_phase;
+    assign sdr_rd_en = inject_return || (!drop_returns && read_pipe_valid[0]);
+    assign sdr_rd_dout = inject_return ? 32'hBAD0CAFE : read_pipe_data[0];
 
     framebuf_arbiter #(
-        .ADDR_WIDTH      (ADDR_WIDTH),
-        .BUS_TURN_GAP    (BUS_TURN_GAP),
-        .WR_STARVE_LIMIT (WR_STARVE_LIMIT),
-        .FRAME_BASE      (FRAME_BASE),
-        .FRAME_WORDS     (FRAME_WORDS)
+        .ADDR_WIDTH(ADDR_WIDTH), .BUS_TURN_GAP(BUS_TURN_GAP),
+        .WR_STARVE_LIMIT(WR_STARVE_LIMIT), .RD_TIMEOUT(RD_TIMEOUT), .FRAME_BASE(FRAME_BASE),
+        .FRAME_WORDS(FRAME_WORDS)
     ) dut (
-        .clk           (clk),
-        .rst_n         (rst_n),
-        .sdr_init_done (sdr_init_done),
-        .ref_vld       (ref_vld),
-        .wr_req        (wr_req),
-        .wr_data       (wr_data),
-        .wr_dm         (wr_dm),
-        .wr_ack        (wr_ack),
-        .rd_req        (rd_req),
-        .rd_data       (rd_data),
-        .rd_valid      (rd_valid),
-        .app_wr_en     (app_wr_en),
-        .app_wr_addr   (app_wr_addr),
-        .app_wr_din    (app_wr_din),
-        .app_wr_dm     (app_wr_dm),
-        .app_rd_en     (app_rd_en),
-        .app_rd_addr   (app_rd_addr),
-        .sdr_rd_en     (sdr_rd_en),
-        .sdr_rd_dout   (sdr_rd_dout),
-        .busy          (busy),
-        .err           (err)
+        .clk(clk), .rst_n(rst_n), .sdr_init_done(sdr_init_done), .ref_vld(ref_vld),
+        .wr_req(wr_req), .wr_data(wr_data), .wr_dm(wr_dm), .wr_ack(wr_ack),
+        .wr_word_addr(21'd0),
+        .rd_req(rd_req), .rd_data(rd_data), .rd_valid(rd_valid), .rd_ack(rd_ack),
+        .rd_restart(rd_restart), .rd_base(rd_base),
+        .rd_idle(rd_idle), .rd_restart_done(rd_restart_done),
+        .app_wr_en(app_wr_en), .app_wr_addr(app_wr_addr),
+        .app_wr_din(app_wr_din), .app_wr_dm(app_wr_dm),
+        .app_rd_en(app_rd_en), .app_rd_addr(app_rd_addr),
+        .sdr_rd_en(sdr_rd_en), .sdr_rd_dout(sdr_rd_dout), .busy(busy), .err(err)
     );
 
-    // -------------------------------------------------------------------------
-    // 检查与统计
-    // -------------------------------------------------------------------------
-    integer errors;
-    integer checks;
-    integer wr_cmds;
-    integer rd_cmds;
-    integer wr_fires;   // 统计 dut.wr_fire（组合），比 app_wr_en 早一拍
-    integer t0_fire;
-    integer overlap;
-    integer init_violations;
-    integer ref_violations;
-
     task chk;
-        input                 cond;
-        input        [8*56:1] msg;
+        input condition;
+        input [8*120-1:0] message;
         begin
             checks = checks + 1;
-            if (cond !== 1'b1) begin
+            if (condition !== 1'b1) begin
                 errors = errors + 1;
-                $display("  # FAIL: %0s", msg);
+                if (errors <= 60)
+                    $display("FAIL: %0s (t=%0t)", message, $time);
             end
         end
     endtask
 
-    // -------------------------------------------------------------------------
-    // SDRAM 行为模型
-    //   写：物理字下标 = app_wr_addr + beat_in_group
-    //   读：app_rd_en 后固定 RD_LATENCY 拍回 sdr_rd_en + 数据
-    // -------------------------------------------------------------------------
-    reg [31:0] sim_mem [0:1023];
-    reg [1:0]  model_beat;
-    integer    k;
-
-    initial begin
-        for (k = 0; k < 1024; k = k + 1) sim_mem[k] = 32'd0;
-        model_beat = 2'd0;
-    end
-
+    // 独立 ERAM 参考模型：只计算实际接受拍，不使用 dut.wr_fire/rd_fire。
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            model_beat <= 2'd0;
-        end else if (app_wr_en) begin
-            if (app_wr_dm[0]) sim_mem[app_wr_addr[9:0] + model_beat][7:0]   <= app_wr_din[7:0];
-            if (app_wr_dm[1]) sim_mem[app_wr_addr[9:0] + model_beat][15:8]  <= app_wr_din[15:8];
-            if (app_wr_dm[2]) sim_mem[app_wr_addr[9:0] + model_beat][23:16] <= app_wr_din[23:16];
-            if (app_wr_dm[3]) sim_mem[app_wr_addr[9:0] + model_beat][31:24] <= app_wr_din[31:24];
-            model_beat <= (model_beat == 2'd3) ? 2'd0 : (model_beat + 2'd1);
-        end
-    end
-
-    // -------------------------------------------------------------------------
-    // 读延迟流水
-    // -------------------------------------------------------------------------
-    reg        rd_lat_off = 1'b0;   // T11 用：置 1 时延迟模型永不返回数据
-    reg [31:0] lat_sr [0:RD_LATENCY-1];
-    reg        lat_vld[0:RD_LATENCY-1];
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            for (k = 0; k < RD_LATENCY; k = k + 1) begin
-                lat_sr[k]  <= 32'd0;
-                lat_vld[k] <= 1'b0;
-            end
-            sdr_rd_en   <= 1'b0;
-            sdr_rd_dout <= 32'd0;
+            fifo_used <= 0;
+            model_wr_phase <= 2'd0;
+            model_rd_phase <= 2'd0;
+            model_wr_base <= FRAME_BASE;
+            model_rd_base <= FRAME_BASE;
+            read_pipe_valid <= {RD_LATENCY{1'b0}};
+            for (model_index = 0; model_index < RD_LATENCY; model_index = model_index + 1)
+                read_pipe_data[model_index] <= 32'd0;
+            for (model_index = 0; model_index < MEM_WORDS; model_index = model_index + 1)
+                sim_mem[model_index] <= 32'hD00D0000 + model_index;
         end else begin
-            for (k = RD_LATENCY - 1; k > 0; k = k - 1) begin
-                lat_sr[k]  <= lat_sr[k-1];
-                lat_vld[k] <= lat_vld[k-1];
+            if (wr_ack) fifo_used <= fifo_used + 1;
+            read_pipe_valid[RD_LATENCY-1] <= app_rd_en && sdr_init_done && !ref_vld;
+            for (model_index = 0; model_index < RD_LATENCY-1; model_index = model_index + 1) begin
+                read_pipe_valid[model_index] <= read_pipe_valid[model_index+1];
+                read_pipe_data[model_index] <= read_pipe_data[model_index+1];
             end
-            lat_sr[0]  <= app_rd_en ? {app_rd_addr[15:0], 16'hA5A5} : 32'd0;
-            lat_vld[0] <= app_rd_en;
-
-            sdr_rd_en   <= lat_vld[RD_LATENCY-1] && !rd_lat_off;
-            sdr_rd_dout <= lat_sr[RD_LATENCY-1];
+            if (app_wr_en && sdr_init_done && !ref_vld) begin
+                if (model_wr_phase == 0) model_wr_base <= app_wr_addr;
+                if (!app_wr_dm[0]) sim_mem[model_wr_effective % MEM_WORDS][7:0] <= app_wr_din[7:0];
+                if (!app_wr_dm[1]) sim_mem[model_wr_effective % MEM_WORDS][15:8] <= app_wr_din[15:8];
+                if (!app_wr_dm[2]) sim_mem[model_wr_effective % MEM_WORDS][23:16] <= app_wr_din[23:16];
+                if (!app_wr_dm[3]) sim_mem[model_wr_effective % MEM_WORDS][31:24] <= app_wr_din[31:24];
+                model_wr_phase <= model_wr_phase + 1'b1;
+            end
+            if (app_rd_en && sdr_init_done && !ref_vld) begin
+                if (model_rd_phase == 0) model_rd_base <= app_rd_addr;
+                read_pipe_data[RD_LATENCY-1] <= sim_mem[model_rd_effective % MEM_WORDS];
+                model_rd_phase <= model_rd_phase + 1'b1;
+            end
         end
     end
 
-    // -------------------------------------------------------------------------
-    // 并发监视器
-    //   ref_vld 判定：ref_vld 与 app_*_en 都是 posedge 采样，若同一 posedge
-    //   两者同时为 1 才算违规。命令必须"在 ref_vld 期间发出"才算错；
-    //   ref_vld 拉起那一拍已有在途命令是正常的（命令早于刷新决策）。
-    // -------------------------------------------------------------------------
-    reg ref_vld_d;
-
+    // 输入在下降沿驱动；先采接受事件，再在 NBA 后核对注册输出，避免竞态。
     always @(posedge clk) begin
-        if (app_wr_en && app_rd_en) begin
-            overlap = overlap + 1;
-            $display("  # FAIL: app_wr_en and app_rd_en simultaneous at %0t", $time);
-        end
-        if (!sdr_init_done && (app_wr_en || app_rd_en)) begin
-            init_violations = init_violations + 1;
-            $display("  # FAIL: command before sdr_init_done at %0t", $time);
-        end
-        // 只有当 ref_vld 在上一个 posedge 就已经为高、本拍命令仍发出时才算违规
-        if (ref_vld_d && ref_vld && (app_wr_en || app_rd_en)) begin
-            ref_violations = ref_violations + 1;
-            $display("  # FAIL: command during steady ref_vld at %0t", $time);
-        end
-        if (app_wr_en && (app_wr_addr[1:0] !== 2'b00)) begin
-            errors = errors + 1;
-            $display("  # FAIL: app_wr_addr[1:0] != 00 (%0d) at %0t", app_wr_addr, $time);
-        end
-        if (app_rd_en && (app_rd_addr[1:0] !== 2'b00)) begin
-            errors = errors + 1;
-            $display("  # FAIL: app_rd_addr[1:0] != 00 (%0d) at %0t", app_rd_addr, $time);
-        end
-        if (app_wr_en) wr_cmds = wr_cmds + 1;
-        if (dut.wr_fire) wr_fires = wr_fires + 1;
-        if (app_rd_en) rd_cmds = rd_cmds + 1;
-        ref_vld_d <= ref_vld;
-    end
-
-    // -------------------------------------------------------------------------
-    // 突发组原子性监视
-    // -------------------------------------------------------------------------
-    reg [ADDR_WIDTH-1:0] mon_wr_addr;
-    reg [1:0]            mon_wr_beat;
-    integer              wr_bad_step;
-
-    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            mon_wr_addr <= {ADDR_WIDTH{1'b0}};
-            mon_wr_beat <= 2'd0;
-            wr_bad_step <= 0;
-        end else if (app_wr_en) begin
-            if (mon_wr_beat != 2'd0 && app_wr_addr !== mon_wr_addr) begin
-                wr_bad_step <= wr_bad_step + 1;
-                $display("  # FAIL: wr addr changed mid-group (%0d -> %0d) at %0t",
-                         mon_wr_addr, app_wr_addr, $time);
-            end
-            mon_wr_addr <= app_wr_addr;
-            mon_wr_beat <= (mon_wr_beat == 2'd3) ? 2'd0 : (mon_wr_beat + 2'd1);
-        end
-    end
-
-    reg [ADDR_WIDTH-1:0] mon_rd_addr;
-    reg [1:0]            mon_rd_beat;
-    integer              rd_bad_step;
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            mon_rd_addr <= {ADDR_WIDTH{1'b0}};
-            mon_rd_beat <= 2'd0;
-            rd_bad_step <= 0;
-        end else if (app_rd_en) begin
-            if (mon_rd_beat != 2'd0 && app_rd_addr !== mon_rd_addr) begin
-                rd_bad_step <= rd_bad_step + 1;
-                $display("  # FAIL: rd addr changed mid-group (%0d -> %0d) at %0t",
-                         mon_rd_addr, app_rd_addr, $time);
-            end
-            mon_rd_addr <= app_rd_addr;
-            mon_rd_beat <= (mon_rd_beat == 2'd3) ? 2'd0 : (mon_rd_beat + 2'd1);
-        end
-    end
-
-    // -------------------------------------------------------------------------
-    // rd_valid 必须跟随 sdr_rd_en（晚一拍）
-    // -------------------------------------------------------------------------
-    reg     sdr_rd_en_d;
-    integer rd_valid_stray;
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            sdr_rd_en_d    <= 1'b0;
-            rd_valid_stray <= 0;
+            cycle_count = 0;
+            wr_cmds = 0;
+            rd_cmds = 0;
+            rd_acks = 0;
+            rd_returns = 0;
+            delivered = 0;
+            padded_writes = 0;
+            done_count = 0;
+            expected_outstanding = 0;
+            max_outstanding = 0;
+            expected_wr_addr = FRAME_BASE;
+            expected_rd_addr = FRAME_BASE;
+            captured_restart_base = FRAME_BASE;
+            restart_pending_reference = 1'b0;
+            last_direction = 0;
+            command_gap = 0;
         end else begin
-            sdr_rd_en_d <= sdr_rd_en;
-            if (rd_valid && !sdr_rd_en_d) begin
-                rd_valid_stray <= rd_valid_stray + 1;
-                $display("  # FAIL: rd_valid not aligned with sdr_rd_en at %0t", $time);
+            cycle_count = cycle_count + 1;
+            sampled_return = sdr_rd_en;
+            sampled_fault = err;
+            sampled_data = sdr_rd_dout;
+            sampled_read = app_rd_en;
+            sampled_spurious = inject_return && expected_outstanding == 0 && !app_rd_en;
+            chk(!(app_wr_en && app_rd_en), "read and write commands never overlap");
+            if (!app_wr_en)
+                chk(app_wr_dm === 4'h0,
+                    "read and idle cycles leave SDRAM DQM unmasked, including return drain");
+            if (!sdr_init_done || ref_vld)
+                chk(!app_wr_en && !app_rd_en && !wr_ack && !rd_ack,
+                    "no command or FIFO acceptance during init/refresh, including its first cycle");
+            chk(wr_ack === (app_wr_en && wr_req), "wr_ack equals same-cycle real FIFO write acceptance");
+            chk(rd_ack === (app_rd_en && model_rd_phase == 0),
+                "rd_ack denotes exactly an accepted read-group first beat");
+            if (rd_ack) rd_acks = rd_acks + 1;
+            if (rd_restart) begin
+                captured_restart_base = rd_base;
+                restart_pending_reference = 1'b1;
             end
+            if (app_wr_en) begin
+                chk(model_rd_phase == 0, "write cannot interrupt a partial read group");
+                chk(expected_outstanding == 0, "write waits until every outstanding read has returned");
+                chk(app_wr_addr[1:0] == 2'b00, "arbiter presents aligned constant write-group base");
+                if (model_wr_phase == 0)
+                    chk(app_wr_addr == expected_wr_addr, "write group address advances by four and wraps at frame end");
+                else
+                    chk(app_wr_addr == model_wr_base, "write address remains locked inside a group");
+                if (wr_ack) begin
+                    chk(app_wr_din === fifo_mem[fifo_used], "accepted write data is the current FIFO head");
+                    chk(app_wr_dm === wr_dm, "real write preserves the requested DM");
+                end else begin
+                    padded_writes = padded_writes + 1;
+                    chk(app_wr_dm === 4'hF, "make-up write masks all byte lanes");
+                end
+                if (model_wr_phase == 3) begin
+                    if (expected_wr_addr + 4 >= FRAME_BASE + FRAME_WORDS)
+                        expected_wr_addr = FRAME_BASE;
+                    else expected_wr_addr = expected_wr_addr + 4;
+                end
+                if (last_direction == 2)
+                    chk(command_gap >= BUS_TURN_GAP, "read-to-write turnaround observes configured gap");
+                last_direction = 1;
+                command_gap = 0;
+                wr_cmds = wr_cmds + 1;
+            end else if (app_rd_en) begin
+                chk(model_wr_phase == 0, "read cannot interrupt a partial write group");
+                chk(app_rd_addr[1:0] == 2'b00, "arbiter presents aligned constant read-group base");
+                if (model_rd_phase == 0)
+                    chk(app_rd_addr == expected_rd_addr, "read starts at expected sequential or captured restart base");
+                else chk(app_rd_addr == model_rd_base, "read address remains locked inside a group");
+                if (model_rd_phase == 3) begin
+                    if (expected_rd_addr + 4 >= FRAME_BASE + FRAME_WORDS)
+                        expected_rd_addr = FRAME_BASE;
+                    else expected_rd_addr = expected_rd_addr + 4;
+                end
+                if (last_direction == 1)
+                    chk(command_gap >= BUS_TURN_GAP, "write-to-read turnaround observes configured gap");
+                last_direction = 2;
+                command_gap = 0;
+                rd_cmds = rd_cmds + 1;
+            end else command_gap = command_gap + 1;
+            if (app_rd_en) expected_outstanding = expected_outstanding + 1;
+            if (sdr_rd_en) begin
+                rd_returns = rd_returns + 1;
+                if (expected_outstanding > 0) expected_outstanding = expected_outstanding - 1;
+            end
+            if (expected_outstanding > max_outstanding) max_outstanding = expected_outstanding;
+            chk(expected_outstanding <= 31, "read credit count never exceeds five-bit capacity");
+            #1;
+            chk(dut.rd_outstanding === expected_outstanding[4:0],
+                "outstanding equals actual accepted commands minus actual returns without wrap");
+            if (!sampled_spurious) begin
+                chk(rd_valid === (sampled_return && !sampled_fault),
+                    "registered returns are valid only before a latched protocol fault");
+                if (sampled_return && !sampled_fault) begin
+                    chk(rd_data === sampled_data, "rd_data is aligned with the registered return event");
+                    delivered = delivered + 1;
+                end
+            end
+            if (expected_outstanding > 0 || rd_valid)
+                chk(!rd_idle, "read side never advertises idle with in-flight data or valid output");
+            if (rd_restart_done) begin
+                done_count = done_count + 1;
+                chk(restart_pending_reference, "restart_done acknowledges a captured restart request");
+                chk(!sampled_read && expected_outstanding == 0 && !rd_valid && model_rd_phase == 0,
+                    "restart executes only after complete group and all return/output drain");
+                expected_rd_addr = captured_restart_base;
+                restart_pending_reference = 1'b0;
+            end
+            if (!allow_err) chk(err === 1'b0, "normal traffic never raises scheduler error");
         end
     end
 
-    // -------------------------------------------------------------------------
-    // 复位任务
-    // -------------------------------------------------------------------------
     task do_reset;
         begin
-            rst_n         = 1'b0;
-            sdr_init_done = 1'b0;
-            ref_vld       = 1'b0;
-            wr_req        = 1'b0;
-            wr_data       = 32'd0;
-            wr_dm         = 4'hF;
-            rd_req        = 1'b0;
-            repeat (8) @(negedge clk);
-            rst_n = 1'b1;
-            repeat (4) @(negedge clk);
-        end
-    endtask
-
-    // -------------------------------------------------------------------------
-    // 写侧 FIFO 模型：wr_data 只在 wr_ack 后推进（队头语义）
-    //   调用 seq_write(n) 写 n 个字，自动维护队头。
-    // -------------------------------------------------------------------------
-    reg [31:0] fifo_mem [0:511];
-    integer    fifo_wr, fifo_rd;
-
-    task fifo_push;
-        input [31:0] d;
-        begin
-            fifo_mem[fifo_wr] = d;
-            fifo_wr = fifo_wr + 1;
-        end
-    endtask
-
-    // 驱动 wr_data 为队头（每拍刷新，等价于组合读 mem[rd_ptr]）
-    always @(*) begin
-        wr_data = fifo_mem[fifo_rd];
-    end
-
-    // wr_ack 时出队。用非阻塞赋值：与真实 FIFO 一致（队头在下一拍才更新），
-    // 若用阻塞赋值会在同一 posedge 内就改变 wr_data，DUT 采到的是"下一个"字。
-    always @(posedge clk) begin
-        if (wr_ack && fifo_rd < fifo_wr) fifo_rd <= fifo_rd + 1;
-    end
-
-    // -------------------------------------------------------------------------
-    // 写入 n 个字并等突发组真正收尾
-    //   要点：`fifo_rd` 前进只代表数据被消费，组内第 4 拍之后 DUT 还要
-    //   一拍才把 `wr_grp_active` 落下。若此时立刻撤 wr_req，剩下的拍会以
-    //   dm=0 补完——不算错，但会让"恰好 4 条命令"之类的断言变成 4+补拍。
-    //   正确做法：等 `wr_grp_active` 落下再撤请求。
-    // -------------------------------------------------------------------------
-    task write_words;
-        input integer n;
-        integer j;
-        begin
-            for (j = 0; j < n; j = j + 1) fifo_push(32'h1000_0000 + j);
-            wr_req = 1'b1; wr_dm = 4'hF;
-            wait (fifo_rd == fifo_wr);
-            wait (dut.wr_grp_active == 1'b0);
             @(negedge clk);
-            wr_req = 1'b0;
+            rst_n = 1'b0;
+            sdr_init_done = 1'b0;
+            ref_vld = 1'b0;
+            wr_enable = 1'b0;
+            wr_dm = 4'h0;
+            rd_req = 1'b0;
+            rd_restart = 1'b0;
+            rd_base = FRAME_BASE;
+            fifo_tail = 0;
+            drop_returns = 1'b0;
+            inject_return = 1'b0;
+            allow_err = 1'b0;
+            repeat (4) @(negedge clk);
+            rst_n = 1'b1;
+            repeat (2) @(negedge clk);
         end
     endtask
 
-    // -------------------------------------------------------------------------
-    // 调试块（默认关闭；置 dbg=1 后按拍打印 DUT 内部关键状态）
-    // -------------------------------------------------------------------------
-    integer dbg = 0;
-
-    always @(posedge clk) begin
-        if (dbg) begin
-            $display("    t=%0t st=%0d wr_fire=%b wr_real=%b en=%b addr=%0d beat=%0d grp=%b ack=%b starve=%0d wrreq=%b rdreq=%b f_rd=%0d",
-                     $time, dut.st, dut.wr_fire, dut.wr_real, app_wr_en, app_wr_addr,
-                     dut.wr_beat, dut.wr_grp_active, wr_ack, dut.wr_starve,
-                     wr_req, rd_req, fifo_rd);
+    task fill_words;
+        input integer count;
+        input [31:0] first_word;
+        integer word_index;
+        begin
+            chk(fifo_tail + count <= FIFO_WORDS, "source FIFO fill stays within bounded storage");
+            for (word_index = 0; word_index < count; word_index = word_index + 1) begin
+                if (fifo_tail < FIFO_WORDS) begin
+                    fifo_mem[fifo_tail] = first_word + word_index;
+                    fifo_tail = fifo_tail + 1;
+                end
+            end
         end
-    end
+    endtask
 
-    // -------------------------------------------------------------------------
-    // 主测试流程
-    // -------------------------------------------------------------------------
-    integer i;
-    integer t0_wr, t0_rd;
-    reg [31:0] seq_val;
+    task wait_written;
+        input integer target;
+        input integer limit;
+        integer wait_cycles;
+        begin
+            wait_cycles = 0;
+            while (fifo_used < target && wait_cycles < limit) begin
+                @(negedge clk);
+                wait_cycles = wait_cycles + 1;
+            end
+            chk(fifo_used >= target, "FIFO write service completes within bounded wait");
+        end
+    endtask
+
+    task wait_reads;
+        input integer target;
+        input integer limit;
+        integer wait_cycles;
+        begin
+            wait_cycles = 0;
+            while (rd_cmds < target && wait_cycles < limit) begin
+                @(negedge clk);
+                wait_cycles = wait_cycles + 1;
+            end
+            chk(rd_cmds >= target, "read command target completes within bounded wait");
+        end
+    endtask
+
+    task wait_read_idle;
+        input integer limit;
+        integer wait_cycles;
+        begin
+            wait_cycles = 0;
+            while ((!rd_idle || expected_outstanding != 0 || model_rd_phase != 0) && wait_cycles < limit) begin
+                @(negedge clk);
+                wait_cycles = wait_cycles + 1;
+            end
+            chk(rd_idle && expected_outstanding == 0 && model_rd_phase == 0,
+                "read groups and returns drain to true idle within bound");
+        end
+    endtask
+
+    task wait_restart;
+        input integer target;
+        integer wait_cycles;
+        begin
+            wait_cycles = 0;
+            while (done_count < target && wait_cycles < 256) begin
+                @(negedge clk);
+                wait_cycles = wait_cycles + 1;
+            end
+            chk(done_count >= target, "captured restart completes within bounded drain time");
+        end
+    endtask
 
     initial begin
-        errors              = 0;
-        checks              = 0;
-        wr_cmds             = 0;
-        rd_cmds             = 0;
-        wr_fires            = 0;
-        overlap             = 0;
-        init_violations     = 0;
-        ref_violations      = 0;
-        wr_bad_step         = 0;
-        rd_bad_step         = 0;
-        rd_valid_stray      = 0;
-        sdr_rd_en           = 1'b0;
-        sdr_rd_dout         = 32'd0;
-        ref_vld_d           = 1'b0;
-        fifo_wr             = 0;
-        fifo_rd             = 0;
-        for (k = 0; k < 512; k = k + 1) fifo_mem[k] = 32'd0;
-
-        $display("=== tb_framebuf_arbiter start ===");
-
-        // -------------------------------------------------------------------
-        // T01: 未初始化时不允许发任何命令
-        // -------------------------------------------------------------------
-        $display("[T01] reset then no command before init done");
-        do_reset;
-        fifo_wr = 0; fifo_rd = 0;
-        fifo_push(32'h1111_1111);
-        wr_req = 1'b1; wr_dm = 4'hF;
-        rd_req = 1'b1;
-        repeat (30) @(negedge clk);
-        chk(wr_cmds == 0, "no write command before sdr_init_done");
-        chk(rd_cmds == 0, "no read command before sdr_init_done");
-        chk(busy === 1'b1, "busy asserted before sdr_init_done");
-        chk(err === 1'b0, "no error while merely waiting for init");
-
-        // -------------------------------------------------------------------
-        // T02: 写一个完整突发组
-        // -------------------------------------------------------------------
-        $display("[T02] write burst group: stable address, 4 consecutive words");
-        do_reset;
-        sdr_init_done = 1'b1;
-        for (k = 0; k < 1024; k = k + 1) sim_mem[k] = 32'd0;
-        model_beat = 2'd0;
-        repeat (4) @(negedge clk);
-        chk(busy === 1'b0, "busy deasserted after init done");
-
-        t0_wr = wr_cmds;
-        fifo_wr = 0; fifo_rd = 0;
-        for (i = 0; i < 4; i = i + 1) fifo_push(32'h1000_0000 + i);
-        wr_req = 1'b1; wr_dm = 4'hF;
-        wait (fifo_rd == 4);
-        wr_req = 1'b0;
-        repeat (10) @(negedge clk);
-        chk((wr_cmds - t0_wr) == 4, "exactly 4 write commands for one burst group");
-        chk(wr_bad_step == 0, "write address never changed mid-group");
-        chk(sim_mem[0] === 32'h1000_0000, "burst word 0 lands at addr+0");
-        chk(sim_mem[1] === 32'h1000_0001, "burst word 1 lands at addr+1");
-        chk(sim_mem[2] === 32'h1000_0002, "burst word 2 lands at addr+2");
-        chk(sim_mem[3] === 32'h1000_0003, "burst word 3 lands at addr+3");
-
-        // 第二组跳到 addr+4
-        t0_wr = wr_cmds;
-        fifo_wr = 0; fifo_rd = 0;
-        for (i = 0; i < 4; i = i + 1) fifo_push(32'h2000_0000 + i);
-        wr_req = 1'b1; wr_dm = 4'hF;
-        wait (fifo_rd == 4);
-        wr_req = 1'b0;
-        repeat (10) @(negedge clk);
-        chk((wr_cmds - t0_wr) == 4, "second burst group also 4 commands");
-        chk(sim_mem[4] === 32'h2000_0000, "second group starts at addr+4");
-        chk(sim_mem[7] === 32'h2000_0003, "second group word 3 at addr+7");
-
-        // -------------------------------------------------------------------
-        // T03: 读一个完整突发组
-        // -------------------------------------------------------------------
-        $display("[T03] read burst group issues 4 commands");
-        do_reset;
-        sdr_init_done = 1'b1;
-        repeat (4) @(negedge clk);
-
-        t0_rd = rd_cmds;
-        rd_req = 1'b1;
-        for (i = 0; i < 4; i = i + 1) @(negedge clk);
+        rst_n = 1'b0;
+        sdr_init_done = 1'b0;
+        ref_vld = 1'b0;
+        wr_enable = 1'b0;
+        wr_dm = 4'h0;
         rd_req = 1'b0;
-        repeat (30) @(negedge clk);
-        chk((rd_cmds - t0_rd) == 4, "exactly 4 read commands for one burst group");
-        chk(rd_bad_step == 0, "read address never changed mid-group");
-        chk(rd_valid_stray == 0, "rd_valid always aligned with sdr_rd_en");
+        rd_restart = 1'b0;
+        rd_base = FRAME_BASE;
+        drop_returns = 1'b0;
+        inject_return = 1'b0;
+        allow_err = 1'b0;
+        lfsr = 32'hCEFA1234;
 
-        // -------------------------------------------------------------------
-        // T04: 读优先
-        // -------------------------------------------------------------------
-        $display("[T04] read priority when both sides request");
+        $display("CASE T01: reset and initialization block all acceptances");
+        do_reset;
+        fill_words(8, 32'h10000000);
+        wr_enable = 1'b1;
+        rd_req = 1'b1;
+        repeat (12) @(negedge clk);
+        chk(wr_cmds == 0 && rd_cmds == 0 && fifo_used == 0,
+            "uninitialized controller cannot consume FIFO or accept a command");
+        cases_done = cases_done + 1;
+
+        $display("CASE T02: exactly four writes preserve FIFO order and data");
         do_reset;
         sdr_init_done = 1'b1;
-        repeat (4) @(negedge clk);
+        fill_words(4, 32'h20102030);
+        wr_enable = 1'b1;
+        wait_written(4, 128);
+        wr_enable = 1'b0;
+        repeat (12) @(negedge clk);
+        chk(wr_cmds == 4 && padded_writes == 0, "one full FIFO group produces four real writes");
+        for (i = 0; i < 4; i = i + 1)
+            chk(sim_mem[i] === (32'h20102030 + i), "four distinct FIFO words reach four distinct addresses");
+        cases_done = cases_done + 1;
 
-        t0_wr = wr_cmds; t0_rd = rd_cmds;
-        fifo_wr = 0; fifo_rd = 0;
-        for (i = 0; i < 64; i = i + 1) fifo_push(32'hDEAD_0000 + i);
-        wr_req = 1'b1; wr_dm = 4'hF;
+        $display("CASE T03: one requested read group has one ack and four valid returns");
+        do_reset;
+        sdr_init_done = 1'b1;
+        rd_req = 1'b1;
+        wait_reads(1, 128);
+        rd_req = 1'b0;
+        wait_read_idle(128);
+        chk(rd_cmds == 4 && rd_acks == 1 && delivered == 4,
+            "request withdrawal completes existing group without starting another");
+        cases_done = cases_done + 1;
+
+        $display("CASE T04: read initially wins simultaneous requests");
+        do_reset;
+        sdr_init_done = 1'b1;
+        fill_words(64, 32'h30405060);
+        wr_enable = 1'b1;
         rd_req = 1'b1;
         repeat (6) @(negedge clk);
-        chk((rd_cmds - t0_rd) > 0, "read serviced while write also pending");
-        chk((wr_cmds - t0_wr) == 0, "write held off while read pending");
+        chk(rd_cmds > 0 && wr_cmds == 0, "initial arbitration grants read priority");
         rd_req = 1'b0;
-        repeat (40) @(negedge clk);
-        wr_req = 1'b0;
-        repeat (20) @(negedge clk);
+        wait_written(4, 256);
+        wr_enable = 1'b0;
+        repeat (32) @(negedge clk);
+        wait_read_idle(128);
+        cases_done = cases_done + 1;
 
-        // -------------------------------------------------------------------
-        // T05: 写饥饿保护
-        // -------------------------------------------------------------------
-        $display("[T05] write starvation protection under continuous read load");
+        $display("CASE T05: real returning continuous reads cannot starve writes");
         do_reset;
         sdr_init_done = 1'b1;
-        repeat (4) @(negedge clk);
-
-        t0_wr = wr_cmds;
-        fifo_wr = 0; fifo_rd = 0;
-        for (i = 0; i < 512; i = i + 1) fifo_push(32'hCAFE_0000 + i);
+        fill_words(16, 32'h40506070);
+        wr_enable = 1'b1;
         rd_req = 1'b1;
-        wr_req = 1'b1; wr_dm = 4'hF;
-        repeat (WR_STARVE_LIMIT * 6) @(negedge clk);
-        chk((wr_cmds - t0_wr) > 0, "starved write eventually serviced");
-        rd_req = 1'b0; wr_req = 1'b0;
-        repeat (80) @(negedge clk);
+        wait_written(1, WR_STARVE_LIMIT + RD_LATENCY * 3 + 32);
+        chk(rd_returns > 0 && rd_cmds > 0, "starvation case includes real returns, not a stuck controller");
+        chk(cycle_count < RD_TIMEOUT && !err, "write service occurs before any timeout recovery");
+        rd_req = 1'b0;
+        wait_written(16, 256);
+        wr_enable = 1'b0;
+        wait_read_idle(128);
+        cases_done = cases_done + 1;
 
-        // -------------------------------------------------------------------
-        // T06: 刷新避让
-        // -------------------------------------------------------------------
-        $display("[T06] refresh window blocks all commands");
+        $display("CASE T06: refresh first cycle rejects both command types");
         do_reset;
         sdr_init_done = 1'b1;
-        repeat (4) @(negedge clk);
-
-        ref_vld_d = 1'b0;
-        t0_wr = wr_cmds; t0_rd = rd_cmds;
         ref_vld = 1'b1;
-        fifo_wr = 0; fifo_rd = 0;
-        for (i = 0; i < 32; i = i + 1) fifo_push(32'h5555_0000 + i);
-        wr_req = 1'b1; rd_req = 1'b1; wr_dm = 4'hF;
-        repeat (40) @(negedge clk);
-        chk((wr_cmds - t0_wr) == 0, "no write during ref_vld");
-        chk((rd_cmds - t0_rd) == 0, "no read during ref_vld");
-        chk(ref_violations == 0, "ref_vld never saw a command");
-
+        fill_words(8, 32'h50607080);
+        wr_enable = 1'b1;
+        rd_req = 1'b1;
+        repeat (16) @(negedge clk);
+        chk(wr_cmds == 0 && rd_cmds == 0 && fifo_used == 0, "refresh never consumes an unaccepted FIFO word");
         ref_vld = 1'b0;
-        repeat (60) @(negedge clk);
-        chk(((wr_cmds - t0_wr) > 0) || ((rd_cmds - t0_rd) > 0),
-            "commands resume after ref_vld deasserts");
-        wr_req = 1'b0; rd_req = 1'b0;
-        repeat (40) @(negedge clk);
+        repeat (64) @(negedge clk);
+        chk(wr_cmds + rd_cmds > 0, "traffic resumes after refresh");
+        rd_req = 1'b0;
+        wr_enable = 1'b0;
+        repeat (48) @(negedge clk);
+        wait_read_idle(128);
+        cases_done = cases_done + 1;
 
-        // -------------------------------------------------------------------
-        // T07: 组中途遇到刷新，进度不能丢
-        // -------------------------------------------------------------------
-        $display("[T07] refresh mid-group preserves beat progress");
+        $display("CASE T07: refresh after two writes loses no FIFO word or group beat");
         do_reset;
         sdr_init_done = 1'b1;
-        repeat (4) @(negedge clk);
-
-        t0_wr = wr_cmds;
-        t0_fire = wr_fires;
-        fifo_wr = 0; fifo_rd = 0;
-        for (i = 0; i < 32; i = i + 1) fifo_push(32'h7000_0000 + i);
-        wr_req = 1'b1; wr_dm = 4'hF;
-        // 等真正发出 2 拍。
-        // 必须在 negedge 拉 ref_vld：wr_cmds 在 posedge 递增，若在同一 posedge
-        // 赋值 ref_vld，DUT 在同拍已判 bus_ok=1 把第 3 拍发出去了，测不到暂停。
-        // 用 wr_fires 而非 wr_cmds：app_wr_en 是寄存器，比 wr_fire 晚一拍，
-        // 等 wr_cmds==2 时第 3 拍其实已经发出去了。
-        wait ((wr_fires - t0_fire) == 2);
-        @(negedge clk);
+        fill_words(8, 32'h60708090);
+        wr_enable = 1'b1;
+        wait_written(2, 128);
         ref_vld = 1'b1;
+        snapshot = wr_cmds;
+        repeat (8) @(negedge clk);
+        chk(snapshot == 2 && wr_cmds == snapshot && fifo_used == 2,
+            "refresh freezes exact accepted write count from its rising edge");
+        ref_vld = 1'b0;
+        wait_written(8, 128);
+        wr_enable = 1'b0;
         repeat (12) @(negedge clk);
-        chk((wr_fires - t0_fire) == 2, "write paused after 2 beats during refresh");
+        chk(wr_cmds == 8 && model_wr_phase == 0, "both write groups finish exactly once after pause");
+        for (i = 0; i < 8; i = i + 1)
+            chk(sim_mem[i] === (32'h60708090 + i), "refresh preserves FIFO word-to-address mapping");
+        cases_done = cases_done + 1;
+
+        $display("CASE T08: refresh pauses partial read issue while existing returns drain");
+        do_reset;
+        sdr_init_done = 1'b1;
+        rd_req = 1'b1;
+        wait_reads(2, 128);
+        ref_vld = 1'b1;
+        rd_req = 1'b0;
+        snapshot = rd_cmds;
+        repeat (8) @(negedge clk);
+        chk(snapshot == 2 && rd_cmds == snapshot, "refresh freezes partial read issue count immediately");
         ref_vld = 1'b0;
-        wait ((wr_fires - t0_fire) == 4);
-        // 组真正结束（wr_grp_active 落下）后再撤请求，否则会触发补拍
-        wait (dut.wr_grp_active == 1'b0);
-        wr_req = 1'b0;
-        repeat (15) @(negedge clk);
-        chk((wr_fires - t0_fire) == 4, "group completes to exactly 4 beats after refresh");
-        chk((wr_cmds - t0_wr) == 4, "exactly 4 write commands reached the controller");
-        chk(wr_bad_step == 0, "address still stable across refresh pause");
+        wait_read_idle(128);
+        chk(rd_cmds == 4 && rd_acks == 1 && delivered == 4,
+            "read pause neither creates a fake ack nor loses a return");
+        cases_done = cases_done + 1;
 
-        // -------------------------------------------------------------------
-        // T08: 地址回卷
-        // -------------------------------------------------------------------
-        $display("[T08] address wraps back to FRAME_BASE after one frame");
+        $display("CASE T09: write address wraps after one complete frame");
         do_reset;
         sdr_init_done = 1'b1;
-        for (k = 0; k < 1024; k = k + 1) sim_mem[k] = 32'd0;
-        model_beat = 2'd0;
-        repeat (4) @(negedge clk);
+        fill_words(FRAME_WORDS + 8, 32'h70809000);
+        wr_enable = 1'b1;
+        wait_written(FRAME_WORDS + 8, FRAME_WORDS * 4);
+        wr_enable = 1'b0;
+        repeat (12) @(negedge clk);
+        chk(wr_cmds == FRAME_WORDS + 8, "wrap scan emits the exact number of words");
+        for (i = 0; i < 8; i = i + 1)
+            chk(sim_mem[i] === (32'h70809000 + FRAME_WORDS + i), "new frame overwrites only wrapped leading words");
+        chk(sim_mem[8] === 32'h70809008 && sim_mem[255] === 32'h708090FF,
+            "unwrapped frame words retain their original values");
+        cases_done = cases_done + 1;
 
-        fifo_wr = 0; fifo_rd = 0;
-        for (i = 0; i < FRAME_WORDS; i = i + 1) fifo_push(i);
-        wr_req = 1'b1; wr_dm = 4'hF;
-        wait (fifo_rd == FRAME_WORDS);
-        wr_req = 1'b0;
-        repeat (20) @(negedge clk);
-
-        // 再写一组，应回到 FRAME_BASE
-        fifo_wr = 0; fifo_rd = 0;
-        for (i = 0; i < 4; i = i + 1) fifo_push(32'hABCD_0000 + i);
-        wr_req = 1'b1;
-        wait (fifo_rd == 4);
-        wr_req = 1'b0;
-        repeat (20) @(negedge clk);
-        chk(sim_mem[0] === 32'hABCD_0000, "address wrapped back to FRAME_BASE");
-
-        // -------------------------------------------------------------------
-        // T09: wr_ack 只在真消费数据时为 1
-        // -------------------------------------------------------------------
-        $display("[T09] wr_ack only when a FIFO word is consumed");
+        $display("CASE T10: deterministic mixed request and refresh stress");
         do_reset;
         sdr_init_done = 1'b1;
-        repeat (4) @(negedge clk);
-
-        begin : ack_check
-            integer ack_cnt, en_cnt, noack_en;
-            ack_cnt = 0; en_cnt = 0; noack_en = 0;
-            fifo_wr = 0; fifo_rd = 0;
-            for (i = 0; i < 6; i = i + 1) fifo_push(32'h9999_0000 + i);
-            fork
-                begin
-                    // 发 6 个字后立刻撤销请求，制造"组内掉线"
-                    wr_req = 1'b1; wr_dm = 4'hF;
-                    wait (fifo_rd == 6);
-                    wr_req = 1'b0;
-                end
-                begin
-                    repeat (40) begin
-                        @(posedge clk);
-                        if (wr_ack) ack_cnt = ack_cnt + 1;
-                        if (app_wr_en) en_cnt = en_cnt + 1;
-                        if (app_wr_en && !wr_ack) noack_en = noack_en + 1;
-                    end
-                end
-            join
-            chk(ack_cnt == 6, "wr_ack fired once per consumed word");
-            chk(en_cnt >= ack_cnt, "app_wr_en at least as many as wr_ack");
-            chk(noack_en > 0, "odd tail completed with app_wr_en but no wr_ack");
+        fill_words(512, 32'h80900000);
+        wr_enable = 1'b1;
+        for (i = 0; i < 512; i = i + 1) begin
+            @(negedge clk);
+            lfsr = {lfsr[30:0], lfsr[31] ^ lfsr[21] ^ lfsr[1] ^ lfsr[0]};
+            rd_req = lfsr[0];
+            ref_vld = (lfsr[4:1] == 4'd0);
         end
+        rd_req = 1'b0;
+        wr_enable = 1'b0;
+        ref_vld = 1'b0;
+        repeat (64) @(negedge clk);
+        wait_read_idle(128);
+        chk(wr_cmds > 0 && rd_cmds > 0 && rd_returns > 0, "stress exercises both directions and real returns");
+        chk(model_wr_phase == 0 && model_rd_phase == 0, "stress finishes all partial groups");
+        cases_done = cases_done + 1;
 
-        // -------------------------------------------------------------------
-        // T10: 随机压测
-        // -------------------------------------------------------------------
-        $display("[T10] randomized stress keeps all invariants");
+        $display("CASE T11: healthy continuous read lasts more than twice RD_TIMEOUT");
         do_reset;
         sdr_init_done = 1'b1;
-        repeat (4) @(negedge clk);
+        rd_req = 1'b1;
+        repeat (RD_TIMEOUT * 2 + 64) @(negedge clk);
+        chk(rd_cmds > RD_TIMEOUT && rd_returns > RD_TIMEOUT,
+            "long stream has both issues and returns beyond timeout threshold");
+        chk(!err, "progressing long stream never trips no-return watchdog");
+        rd_req = 1'b0;
+        wait_read_idle(128);
+        chk(rd_cmds % 4 == 0 && rd_acks * 4 == rd_cmds,
+            "long stream acknowledgments exactly count complete groups");
+        cases_done = cases_done + 1;
 
-        begin : stress
-            integer s, ov0, rv0, iv0, wa0, ra0;
-            ov0 = overlap; rv0 = ref_violations; iv0 = init_violations;
-            wa0 = wr_bad_step; ra0 = rd_bad_step;
-            fifo_wr = 0; fifo_rd = 0;
-            for (i = 0; i < 512; i = i + 1) fifo_push($random);
-            wr_req = 1'b1; wr_dm = 4'hF;
-            for (s = 0; s < 800; s = s + 1) begin
-                rd_req  = ($random % 4) != 0;
-                ref_vld = (($random % 32) == 0);
-                @(negedge clk);
-            end
-            wr_req = 1'b0; rd_req = 1'b0; ref_vld = 1'b0;
-            repeat (60) @(negedge clk);
-
-            chk(overlap == ov0, "stress: no read/write overlap");
-            chk(ref_violations == rv0, "stress: no command during refresh");
-            chk(init_violations == iv0, "stress: no command before init");
-            chk(wr_bad_step == wa0, "stress: write address stable per group");
-            chk(rd_bad_step == ra0, "stress: read address stable per group");
-            chk(rd_valid_stray == 0, "stress: rd_valid aligned with sdr_rd_en");
-            chk(err === 1'b0, "stress: no scheduler error");
-        end
-
-        // -------------------------------------------------------------------
-        // T11: 超时兜底 —— 控制器不返回数据时必须能自恢复（杀 m4/m5）
-        // -------------------------------------------------------------------
-        $display("[T11] recovers when controller never returns read data");
+        $display("CASE T12: make-up DM=F and real masked writes preserve sentinel");
         do_reset;
         sdr_init_done = 1'b1;
-        repeat (4) @(negedge clk);
-
-        begin : timeout_check
-            integer rd0_t, tmo;
-            rd0_t = rd_cmds;
-            // 关掉读延迟模型：app_rd_en 之后永远没有 sdr_rd_en 回来
-            rd_lat_off = 1'b1;
-            rd_req = 1'b1;
-            while ((rd_cmds - rd0_t) < 4) @(negedge clk);
-            // 现在 outstanding=4 且永远不会归零。等超时窗口
-            tmo = 0;
-            while (!err && tmo < 4000) begin
-                
-                @(negedge clk);
-                tmo = tmo + 1;
-            end
-            chk(err === 1'b1, "read timeout sets err flag");
-            // 超时后必须能发下一条命令（不再永久卡死）。
-            // 注意：rd_req 仍为 1，若 rd_may_exit 漏了 rd_timeout 这一项，
-            // 状态机会永远停在 A_RD，rd_cmds 不再增长 -> 这里会等不到。
-            rd_lat_off = 1'b0;
-            rd0_t = rd_cmds;
-            begin : resume_wait
-                integer guard;
-                guard = 0;
-                while ((rd_cmds - rd0_t) < 4 && guard < 3000) begin
-                    @(negedge clk);
-                    guard = guard + 1;
-                end
-                chk((rd_cmds - rd0_t) >= 4, "scheduler resumes after read timeout");
-            end
-            rd_req = 1'b0;
-            repeat (40) @(negedge clk);
-        end
-
-        // -------------------------------------------------------------------
-        // T12: 补拍不写字节 —— dm 必须为 0（杀 m6）
-        // -------------------------------------------------------------------
-        $display("[T12] made-up beats carry dm=0 and never corrupt memory");
+        fill_words(2, 32'h90A0B0C0);
+        wr_enable = 1'b1;
+        wait_written(2, 128);
+        wr_enable = 1'b0;
+        repeat (16) @(negedge clk);
+        chk(wr_cmds == 4 && padded_writes == 2 && fifo_used == 2,
+            "short source consumes only real data and pads the complete group");
+        chk(sim_mem[0] === 32'h90A0B0C0 && sim_mem[1] === 32'h90A0B0C1, "real source words are written without shift");
+        chk(sim_mem[2] === 32'hD00D0002 && sim_mem[3] === 32'hD00D0003,
+            "masked make-up beats do not overwrite sentinel memory");
         do_reset;
         sdr_init_done = 1'b1;
-        for (k = 0; k < 1024; k = k + 1) sim_mem[k] = 32'd0;
-        model_beat = 2'd0;
-        repeat (4) @(negedge clk);
+        fill_words(4, 32'hFFFFFFFF);
+        wr_dm = 4'hF;
+        wr_enable = 1'b1;
+        wait_written(4, 128);
+        wr_enable = 1'b0;
+        repeat (12) @(negedge clk);
+        for (i = 0; i < 4; i = i + 1)
+            chk(sim_mem[i] === (32'hD00D0000 + i), "real DM=F writes also preserve sentinel bytes");
+        cases_done = cases_done + 1;
 
-        begin : dm_check
-            integer dm_bad, fill_en;
-            reg ack_d;
-            dm_bad = 0; fill_en = 0; ack_d = 1'b1;
-            fifo_wr = 0; fifo_rd = 0;
-            // 只给 2 个字，却要求发满 4 拍 -> 后 2 拍必是补拍
-            for (i = 0; i < 2; i = i + 1) fifo_push(32'hDEAD_0000 + i);
-            fork
-                begin
-                    wr_req = 1'b1; wr_dm = 4'hF;
-                    wait (fifo_rd == 2);
-                    wr_req = 1'b0;
-                end
-                begin
-                    repeat (30) begin
-                        @(posedge clk);
-                        // app_wr_dm / app_wr_en 是寄存器，晚 wr_fire 一拍；
-                        // 对应那个字的"是否真消费"要看**上一拍**的 wr_ack。
-                        if (app_wr_en) begin
-                            fill_en = fill_en + 1;
-                            if (!ack_d && (app_wr_dm !== 4'h0)) dm_bad = dm_bad + 1;
-                        end
-                        ack_d <= wr_ack;
-                    end
-                end
-            join
-            chk(fill_en > 2, "group padded beyond supplied words");
-            chk(dm_bad == 0, "made-up beats drive app_wr_dm = 0");
-        end
-
-        // -------------------------------------------------------------------
-        // T13: 组原子性 —— 组内地址不得推进（杀 m8）
-        // -------------------------------------------------------------------
-        $display("[T13] address holds for all 4 beats inside one group");
+        $display("CASE T13: captured restart finishes old group, drains, and emits no fake ack");
         do_reset;
         sdr_init_done = 1'b1;
-        repeat (4) @(negedge clk);
-
-        begin : atomic_check
-            integer grp_seen, step_bad;
-            reg [ADDR_WIDTH-1:0] g_addr;
-            grp_seen = 0; step_bad = 0;
-            fifo_wr = 0; fifo_rd = 0;
-            for (i = 0; i < 8; i = i + 1) fifo_push(32'hCAFE_0000 + i);
-            wr_req = 1'b1; wr_dm = 4'hF;
-            repeat (40) begin
-                @(posedge clk);
-                if (app_wr_en) begin
-                    // 每 4 拍是一个新组：组内地址必须恒定
-                    if ((grp_seen % 4) == 0) g_addr = app_wr_addr;
-                    else if (app_wr_addr !== g_addr) begin
-                        step_bad = step_bad + 1;
-                    end
-                    grp_seen = grp_seen + 1;
-                end
-            end
-            wr_req = 1'b0;
-            chk(step_bad == 0, "no address change inside a burst group");
-        end
-
-        // -------------------------------------------------------------------
-        // T14: 刷新期间发命令必须被 err 捕获（杀 m9）
-        // -------------------------------------------------------------------
-        $display("[T14] a command leaked during refresh would be flagged by err");
+        rd_req = 1'b1;
+        wait_reads(1, 128);
+        rd_restart = 1'b1;
+        rd_base = 21'd64;
+        @(negedge clk);
+        rd_restart = 1'b0;
+        rd_base = 21'd128;
+        wait_restart(1);
+        chk(rd_cmds == 4 && rd_acks == 1 && expected_outstanding == 0,
+            "restart finishes and drains only original group before done");
+        wait_reads(5, 128);
+        rd_req = 1'b0;
+        wait_read_idle(128);
+        chk(rd_cmds == 8 && rd_acks == 2 && done_count == 1, "captured-base restart begins one complete new group");
         do_reset;
         sdr_init_done = 1'b1;
+        rd_req = 1'b1;
+        @(negedge clk);
+        rd_restart = 1'b1;
+        rd_base = 21'd96;
+        #1;
+        chk(!app_rd_en && !rd_ack, "boundary restart cannot advertise a discarded command");
+        @(negedge clk);
+        rd_restart = 1'b0;
+        rd_base = 21'd128;
+        wait_restart(1);
+        chk(rd_cmds == 0 && rd_acks == 0, "boundary restart acknowledges no old-base group");
+        wait_reads(1, 128);
+        rd_req = 1'b0;
+        wait_read_idle(128);
+        chk(rd_cmds == 4 && rd_acks == 1, "actual first group after boundary restart has one ack");
+        cases_done = cases_done + 1;
+
+        $display("CASE T14: timeout keeps outstanding and blocks reads until reset");
+        do_reset;
+        sdr_init_done = 1'b1;
+        drop_returns = 1'b1;
+        allow_err = 1'b1;
+        rd_req = 1'b1;
+        repeat (64) @(negedge clk);
+        chk(rd_cmds == 28 && max_outstanding == 28,
+            "whole-group credit reserve accepts twenty-eight words without saturation loss");
+        chk(!err, "credit backpressure alone does not immediately trigger timeout");
+        guard = 0;
+        while (!err && guard < RD_TIMEOUT + 64) begin
+            @(negedge clk);
+            guard = guard + 1;
+        end
+        chk(err, "missing returns trigger bounded watchdog error");
+        chk(expected_outstanding == 28 && dut.rd_outstanding == 28 && !rd_idle,
+            "timeout preserves all unreturned reads and cannot fake idle");
+        snapshot = rd_cmds;
+        repeat (32) @(negedge clk);
+        chk(rd_cmds == snapshot && !rd_idle, "latched timeout blocks subsequent read commands");
+        snapshot2 = expected_outstanding;
+        inject_return = 1'b1;
+        @(negedge clk);
+        inject_return = 1'b0;
+        chk(expected_outstanding == snapshot2 - 1 && !rd_idle,
+            "late return reclaims one credit without pretending complete drain");
+        repeat (16) @(negedge clk);
+        chk(rd_cmds == snapshot && err, "late return does not clear fault or restart traffic");
+        do_reset;
+        sdr_init_done = 1'b1;
+        rd_req = 1'b1;
+        wait_reads(1, 128);
+        rd_req = 1'b0;
+        wait_read_idle(128);
+        chk(!err && delivered == 4, "system reset recovers after a latched read timeout");
+        cases_done = cases_done + 1;
+
+        $display("CASE T15: unsolicited return at zero cannot underflow outstanding");
+        do_reset;
+        sdr_init_done = 1'b1;
+        allow_err = 1'b1;
+        inject_return = 1'b1;
+        @(negedge clk);
+        inject_return = 1'b0;
+        chk(err && expected_outstanding == 0 && dut.rd_outstanding == 0,
+            "zero-count return raises error and holds lower bound at zero");
         repeat (4) @(negedge clk);
+        chk(dut.rd_outstanding == 0, "unsolicited return never wraps zero to thirty-one");
+        cases_done = cases_done + 1;
 
-        begin : err_flag_check
-            // 正常运行不应置 err
-            fifo_wr = 0; fifo_rd = 0;
-            for (i = 0; i < 4; i = i + 1) fifo_push(i);
-            wr_req = 1'b1;
-            wait (dut.wr_grp_active == 1'b0);
-            wr_req = 1'b0;
-            repeat (10) @(negedge clk);
-            chk(err === 1'b0, "no spurious err during clean operation");
-
-            // 现在制造一次"命令与刷新重叠"以验证检测器真的活着：
-            // 让 wr_req 已经拉起、状态机已在 A_WR 组内，然后在组中间同拍拉 ref_vld。
-            // 此时 ref_vld 稳定的下一拍，若仍有 app_wr_en 在途，err 必须置位。
-            fifo_wr = 0; fifo_rd = 0;
-            for (i = 0; i < 8; i = i + 1) fifo_push(i);
-            wr_req = 1'b1;
-            wait (dut.wr_grp_active == 1'b1);
-            // 组已开始：此刻强拉刷新，组内后续拍会被 bus_ok 挡下（正确），
-            // 但把 ref_vld 放在 posedge 前一刻可以造出"在途命令 + 刷新已稳"的窗口
-            ref_vld = 1'b1;
-            repeat (3) @(negedge clk);
-            ref_vld = 1'b0;
-            wr_req = 1'b0;
-            wait (dut.wr_grp_active == 1'b0);
-            repeat (10) @(negedge clk);
-        end
-        repeat (20) @(negedge clk);
-
-        $display("--- stats: wr_cmds=%0d rd_cmds=%0d checks=%0d ---",
-                 wr_cmds, rd_cmds, checks);
-        if (errors == 0) begin
-            $display("ALL CHECKS PASSED: framebuf_arbiter");
-        end else begin
-            $display("CHECKS FAILED: framebuf_arbiter, errors = %0d", errors);
-        end
+        chk(cases_done == 15 && checks > 0, "all fifteen required self-check cases completed");
+        $display("SUMMARY: checks=%0d errors=%0d cases=%0d", checks, errors, cases_done);
+        if (errors == 0) $display("ALL CHECKS PASSED: tb_framebuf_arbiter");
+        else $display("FAILED: tb_framebuf_arbiter errors=%0d", errors);
         $finish;
     end
 
     initial begin
-        #20000000;
-        $display("TIMEOUT: framebuf_arbiter simulation did not finish");
+        #2000000;
+        $display("FAIL: tb_framebuf_arbiter global timeout");
+        $display("FAILED: tb_framebuf_arbiter global timeout");
         $finish;
     end
-
 endmodule

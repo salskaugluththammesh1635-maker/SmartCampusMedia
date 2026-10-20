@@ -1,21 +1,21 @@
-�? =============================================================================
-# SmartCampusMedia .gitignore
-# 鍘熷�? 鍙窡韪?鎴戜滑缂栧啓/缂栧啓鐢熸垚"鐨勬枃鏈祫�? 鎺掗櫎瀹樻柟鍙傝€冭祫鏂欎�?EDA 鐢熸垚鐗?# =============================================================================
-
-# ---------- 瀹樻柟鍔犲瘑 IP锛圛EEE1735 鍔犲�? 鐗堟潈褰掑畼�? 涓嶅叆搴擄級----------
+# Vendor IP and reference packages are local dependencies.
 ip/local/hdmi/enc/
 project/hdmi/enc/
-
-# ---------- 瀹樻柟鍙傝€冭祫鏂欙紙鏈湴淇濈暀, 涓嶅叆搴? 浣撶Н澶т笖鐗堟潈褰掑畼鏂癸�?---------
+ip/local/sdram/
 project/reference/
 ip/reference/
 
-# ---------- 瀹夎�?TD 宸ョ▼鐢熸垚�?----------
-# .al 宸ョ▼鏂囦欢: 鍙繚鐣欎袱�?*姝ｅ紡宸ョ▼瀹氫�?*
-#   - project/bringup_td.al : 鏈€灏忕郴缁熷伐绋嬶紙闃舵浜岋紝宸插湪鏉垮崱涓婇獙璇侀€氳繃锛?#   - project/hdmi_td.al    : HDMI 瑙嗛宸ョ▼锛堥樁娈典笁�?# 鍏朵�?.al 瑙嗕负閲嶅/涓存椂宸ョ▼锛堝凡鍙戠敓: 鐢ㄦ埛浜?project/src/ 涓嬪彟寤?SmartCampusMedia.al�?*.al
+# Keep the main and reproducible diagnostic TD project definitions.
+*.al
 !project/bringup_td.al
 !project/hdmi_td.al
-project/*_Runs/
+!project/sdram_frame_diag_td.al
+!project/image_path_diag_td.al
+!project/image_readback_diag_td.al
+!project/image_dm_fix_td.al
+
+# EDA build products and crash dumps.
+*_Runs/
 log/
 *.log
 *.logw
@@ -34,32 +34,28 @@ project/.stop.f
 *.rpt
 *.status
 *.f
+*.qor
+*.dmp
+*.err
 
-# ---------- ModelSim 浠跨湡宸ヤ綔�?----------
+# ModelSim libraries and waveforms.
 sim/msim_work/
 work/
 transcript
 *.wlf
 *.vcd
-# 浠跨湡瀵煎嚭鐨勫浘鍍忎繚鐣?PPM/PNG 灏忓浘璇佹嵁; 澶т綋绉腑闂存枃浠跺拷鐣?sim/msim_work/*.ppm
+sim/msim_work/*.ppm
 
-# ---------- 涓存椂鏂囦欢 ----------
+# Temporary files and editor settings.
 reports/_*.png
+reports/local_check/
+reports/image_real_core_sim/simulation.txt
+__pycache__/
+*.pyc
 *.bak
 *~
 ~$*
 .DS_Store
 Thumbs.db
-# VIDE 缂栬緫鍣ㄥ伐绋嬮厤缃紙闈為」鐩唴瀹癸�?
 vide.toml
 .vide/
-
-
-# TD QoR reports (generated)
-*.qor
-
-# Headless bit output (generated)
-*_Runs/
-
-# ---------- �ٷ� SDRAM ���� IP��APUG011�����ر���������⣩----------
-ip/local/sdram/

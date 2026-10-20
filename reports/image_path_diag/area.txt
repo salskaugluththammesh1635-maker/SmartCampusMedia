@@ -1,0 +1,102 @@
+standard
+***Report Model: dmz_eg4s20_image_diag_top Device: EG4S20BG256***
+
+IO Statistics
+#IO                        41   out of    188   21.81%
+  #input                    8
+  #output                  33
+  #inout                    0
+
+Utilization Statistics
+#lut                     7204   out of  19600   36.76%
+#reg                     3321   out of  19600   16.94%
+#le                      7797
+  #lut only              4476   out of   7797   57.41%
+  #reg only               593   out of   7797    7.61%
+  #lut&reg               2728   out of   7797   34.99%
+#bram                       3   out of     64    4.69%
+  #bram9k                   3
+  #fifo9k                   0
+#bram32k                    0   out of     16    0.00%
+#dsp                        7   out of     29   24.14%
+#pad                       45   out of    188   23.94%
+  #ireg                     4
+  #oreg                    25
+  #treg                     0
+#pll                        2   out of      4   50.00%
+#gclk                       2   out of     16   12.50%
+
+Report Clock Domain Luts:
+
+--------------------------------------------------------------------------------------------------------------------------------
+  Index   |  Name                       |  Frequency   |  LUT As Logic   |  LUT As Shifter   |  LUT As Dram   |  BRAM   |  DSP
+--------------------------------------------------------------------------------------------------------------------------------
+  #1      |  clk                        |  50MHz       |  2              |  0                |  0             |  0      |  0
+  #2      |  u_pll/pll_inst.clkc[0]     |  25MHz       |  2634           |  0                |  1024          |  3      |  7
+  #3      |  u_pll/pll_inst.clkc[2]     |  125MHz      |  27             |  0                |  0             |  0      |  0
+  #4      |  u_sdram_pll/pll_inst.cl... |  150MHz      |  315            |  0                |  0             |  3      |  0
+--------------------------------------------------------------------------------------------------------------------------------
+
+Clock Resource Statistics
+Index     ClockNet                                   Type               DriverType         Driver                        Fanout
+#1        u_pll/clk0_buf                             Global             pll                u_pll/pll_inst.clkc0          1513
+#2        u_player/u_arb/clk                         Global             pll                u_sdram_pll/pll_inst.clkc1    904
+#3        u_hdmi/Inst_DVITransmitter/PCLK_X5_I       Global             pll                u_pll/pll_inst.clkc2          34
+#4        clk_dup_1                                  Global             io                 clk_syn_2.di                  6
+#5        u_player/u_sdram/u_sdr_as_ram/SDRAM_CLK    Global             pll                u_sdram_pll/pll_inst.clkc2    0
+#6        u_sdram_pll/clk0_buf                       Global             pll                u_sdram_pll/pll_inst.clkc0    0
+
+Report Hierarchy Area:
++------------------------------------------------------------------------------------------------------------------+
+|Instance                         |Module                    |le      |lut     |ripple  |seq     |bram    |dsp     |
++------------------------------------------------------------------------------------------------------------------+
+|top                              |dmz_eg4s20_image_diag_top |7797    |6291    |913     |3350    |3       |7       |
+|  u_audio                        |pwm_audio_out             |72      |29      |19      |36      |0       |0       |
+|  u_buzz                         |buzzer_tone               |189     |127     |62      |63      |0       |0       |
+|  u_ctrl                         |player_ctrl               |77      |68      |9       |40      |0       |0       |
+|  u_hdmi                         |hdmi_tx                   |327     |249     |55      |187     |0       |0       |
+|    Inst_DVITransmitter          |DVITransmitter            |327     |249     |55      |187     |0       |0       |
+|      Inst_TMDSEncoder_blue      |TMDSEncoder               |102     |82      |19      |39      |0       |0       |
+|      Inst_TMDSEncoder_green     |TMDSEncoder               |89      |69      |18      |50      |0       |0       |
+|      Inst_TMDSEncoder_red       |TMDSEncoder               |82      |63      |18      |44      |0       |0       |
+|      Inst_blue_serializer_10_1  |Serial_N_1_lvds_dat       |24      |18      |0       |24      |0       |0       |
+|      Inst_clk_serializer_10_1   |Serial_N_1_lvds           |5       |2       |0       |5       |0       |0       |
+|      Inst_green_serializer_10_1 |Serial_N_1_lvds_dat       |14      |8       |0       |14      |0       |0       |
+|      Inst_red_serializer_10_1   |Serial_N_1_lvds_dat       |11      |7       |0       |11      |0       |0       |
+|  u_key                          |key_matrix_4x4            |173     |168     |5       |100     |0       |0       |
+|  u_pat                          |test_pattern_gen          |137     |89      |48      |24      |0       |0       |
+|  u_player                       |image_player_path_diag    |5505    |4440    |575     |2297    |3       |7       |
+|    u_arb                        |framebuf_arbiter          |230     |176     |42      |135     |0       |0       |
+|    u_bmp                        |bmp_parser                |427     |310     |64      |290     |0       |0       |
+|    u_loader                     |img_loader                |1795    |1296    |326     |928     |0       |6       |
+|      u_fat                      |fat32_reader              |1036    |730     |160     |613     |0       |6       |
+|    u_reader                     |pix_reader                |2119    |2035    |60      |222     |0       |0       |
+|      u_pix_fifo                 |async_fifo                |1624    |1616    |7       |50      |0       |0       |
+|    u_sdram                      |sdram_ctrl_wrap           |398     |274     |5       |371     |0       |0       |
+|      u_sdr_as_ram               |sdr_as_ram                |398     |274     |5       |371     |0       |0       |
+|        u1_init_ref              |sdr_init_ref              |92      |53      |5       |82      |0       |0       |
+|        u2_wrrd                  |sdr_wrrd                  |306     |221     |0       |289     |0       |0       |
+|    u_write_fifo                 |async_fifo                |76      |58      |7       |69      |3       |0       |
+|    u_path_probe                 |image_path_probe          |112     |94      |0       |83      |0       |0       |
+|  u_pll                          |hdmi_pll                  |0       |0       |0       |0       |0       |0       |
+|  u_probe                        |sd_probe                  |61      |40      |10      |48      |0       |0       |
+|  u_sd                           |sd_spi_ctrl               |604     |504     |72      |378     |0       |0       |
+|  u_sdram_pll                    |sdram_pll                 |0       |0       |0       |0       |0       |0       |
+|  u_seg                          |seg_scan4                 |76      |63      |7       |25      |0       |0       |
+|  u_vtg                          |video_timing_gen          |123     |77      |46      |37      |0       |0       |
++------------------------------------------------------------------------------------------------------------------+
+
+
+DataNet Average Fanout:
+
+   Index     Fanout     Nets  
+    #1          1       6828  
+    #2          2       3385  
+    #3          3       522   
+    #4          4       261   
+    #5        5-10      375   
+    #6        11-50     247   
+    #7       51-100      30   
+    #8       101-500     8    
+    #9        >500       4    
+  Average     2.74            

@@ -2,8 +2,9 @@
 # make_test_bmps.ps1 — 生成 SD 卡验证用 BMP 测试图
 # 用途: 阶段四 SD 卡图片播放链路的素材准备（拷到 SD 卡 FAT32 根目录）
 # 生成:
-#   img1_640x480.bmp — 全屏 640x480 横向七彩渐变条（验证整幅读出+显示）
-#   img2_320x240.bmp — 320x240 居中小图，白底（验证非全屏图 + 缩放/居中路径）
+#   IMG001.BMP — 全屏 640x480 七彩竖条（默认单图工程直接使用）
+#   IMG002.BMP — 全屏 640x480 白底中央红块（GALLERY_COUNT=2 时切换）
+# 当前 HDMI 顶层只接受 640x480；没有缩放或居中小图的处理路径。
 # 格式: BMP 24bit, 底-上行序（biHeight>0 标准 BMP），54 字节文件头 + BGR 像素
 # 运行: powershell -ExecutionPolicy Bypass -File scripts\make_test_bmps.ps1
 # 输出: assets\sd_images\ 目录
@@ -57,7 +58,7 @@ function Write-Bmp {
 Write-Host "生成 SD 验证图 → $outDir"
 
 # 图 1: 640x480 七彩竖条（红橙黄绿青蓝紫 + 白黑端点）——与 HDMI 测试图案视觉可区分
-Write-Bmp -Path (Join-Path $outDir 'img1_640x480.bmp') -W 640 -H 480 -PixelFn {
+Write-Bmp -Path (Join-Path $outDir 'IMG001.BMP') -W 640 -H 480 -PixelFn {
     param($x, $y)
     $band = [Math]::Floor($x / 80)   # 640/80 = 8 竖条
     switch ($band) {
@@ -72,11 +73,12 @@ Write-Bmp -Path (Join-Path $outDir 'img1_640x480.bmp') -W 640 -H 480 -PixelFn {
     }
 }
 
-# 图 2: 320x240 白底中央 100x100 红块——验证非全屏图与居中
-Write-Bmp -Path (Join-Path $outDir 'img2_320x240.bmp') -W 320 -H 240 -PixelFn {
+# 图 2: 640x480 白底中央 200x200 红块，与第一张有明显区别
+Write-Bmp -Path (Join-Path $outDir 'IMG002.BMP') -W 640 -H 480 -PixelFn {
     param($x, $y)
-    if ($x -ge 110 -and $x -lt 210 -and $y -ge 70 -and $y -lt 170) { return 255,0,0 }
+    if ($x -ge 220 -and $x -lt 420 -and $y -ge 140 -and $y -lt 340) { return 255,0,0 }
     return 255,255,255
 }
 
-Write-Host "完成。将 assets\sd_images\ 下的 .bmp 拷贝到 SD 卡(FAT32)根目录即可。"
+Write-Host "完成。将 IMG001.BMP（可选 IMG002.BMP）拷到 FAT32 SDHC 卡根目录（MBR 第一分区或 LBA0 直接卷）。"
+Write-Host "默认 GALLERY_COUNT=1；要测试两图切换，请设为 2 并重新综合。"
