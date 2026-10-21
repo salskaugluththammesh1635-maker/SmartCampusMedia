@@ -1,13 +1,17 @@
 # flow_bit.tcl — HDMI 工程正式出 bit 流（含 SDC 时序约束）
-# 用法: CWD=project/ 下运行  td_commands_prompt.exe <本文件绝对路径>
+# 用法: td_commands_prompt.exe <本文件绝对路径>
 # 产物: project/hdmi_td_Runs/phy_1/hdmi_td.bit（与 GUI 工程命名一致）
-set outdir D:/FPGA_Compelate/SmartCampusMedia/project/hdmi_td_Runs/phy_1
-set repdir D:/FPGA_Compelate/SmartCampusMedia/reports
+# 路径以脚本自身所在目录（project/）推导并切换过去，不写死本机绝对路径。
+set prjdir [file dirname [file normalize [info script]]]
+cd $prjdir
+set repdir [file normalize $prjdir/../reports]
+set outdir $prjdir/hdmi_td_Runs/phy_1
+file mkdir $outdir
 import_device eagle_s20.db -package EG4S20BG256
-if {[catch {open_project D:/FPGA_Compelate/SmartCampusMedia/project/hdmi_td.al} emsg]} { puts "FAIL-open_project: $emsg"; exit 2 } else { puts "PASS-open_project" }
+if {[catch {open_project $prjdir/hdmi_td.al} emsg]} { puts "FAIL-open_project: $emsg"; exit 2 } else { puts "PASS-open_project" }
 if {[catch {elaborate -top dmz_eg4s20_hdmi_top} emsg]} { puts "FAIL-elaborate: $emsg"; exit 3 } else { puts "PASS-elaborate" }
-if {[catch {read_adc D:/FPGA_Compelate/SmartCampusMedia/project/hdmi/dmz_eg4s20_hdmi.adc} emsg]} { puts "FAIL-read_adc: $emsg"; exit 4 } else { puts "PASS-read_adc" }
-if {[catch {read_sdc D:/FPGA_Compelate/SmartCampusMedia/project/hdmi/dmz_eg4s20_hdmi.sdc} emsg]} { puts "FAIL-read_sdc: $emsg"; exit 5 } else { puts "PASS-read_sdc" }
+if {[catch {read_adc $prjdir/hdmi/dmz_eg4s20_hdmi.adc} emsg]} { puts "FAIL-read_adc: $emsg"; exit 4 } else { puts "PASS-read_adc" }
+if {[catch {read_sdc $prjdir/hdmi/dmz_eg4s20_hdmi.sdc} emsg]} { puts "FAIL-read_sdc: $emsg"; exit 5 } else { puts "PASS-read_sdc" }
 foreach step {optimize_rtl optimize_gate place route} {
   if {[catch {eval $step} emsg]} { puts "FAIL-$step: $emsg"; exit 6 } else { puts "PASS-$step" }
 }

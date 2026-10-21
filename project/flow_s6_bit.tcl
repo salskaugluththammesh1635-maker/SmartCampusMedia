@@ -1,5 +1,7 @@
-# Full HDMI + SD image pipeline build. Run from project/.
+# Full HDMI + SD image pipeline build.
+# Paths derive from this script's own location, so it does not depend on the CWD.
 set prjdir [file dirname [file normalize [info script]]]
+cd $prjdir
 set repdir [file normalize $prjdir/../reports/s6_integration]
 set outdir $prjdir/hdmi_td_Runs/phy_1
 file mkdir $repdir

@@ -2,7 +2,9 @@
 # run_full_flow.tcl — 一键跑完整流程（综合 → 布局 → 布线 → 比特流）
 # -----------------------------------------------------------------------------
 # 用法（在 TD 的 Tcl Console 里执行）:
-#   source D:/FPGA_Compelate/SmartCampusMedia/project/run_full_flow.tcl
+#   source <仓库>/project/run_full_flow.tcl
+#   脚本本身不打开工程、不切换目录，请先在 TD 中打开对应 .al 工程。
+#   不写死本机绝对路径；输出文件（.bit / .area / .timing）落在 TD 的当前工作目录。
 #
 # 对应 GUI 动作: 工具栏 Run（等价于 FPGA Flow 里 Syn Opt + Phy Opt + BitWriter）
 # 命令名取自 TD 官方流程脚本 doc/scripts/DefaultFlow.tcl（已核对），各步含义:

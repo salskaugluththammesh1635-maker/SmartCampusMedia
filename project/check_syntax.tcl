@@ -2,8 +2,10 @@
 # check_syntax.tcl — TD 语法检测 / 流程运行辅助脚本
 # -----------------------------------------------------------------------------
 # 用法（在 TD 的 Tcl Console 里执行其一）:
-#   source D:/FPGA_Compelate/SmartCampusMedia/project/check_syntax.tcl          ;# 语法检测
-#   source D:/FPGA_Compelate/SmartCampusMedia/project/run_full_flow.tcl         ;# 跑完整流程
+#   source <仓库>/project/check_syntax.tcl          ;# 语法检测
+#   source <仓库>/project/run_full_flow.tcl         ;# 跑完整流程
+#   本脚本用自身所在目录（project/）定位 bringup_td.al，不写死本机绝对路径；
+#   run_full_flow.tcl 不对工程定位，沿用 TD 中已打开的工程。
 #
 # 说明: 本脚本调用 TD 官方流程命令（命令名取自 TD 安装目录下
 #       doc/scripts/DefaultFlow.tcl，与实际流程节点一一对应）:
@@ -19,6 +21,7 @@
 # =============================================================================
 
 set top_name "dmz_eg4s20_min_top"
+set prjdir [file dirname [file normalize [info script]]]
 
 puts "======================================================"
 puts " TD 语法检测 (Read Design / elaborate)"
@@ -28,7 +31,7 @@ puts "======================================================"
 # 若尚未打开工程, 尝试自动打开（工程已打开时该命令会跳过）
 if { [catch { current_project } cur_prj] } {
     puts "# 提示: 未检测到已打开工程, 尝试打开 bringup_td.al ..."
-    if { [catch { open_project "D:/FPGA_Compelate/SmartCampusMedia/project/bringup_td.al" } err] } {
+    if { [catch { open_project "$prjdir/bringup_td.al" } err] } {
         puts "# \[WARN\] 自动打开工程失败: $err"
         puts "#        请在 TD 中先打开工程, 再重新 source 本脚本。"
         return

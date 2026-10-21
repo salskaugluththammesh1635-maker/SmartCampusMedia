@@ -1,5 +1,7 @@
 # 智播校园 SmartCampusMedia
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 基于安路 EG4S20 FPGA 的校园多媒体信息发布与应急提示终端，用于校园大厅、教学楼和实验室的信息展示。SD 卡读取、文件解析、帧缓存、播放控制和视频输出均由 FPGA 实现，无外接处理器。
 
 项目面向全国大学生嵌入式芯片与系统设计竞赛 2026 FPGA 创新设计赛道，选题一：基于安路 EG4S20 的 HDMI 多媒体播放系统。
@@ -186,10 +188,10 @@ powershell -ExecutionPolicy Bypass -File sim/scripts/run_sd_card_replay.ps1 -Rep
 正式图片工程为 [`project/hdmi_td.al`](project/hdmi_td.al)，顶层 `dmz_eg4s20_hdmi_top`。在 TD 中依次执行 Read Design、Optimize RTL、Optimize Gate、Place、Route、Generate Bitstream，或在本机 PowerShell 中运行：
 
 ```powershell
-Push-Location project
-& D:/TD_6_24_APP/bin/td_commands_prompt.exe ./flow_s6_bit.tcl
-Pop-Location
+& D:/TD_6_24_APP/bin/td_commands_prompt.exe ./project/flow_s6_bit.tcl
 ```
+
+脚本按自身位置推导工程与约束路径，不依赖调用时的当前目录。
 
 请按实际安装位置调整工具路径。生成候选为 `project/hdmi_td_Runs/phy_1/hdmi_td.bit`；必须同时检查构建日志和布线后 timing 报告。脚本会在时序失败时返回失败，即使候选 bit 已生成。
 
@@ -222,6 +224,21 @@ python scripts/check_image_path_diag.py --dm-fix
 后续优先完成 SDRAM 时序收敛、反复复位与长时间运行测试，再验收多图切换和错误恢复。HDMI 音频嵌入、视频解码、OSD 字幕、缩放、转场和双缓冲目前尚未实现；当前音频只有 PWM 测试音与蜂鸣提示。
 
 更多说明：[集成交接](docs/s6_integration_2026-10-20.md)、[存储架构设计](docs/phase4_architecture.md)、[开发进度](docs/progress.md)、[FAT32 2110 故障记录](docs/sd_card_2110_2026-10-20.md)、[项目定义](docs/project_definition.md)。
+
+## 参与贡献
+
+欢迎提交 issue 与 pull request。提交前请阅读 [贡献指南](CONTRIBUTING.md)：其中列明了编码规范、`sync_src.ps1` 同步流程、lint 要求，以及提交证据时必须避免的三类过度宣称（未跑的仿真、行为模型当真实 IP、功能通过当时序收敛）。
+
+## 许可证
+
+本仓库中由本项目自研的 RTL、脚本与文档以 [MIT License](LICENSE) 发布，可自由使用、修改、分发与商用，保留版权与许可声明即可。
+
+**不在 MIT 许可范围内**的内容：
+
+- `ip/local/`、`ip/reference/`、`project/reference/` 下的官方参考设计、加密 IP 与器件模型，版权归安路科技及相关权利人所有。这些文件不随本仓库发布，使用者须自行从合法渠道获取并遵守其原始许可。
+- 官方文档（APUG010/011/092 等）的引用仅用于说明设计依据，不构成对其内容的再许可。
+
+如果你在自己的项目中复用了本仓库的模块，建议仅以 `rtl/` 下自研模块为起点，并自行确认所依赖 IP 的授权状态。
 
 ## 来源与声明
 

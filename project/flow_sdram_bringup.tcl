@@ -6,8 +6,8 @@
 #   2. 150MHz 时钟域的逻辑能否满足建立/保持时间
 #   3. 加密核 sdr_as_ram 能否正常进工程并连上 EG_PHY_SDRAM_2M_32 SIP 原语
 #
-# 【用法】CWD 必须是工程目录 project/
-#   td_commands_prompt.exe <本文件绝对路径>
+# 【用法】td_commands_prompt.exe <本文件绝对路径>
+#   脚本先切到自身所在目录（project/）作为工作基准，再定位工程与约束。
 #
 # 【产物】
 #   project/sdram_bringup_td_Runs/phy_1/sdram_bringup_td.bit
@@ -21,9 +21,11 @@
 #   单独综合时，本工程只有 PLL + SDRAM 核 + 几十行序列机，
 #   任何时序问题都能直接归因。
 # =============================================================================
-set prjdir D:/FPGA_Compelate/SmartCampusMedia/project
-set outdir D:/FPGA_Compelate/SmartCampusMedia/project/sdram_bringup_td_Runs/phy_1
-set repdir D:/FPGA_Compelate/SmartCampusMedia/reports
+set prjdir [file dirname [file normalize [info script]]]
+cd $prjdir
+set outdir $prjdir/sdram_bringup_td_Runs/phy_1
+set repdir [file normalize $prjdir/../reports]
+file mkdir $outdir
 
 import_device eagle_s20.db -package EG4S20BG256
 

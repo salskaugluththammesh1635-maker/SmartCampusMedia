@@ -16,6 +16,7 @@ ip/reference/
 
 # EDA build products and crash dumps.
 *_Runs/
+sdc_flow_out/
 log/
 *.log
 *.logw
@@ -45,6 +46,11 @@ transcript
 *.wlf
 *.vcd
 sim/msim_work/*.ppm
+
+# One-off local patch/probe scripts (hard-coded absolute paths, not reusable).
+sim/*.py
+sim/run_pix_reader.ps1
+sim/testbench/tb_probe_*.v
 
 # Temporary files and editor settings.
 reports/_*.png
