@@ -1,6 +1,8 @@
 # 开发阶段进度表（progress）
 
-> **2026-10-20 最新状态**：阶段四 S6 全链已经集成到 `dmz_eg4s20_hdmi_top`，完整 640×480 图片和异常恢复均有 ModelSim 自检证据。新增 `image_player`，接入 `pix_reader`、播放控制和第二颗 SDRAM PLL；单缓冲装载期间回落测试图。TD 已可出候选 bit，但 SDRAM 接口与相关 150MHz 路径的时序尚未完成验收，不能标为 S6 上板完成。当前细节、命令及结果见 [S6 集成交接](s6_integration_2026-10-20.md)。
+> **2026-10-21 最新状态**：`pix_reader` / `framebuf_arbiter` / `sdram_ctrl_wrap` 的读取链路按官方四拍契约重写，旧 TB 的极性错误与"地址变化即组首"假设一并纠正；三套存储 TB + 全尺寸 640×480 + image_player 全链 + 前端 8 个 TB 全部本轮实测通过（详见文末 [S6-2 章节](#s6-2读取链路的契约缺陷修复与可复现回归2026-10-21)）。**仍未上板，SiP 时序违例未变，严格交付门禁未通过**。
+>
+> **2026-10-20 状态**：阶段四 S6 全链已经集成到 `dmz_eg4s20_hdmi_top`，完整 640×480 图片和异常恢复均有 ModelSim 自检证据。新增 `image_player`，接入 `pix_reader`、播放控制和第二颗 SDRAM PLL；单缓冲装载期间回落测试图。TD 已可出候选 bit，但 SDRAM 接口与相关 150MHz 路径的时序尚未完成验收，不能标为 S6 上板完成。当前细节、命令及结果见 [S6 集成交接](s6_integration_2026-10-20.md)。
 >
 > **历史结论更正**：本文件较早的 SDRAM bring-up “+0.104ns/0 违例”使用了将同一 PLL 的 0°/180°时钟分成异步组的约束，遗漏 SiP 读写路径，不能作为接口时序已通过的证据。当前 SDC 保留该相位关系并报告实际违例。以下旧记录作为历史保留，按日期和验证范围阅读。
 
@@ -1151,10 +1153,120 @@ Clock Summary
    `async_fifo`、`bmp_parser` 都挂到 150MHz 后，**必须重新跑 STA 确认不退化**。
    本次结论只覆盖"PLL + SDRAM 核 + 极简序列机"这个最小拓扑。
 
+## S6-2：读取链路的契约缺陷修复与可复现回归（2026-10-21）
+
+本节记录 `pix_reader` / `framebuf_arbiter` / `sdram_ctrl_wrap` 三个模块的修复。
+**起因是旧的自检全部通过，但通过的是自洽的错误模型**：旧 TB 按"注册命令 + 地址变化
+即新组首拍"的假设写检查，把真实的四拍契约写反了。修复方向不是"让仿真通过"，
+而是先把契约对齐官方 `app_wrrd.v` 与 APUG011，再让 TB 检查契约。
+
+### 一、查实的契约缺陷（都不是风格问题）
+
+| # | 位置 | 缺陷 | 后果 |
+|---|------|------|------|
+| A | `sdram_ctrl_wrap.v` 行为模型 | 四拍组内每一拍都按 `app_*_addr` 写同一个字 | 组内四拍互相覆盖，只有最后一拍落地 |
+| B | 同上（读） | 用"地址变化"猜组首拍 | 组内地址恒定时判不出新组，错拍被掩盖 |
+| C | `framebuf_arbiter.v` + 旧 TB | 断流补拍用 `DM=0`，旧 TB 还要求补拍 `dm=0` | 补拍真写零，覆盖帧内容；**旧 TB 极性是反的** |
+| D | `framebuf_arbiter.v` | 重启 pending 期间仍可能发 `rd_ack`，且未锁存 `rd_base` | 假握手，重启目标不确定 |
+| E | `framebuf_arbiter.v` | 信用只有 4 bit 且会饱和 | 在飞计数漏计，水位判断失真 |
+| F | `framebuf_arbiter.v` | 注册后的 `app_*` 比 `wr_ack` 晚一拍 | `ref_vld` 上升后下一拍模型拒收，而 FIFO 已消费、拍已前进 → **静默丢数** |
+| G | `framebuf_arbiter.v` | 看门狗只在计数为 0 时清零 | 连续正常回包超过 1024 拍就报假超时 |
+| H | `framebuf_arbiter.v` | 持续有新读组时不停开新组 | 返回永不排空，写侧饿死 |
+
+**F 是其中最危险的一条**：它不会在任何"每拍都对齐"的 TB 里暴露，只在刷新边界
+（`ref_vld` 恰好落在命令与注册之间）丢一个字，而丢字表现为整帧图像缓慢错位。
+
+### 二、修复后的统一接受契约
+
+1. `app_wr_en/app_rd_en`、`wr_ack/rd_ack`、拍计数、FIFO 出队在**同一边沿**成立，
+   不再"先注册命令、下一拍再发"。这是 F 的根因修法。
+2. 组首一次预留四拍信用；`rd_outstanding` 扩到 5 bit（最多 31），新组要求 `<=27`。
+3. 写饿死时先**停止开新读组**，等在飞返回与输出排空后再换向，而不是硬插写命令。
+4. 断流补拍统一 `DM=4'hF`（全屏蔽），读与空闲期 `DM=0`（放开 DQM）。
+5. 重启先捕获 `rd_base`，要求 `pending && !组 && O==0 && !rd_valid && !fault && bus_ok`
+   才应用，应用时给出单拍 `rd_restart_done`；新增 `rd_idle` 供上层判断"确实静默"。
+6. 无回包超时置 `rd_fault` 粘滞到系统复位，保留未收计数，**不伪造清零、不报 idle**；
+   零计数收到陌生返回置故障但不下溢。
+
+### 三、`pix_reader` 的逐帧重新对齐
+
+旧实现假设"消隐期足够长 + 单次 ARM 就永久对齐"，且用 `active_y >= FRAME_LINES`
+判消隐。实测 `rtl/video/video_timing_gen.v:195-209` 的 `de/active_x/active_y` 同拍寄存，
+**消隐时 `active_y` 归零**，因此旧判据在真实顶层永不成立。
+
+新实现改为状态机 `P_WAIT → P_QUIET → P_DRAIN → P_RESTART → P_READY → P_RUN`：
+
+- 用 `in_vblank` 锁存"已见最后有效行末、尚未见下一帧首像素"，兼容消隐坐标归零与
+  原始行计数两种输入；
+- 每帧在消隐期停请求 → 等 `rd_idle` → 读空 FIFO → 握手重启 → 确认 `done` →
+  消隐期预填 → 帧首消费，**不再指望"一次对齐永久有效"**；
+- 消费计数 `rd_count` 走格雷码跨域，水位 = `issued_count - 同步后的出队数`，
+  含已承诺但未回包的四个字；
+- FIFO 两侧**只接系统复位**，运行中不再单侧复位指针（旧代码的单侧复位"自愈"
+  在异步 FIFO 上本就不成立，已删除该宣称）；
+- `P_READY` 用组合 `display_enable` 桥接帧首第一像素，避免首像素延后一拍。
+
+### 四、验证证据（本轮实测，非历史引用）
+
+三套 TB 全部重写，检查项对准契约而非对准旧实现：
+
+| 套件 | 场景 | 检查 | 结果 | 证据 |
+|------|------|------|------|------|
+| `tb_framebuf_arbiter` | 15 | 50900 | 0 error | `reports/s6_final/tb_framebuf_arbiter.log` |
+| `tb_sdram_ctrl_wrap` | 12 | 154771 | 0 error | `reports/s6_final/tb_sdram_ctrl_wrap.log` |
+| `tb_pix_reader` | 8 | 108 | 0 error | `reports/s6_final/tb_pix_reader.log` |
+| `tb_pix_reader_vga`（640×480） | 5 | 64 | 0 error | `reports/s6_final_vga/tb_pix_reader_vga.log` |
+| `tb_image_player` | — | 6202 | 0 error | `reports/s6_final_image/image_player.txt` |
+| `tb_image_player` 全尺寸 640×480 | — | 614404 | 0 error | `reports/s6_final_image_full/` |
+| 前端 8 个 TB | 62/64/23/14/40/37/43/85 条 PASS | — | 全通过 | `reports/s6_final_frontend/result.json` |
+
+上表右列是本机仿真产物。本轮新增的报告目录（`reports/s6_final*`、`reports/s6_gate/`）按 `.gitignore`
+的 `*.json`、`*.log`、`work/` 规则**不纳入版本控制**（仓库里已跟踪的 `reports/*.json` 是早期强制加入的历史证据）；
+克隆仓库后按下文命令重跑即可复现同样的检查数与通过标记。
+
+回归入口（新建，替换原来依赖 PATH、不建库、不按 FAIL 退出的旧脚本）：
+
+```powershell
+& .\sim\scripts\run_storage_regression.ps1 -Suite All      -ReportDir reports\s6_final
+& .\sim\scripts\run_storage_regression.ps1 -Suite Pixels -FullVga -ReportDir reports\s6_final_vga
+```
+
+该 runner 每次建独立 `work` 库，编译非 0 绝不跑旧库，通过条件为
+`exit 0` + 精确 `ALL CHECKS PASSED: <top>` 标记 + `SUMMARY` 中 `errors=0 && cases>0`，
+且日志无 FAIL/Error/timeout；运行前后比对源码 SHA256，**运行期间源码漂移则本轮证据
+作废并退出 1**（已真实发生一次：子代理并发写 TB 导致 `reports/s6_vga` 那一轮作废重跑）。
+
+静态检查：`python scripts/lint_verilog.py rtl\storage\{pix_reader,framebuf_arbiter,sdram_ctrl_wrap}.v`
+→ 3 files，E0=E1=E2=0。同步：`scripts/sync_src.ps1` → `0/35 个副本被更新` + lint 通过。
+
+### 五、仍未通过、不得含糊的部分
+
+1. **`readable-verilog-generator` 严格交付门禁未通过**。三份源码各自 296～580 条
+   规则错误，主体是 `comments.procedural_assignment`（过程赋值缺同行语义注释）、
+   `naming.port_prefix`/`ports.no_kind_keyword`（端口命名与 `wire/reg` 关键字）、
+   `comb_operation_budget`（组合操作预算）、`format.tab_indent` 等**机械性风格规则**。
+   报告在 `reports/s6_gate/*_gate.{json,md}`，`delivery_ready=False`（该目录同样不纳入版本控制，重跑方法见
+   `generated_deliverable_gate` 的 `--json/--markdown` 参数）。
+   要让门禁转绿需要对整文件重命名与逐行补注释，属于大范围机械改动，
+   与本轮"最小有据修复"相冲突，因此**如实记为未通过，不以功能仿真通过冒充规范通过**。
+   全仓库当前没有任何 `*_spec.md`。
+2. **行为模型不等于真核**。`sdram_behavior_model` 只对齐了可观测时序（10 拍读延迟、
+   8 拍刷新窗口、DM 高低有效方向），不覆盖真器件的建立/保持窗口、跨刷新相位保持。
+   "组内相位在刷新后保留"仍是**模型假设**，官方只承诺"操作前避让"。
+3. **SiP 时序仍是发布阻塞项**。上一节的 `-7.232ns` 全局 setup 违例没有被本轮修复触及；
+   本轮改动全部在功能层，**没有新增任何时序证据**。
+4. **没有上板**。本轮结论限于 ModelSim 行为仿真。
+
 ## 问题记录
 
 | 日期 | 问题 | 影响 | 处理 | 状态 |
 |---|---|---|---|---|
+| 2026-10-21 | **`sdram_ctrl_wrap` 行为模型四拍组内每拍都写同一地址** | 组内数据互相覆盖，只有最后一拍落地 | 组内按"组首锁存的 base + 拍序号"寻址，读写各自独立的组首寄存器与相位；不再用"地址变化"推断组首 | ✅ 已修复 |
+| 2026-10-21 | **`framebuf_arbiter` 断流补拍用 `DM=0`（真写零），旧 TB 还断言这一错误极性** | 补拍覆盖帧内容；旧 TB 通过只说明模型自洽 | 补拍统一 `DM=4'hF` 全屏蔽；TB 改为检查"补拍后原内容不变" | ✅ 已修复 |
+| 2026-10-21 | **`app_*` 注册后比 `wr_ack` 晚一拍** | `ref_vld` 上升后下一拍模型拒收，而 FIFO 已消费、拍已前进 → 刷新边界静默丢字，表现为整帧缓慢错位 | 命令、握手、拍计数、FIFO 出队改为同一边沿；组合接受路径不再打拍 | ✅ 已修复 |
+| 2026-10-21 | **`pix_reader` 用 `active_y >= FRAME_LINES` 判消隐** | `video_timing_gen` 消隐时 `active_y` 归零，判据在真实顶层永不成立 | 改为锁存"已见最后有效行末、未见下一帧首像素"的 `in_vblank`，兼容两种消隐坐标 | ✅ 已修复 |
+| 2026-10-21 | **旧 TB 全部 PASS 但规格是错的**（补拍极性反、单字地址+1、没有覆盖恒基址四拍组） | 旧"验证通过"不构成有效证据，掩盖 A～H 八类缺陷 | 三套 TB 重写对齐官方契约；新增 SHA256 绑定的回归 runner，源码漂移即判本轮证据失效 | ✅ 已修复 |
+| 2026-10-21 | **`readable-verilog-generator` 严格交付门禁未通过**（三文件 296～580 条规则错误，主体为同行注释/端口命名/组合预算） | 若声称"规范通过"即为虚假陈述 | 如实记录 `delivery_ready=False` 与报告路径；不为例行改名与补注释而破坏最小修复范围 | 🔶 已知未通过 |
 | 2026-10-06 | 自购板无板载 HDMI 接口，而赛题选题一要求 HDMI 多媒体播放 | 阶段三无法直接开展 | 底板标注图证实底板引出 HDMI 排母 P3（TMDS 直出有 BANK1 12 对 LVDS 支撑）；待底板原理图核实脚位，必要时自制/选购 HDMI 转接小板 | 🔶 降级为转接板核实 |
 | 2026-10-06 | 核心板无 SD 卡电路，资源读取方案待定 | 阶段四资源读取方案待定 | 底板标注图证实底板带 **SD 卡槽且硬件支持 SDIO**；待底板原理图核实引脚，SDIO 4-bit 优先 | 🔶 降级为脚位核实 |
 | 2026-10-06 | 插入 ES8388 声卡后拨码开关 SW0~SW7 全部不可用（同球复用 A9~A14,B10,B12） | 人机交互少 8 个开关 | 交互设计改为 4×4 矩阵键（16 键）为主；底板自带音频输入/输出/喇叭接口，音频链路可在 ES8388 声卡与底板音频之间二选一（待底板原理图定） | ✅ 已规避 |

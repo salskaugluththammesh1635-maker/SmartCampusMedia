@@ -13,7 +13,38 @@
 项目必须严格遵守《全国大学生嵌入式芯片与系统设计竞赛 2026 FPGA 创新设计赛道选题指南》中
 "选题一：基于安路 EG4S20 的 HDMI 多媒体播放系统"的要求（指南 PDF 位于工作区根目录）。
 
-## 2026-10-06 会话状态快照（阶段一已收口，本节为最新事实基线）
+## 2026-10-21 会话状态快照（S6-2 读取链路契约修复，本节为最新事实基线）
+
+1. **本轮改动**：`rtl/storage/pix_reader.v`（282 行）、`rtl/storage/framebuf_arbiter.v`（233 行）、
+   `rtl/storage/sdram_ctrl_wrap.v`（339 行）按官方四拍契约重写；对应三套 TB 同步重写
+   （`tb_pix_reader.v` 311 行 / `tb_framebuf_arbiter.v` 676 行 / `tb_sdram_ctrl_wrap.v` 537 行）。
+   详细缺陷清单与修法见 `docs/progress.md` 的 S6-2 章节。
+2. **旧结论作废**：「旧 TB 全通过」不是证据。旧 `tb_framebuf_arbiter.v` 断言补拍 `dm=0`（极性反），
+   旧 `tb_sdram_ctrl_wrap.v` 用单字地址 +1、没覆盖恒基址四拍组。**读旧报告前先看它的断言写的是什么。**
+3. **本轮实测通过**（ModelSim 行为仿真）：
+   - `tb_framebuf_arbiter` 15 场景 / 50900 检查 / 0 error
+   - `tb_sdram_ctrl_wrap` 12 场景 / 154771 检查 / 0 error
+   - `tb_pix_reader`（64×8）8 场景 / 108 检查 / 0 error
+   - `tb_pix_reader`（640×480）5 场景 / 64 检查 / 0 error
+   - `tb_image_player` 6202 检查；全尺寸 640×480 = 614404 检查 / 0 error
+   - 前端 8 个 TB（SD 协议 62/64、sd_spi_ctrl 23、sd_probe 14、fat32 40、bmp 37、img_loader 43、player_ctrl 85 条 PASS）
+4. **回归入口**：`sim/scripts/run_storage_regression.ps1 -Suite All|Fifo|Arbiter|Model|Pixels [-FullVga] -ReportDir <dir>`。
+   每次建独立 work 库，通过条件是 `exit 0` + 精确 `ALL CHECKS PASSED: <top>` + `SUMMARY errors=0 cases>0`；
+   运行前后比对 SHA256，**源码在运行中漂移则该轮证据作废并 exit 1**。
+5. **仍未通过（不得含糊）**：
+   - `readable-verilog-generator` 严格交付门禁 `delivery_ready=False`（三文件 296～580 条规则错误，
+     主体是同行语义注释、端口命名/关键字、组合操作预算等机械性规则），报告在 `reports/s6_gate/`；
+     仓库内没有任何 `*_spec.md`。
+   - SiP SDRAM 接口时序 setup WNS `-7.232ns` 未变，本轮改动全在功能层，**没有新增时序证据**。
+   - 行为模型 ≠ 真核：10 拍读延迟、8 拍刷新窗口、DM 方向已对齐，但器件建立/保持窗口与
+     "跨刷新保持组内相位"仍是**模型假设**，官方只承诺"操作前避让"。
+   - **没有上板**。
+6. **不要把行为模型通过说成综合通过、真核通过或上板通过。**
+7. **新接口**：`pix_reader` 增加 `rd_idle`（输入）、`rd_restart_done`（输入）、`rd_restart`（输出）、
+   `rd_base`（输出）；`framebuf_arbiter` 增加 `rd_idle`、`rd_restart_done`、`wr_word_addr`、
+   `WR_ADDR_FROM_FIFO`。改动上层前先读这两个文件的端口注释。
+
+## 2026-10-06 会话状态快照（阶段一已收口，历史基线）
 
 1. **实际平台**：用户自购"大拇指 DMZ-EG4S20"= **核心板（EG4S20BG256）+ MO 综合底板**。底板资料包在 `EG4S20/微处理器原理综合设计底板/`：底板原理图 `EG4S20_综合底板.pdf`、权威引脚说明 `板卡和引脚说明.pdf`、**11 个厂商实测例程**（`M0_Borad/M0_Borad/`，含全部 .adc 约束）。
 2. **★管脚全部核实（三源交叉验证：核心板原理图 × 底板引脚说明 × 底板例程 adc）**，完整表见 `constraints/dmz_eg4s20_bringup.adc`：

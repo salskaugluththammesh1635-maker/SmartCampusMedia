@@ -221,6 +221,8 @@ python scripts/check_image_path_diag.py --dm-fix
 
 真实控制核仿真使用功能性引脚模型设置，不能验证板级物理时序。各历史记录绑定其对应源码和构建版本，不能代替后续改动后的重新验证。
 
+2026-10-21 的读取链路修复（`pix_reader`、`framebuf_arbiter`、`sdram_ctrl_wrap`）附带重写后的三套自检 TB，可用 `sim/scripts/run_storage_regression.ps1` 复跑：仲裁 15 场景 50,900 项、控制器 12 场景 154,771 项、像素读出 64×8 108 项与 640×480 64 项，均为 0 error；`tb_image_player` 全尺寸 614,404 项通过。该 runner 把源码 SHA256 绑进本轮报告，运行期间源码变动即判定该轮证据失效。缺陷清单、修法与仍未通过的项见 [开发进度](docs/progress.md) 的 S6-2 章节。**这些结果是 ModelSim 行为仿真，不改变下方静态时序未收敛的结论，也没有上板。**
+
 后续优先完成 SDRAM 时序收敛、反复复位与长时间运行测试，再验收多图切换和错误恢复。HDMI 音频嵌入、视频解码、OSD 字幕、缩放、转场和双缓冲目前尚未实现；当前音频只有 PWM 测试音与蜂鸣提示。
 
 更多说明：[集成交接](docs/s6_integration_2026-10-20.md)、[存储架构设计](docs/phase4_architecture.md)、[开发进度](docs/progress.md)、[FAT32 2110 故障记录](docs/sd_card_2110_2026-10-20.md)、[项目定义](docs/project_definition.md)。
