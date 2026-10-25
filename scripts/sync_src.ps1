@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # sync_src.ps1 — 主源 → TD 工程副本 同步（双工程：bringup_td 最小系统 + hdmi_td 视频）
 # -----------------------------------------------------------------------------
 # 背景: 代码唯一真源在 rtl/ 与 constraints/，而 TD 编译的是 project/ 下的副本。
@@ -29,6 +29,7 @@ $map = [ordered]@{
     'rtl\storage\sd_spi_ctrl.v'                        = @('project\hdmi\sd_spi_ctrl.v')
     'rtl\storage\sd_probe.v'                           = @('project\hdmi\sd_probe.v')
     'rtl\storage\fat32_reader.v'                       = @('project\hdmi\fat32_reader.v')
+    'rtl\storage\gallery_probe.v'                      = @('project\hdmi\gallery_probe.v')
     'rtl\storage\bmp_parser.v'                         = @('project\hdmi\bmp_parser.v')
     'rtl\common\async_fifo.v'                          = @('project\hdmi\async_fifo.v')
     'rtl\storage\framebuf_arbiter.v'                   = @('project\hdmi\framebuf_arbiter.v')

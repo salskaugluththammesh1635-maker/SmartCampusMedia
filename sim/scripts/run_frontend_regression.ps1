@@ -1,4 +1,4 @@
-﻿# Independent SD/FAT32/BMP/playback regression, with positive pass markers.
+# Independent SD/FAT32/BMP/playback regression, with positive pass markers.
 [CmdletBinding()]
 param(
     [string]$ModelSimPath = 'D:\Quartus_APP\modelsim_ase\win32aloem',
@@ -10,10 +10,12 @@ if (-not [IO.Path]::IsPathRooted($ReportDir)) { $ReportDir = Join-Path $root $Re
 New-Item -ItemType Directory -Force -Path $ReportDir | Out-Null
 $sources = @(
     'rtl/storage/sd_spi_ctrl.v', 'rtl/storage/sd_probe.v',
-    'rtl/storage/fat32_reader.v', 'rtl/storage/bmp_parser.v',
+    'rtl/storage/fat32_reader.v', 'rtl/storage/gallery_probe.v',
+    'rtl/storage/bmp_parser.v',
     'rtl/storage/img_loader.v', 'rtl/control/player_ctrl.v',
     'sim/testbench/tb_sd_spi_protocol.v', 'sim/testbench/tb_sd_spi_ctrl.v',
     'sim/testbench/tb_sd_probe.v', 'sim/testbench/tb_fat32_reader.v',
+    'sim/testbench/tb_gallery_probe.v',
     'sim/testbench/tb_bmp_parser.v', 'sim/testbench/tb_img_loader.v',
     'sim/testbench/tb_player_ctrl.v'
 )
@@ -37,6 +39,7 @@ try {
         @{name='sd_spi_ctrl'; top='tb_sd_spi_ctrl'; marker='ALL CHECKS PASSED, errors = 0'; arguments=@()},
         @{name='sd_probe'; top='tb_sd_probe'; marker='*** ALL CHECKS PASSED ***'; arguments=@()},
         @{name='fat32_reader'; top='tb_fat32_reader'; marker='ALL CHECKS PASSED: fat32_reader'; arguments=@()},
+        @{name='gallery_probe'; top='tb_gallery_probe'; marker='ALL CHECKS PASSED: gallery_probe'; arguments=@()},
         @{name='bmp_parser'; top='tb_bmp_parser'; marker='ALL CHECKS PASSED: bmp_parser'; arguments=@()},
         @{name='img_loader'; top='tb_img_loader'; marker='ALL CHECKS PASSED: img_loader'; arguments=@()},
         @{name='player_ctrl'; top='tb_player_ctrl'; marker='ALL CHECKS PASSED: player_ctrl'; arguments=@()}

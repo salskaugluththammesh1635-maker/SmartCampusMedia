@@ -147,14 +147,16 @@
 
 | 任务 | 状态 | 交付物 |
 |---|---|---|
-| 多图片切换（上一张/下一张） | ⬜ | basic_player |
-| 自动轮播 + 播放/暂停 | ⬜ | basic_player |
+| 多图片切换（上一张/下一张） | 🔶 | `gallery_probe` 图库自动扫描 + `player_ctrl` 切图逻辑已仿真通过；切图的实际装载尚未上板 |
+| 自动轮播 + 播放/暂停 | 🔶 | `player_ctrl` 轮播定时器与暂停逻辑已仿真通过（tb_player_ctrl 85 条 PASS），未上板 |
 | 基础音频输出 | ⬜ | rtl/audio, audio_test |
 | 音视频联动（页面→音频关联） | ⬜ | 联动记录 |
-| 错误状态提示（缺图/格式错） | ⬜ | 错误路径测试记录 |
-| 状态显示（数码管/LED/画面状态栏） | ⬜ | rtl/display |
+| 错误状态提示（缺图/格式错） | 🔶 | 图库扫描失败/装载失败已映射到 LED[7] 与数码管第 4 位（1=SD、2=装载、3=图库）；未上板 |
+| 状态显示（数码管/LED/画面状态栏） | 🔶 | LED 8 位与 4 位数码管已接线（含图库失败码）；未上板 |
 
 **阶段出口准则**：基础验收标准 A1~A9 全部通过（见 project_definition.md 第六节）。
+
+> **图库自动扫描已补齐（2026-10-25，S7 前置切片）**：原顶层用编译参数 `GALLERY_COUNT=1` 写死张数，换卡必须重新综合。新增 `rtl/storage/gallery_probe.v`，在 `sd_ok` 上升沿后从 `IMG001.BMP` 起逐个探测根目录，遇第一个缺失即停（err=4 视为正常结束），上限 31 张，输出 `count` 给 `player_ctrl.gallery_count`、`done` 给 `gallery_valid`，并在完成时发 1 拍 `first_img_req` 装载首图（满足 `player_ctrl` 文件头【五】对顶层的首图脉冲要求）。`parameter GALLERY_COUNT` 已从顶层删除。SD 总线仲裁由二选一扩成 `sd_probe → gallery_probe → image_player` 三段严格串行。**仿真已闭环，仍未上板。**
 
 ## 阶段六：扩展功能 ⬜
 

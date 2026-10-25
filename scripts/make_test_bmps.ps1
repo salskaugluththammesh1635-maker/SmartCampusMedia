@@ -1,9 +1,9 @@
-﻿# =============================================================================
+# =============================================================================
 # make_test_bmps.ps1 — 生成 SD 卡验证用 BMP 测试图
 # 用途: 阶段四 SD 卡图片播放链路的素材准备（拷到 SD 卡 FAT32 根目录）
 # 生成:
 #   IMG001.BMP — 全屏 640x480 七彩竖条（默认单图工程直接使用）
-#   IMG002.BMP — 全屏 640x480 白底中央红块（GALLERY_COUNT=2 时切换）
+#   IMG002.BMP — 全屏 640x480 白底中央红块（与 IMG001 一起放卡上即可切换）
 # 当前 HDMI 顶层只接受 640x480；没有缩放或居中小图的处理路径。
 # 格式: BMP 24bit, 底-上行序（biHeight>0 标准 BMP），54 字节文件头 + BGR 像素
 # 运行: powershell -ExecutionPolicy Bypass -File scripts\make_test_bmps.ps1
@@ -80,5 +80,5 @@ Write-Bmp -Path (Join-Path $outDir 'IMG002.BMP') -W 640 -H 480 -PixelFn {
     return 255,255,255
 }
 
-Write-Host "完成。将 IMG001.BMP（可选 IMG002.BMP）拷到 FAT32 SDHC 卡根目录（MBR 第一分区或 LBA0 直接卷）。"
-Write-Host "默认 GALLERY_COUNT=1；要测试两图切换，请设为 2 并重新综合。"
+Write-Host "完成。将 IMG001.BMP 与 IMG002.BMP 一起拷到 FAT32 SDHC 卡根目录（MBR 第一分区或 LBA0 直接卷）。"
+Write-Host "图库张数上电自动扫描：两张都在时可直接用 KEY1 切到 IMG002，无需改参数或重新综合。"

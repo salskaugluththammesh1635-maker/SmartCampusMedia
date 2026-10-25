@@ -13,7 +13,34 @@
 项目必须严格遵守《全国大学生嵌入式芯片与系统设计竞赛 2026 FPGA 创新设计赛道选题指南》中
 "选题一：基于安路 EG4S20 的 HDMI 多媒体播放系统"的要求（指南 PDF 位于工作区根目录）。
 
-## 2026-10-21 会话状态快照（S6-2 读取链路契约修复，本节为最新事实基线）
+## 2026-10-25 会话状态快照（S7 前置切片：图库自动扫描，本节为最新事实基线）
+
+1. **本轮改动**：新增 `rtl/storage/gallery_probe.v`（248 行）与 `sim/testbench/tb_gallery_probe.v`；
+   改 `rtl/top/dmz_eg4s20_hdmi_top.v`（删除编译参数 `GALLERY_COUNT`，SD 仲裁由二选一扩成三段串行，
+   首图装载脉冲改由扫描器提供）；`scripts/sync_src.ps1`、`sim/scripts/run_frontend_regression.ps1`
+   各加一条映射/用例。详细设计见 `docs/s7_gallery_probe_2026-10-25.md`。
+2. **解决的工程问题**：图库张数原为编译参数 `GALLERY_COUNT = 5'd1`，换一批素材必须改参数、重新综合、
+   重新下载 bit。现场插卡时张数未知，写死会有两种必然故障：卡里 3 张但参数 1 → 永远只看到首图；
+   参数 3 但只有 1 张 → 第二轮落到不存在的文件上报错锁死。现在张数是运行时可测的事实。
+3. **本轮实测通过**（ModelSim 10.1d）：
+   - `tb_gallery_probe` W01~W07 共 7 场景 / 23 条 PASS / 0 error / 0 越界 LBA，仿真 1205040ns
+   - 前端回归 9 个 case 全绿（`sim/scripts/run_frontend_regression.ps1`，报告 `reports/s7_gallery_probe/`）：
+     sd_protocol 62/64、sd_spi_ctrl 23、sd_probe 14、fat32 40、**gallery_probe 23**、bmp 37、img_loader 43、player_ctrl 85
+   - 变异测试 5/5 全部被杀死（脚本 `gp_work/mutate.py`，变异体见交付文档 §5）
+   - `python scripts/lint_verilog.py rtl project/src`：58 文件（含两个工程副本），E0/E1/E2 全 0
+   - ModelSim 全量编译 29 个 RTL .v 无诊断；**顶层 elaborate 在补齐 5 个厂商原语桩件后 exit 0、零错误**
+     （此前一直无法 elaborate，本轮为此写了一次性桩件 `gp_work/stubs/`，不入库）
+4. **仍未通过（不得含糊）**：
+   - SiP SDRAM 接口 setup WNS `-7.232ns` 未变，本轮全在功能层，**没有新增时序证据**。
+   - 行为模型 ≠ 真核；**没有上板**。图库扫描的上板表现（真卡目录遍历、换卡行为）未实测。
+   - `project/hdmi_td.al` 未加入 `gallery_probe.v` 源项，TD 工程需人工 Read Design 添加后才能综合。
+     这是**已知未完成项**，不是"应该能自动带上"。
+5. **接口提示**：`gallery_probe` 端口为 `clk/rst_n/sd_ok`、`blk_start/blk_addr/blk_done/blk_err/data_byte/data_valid`
+   （直通 `sd_spi_ctrl`）、`done/fail/count[4:0]/first_img_req/err_code[3:0]`。
+   `count=0` 是**合法结果**（扫描完成但无图），与 `fail` 是两种终局。
+6. **不要把行为模型通过说成综合通过、真核通过或上板通过。**
+
+## 2026-10-21 会话状态快照（S6-2 读取链路契约修复，历史基线）
 
 1. **本轮改动**：`rtl/storage/pix_reader.v`（282 行）、`rtl/storage/framebuf_arbiter.v`（233 行）、
    `rtl/storage/sdram_ctrl_wrap.v`（339 行）按官方四拍契约重写；对应三套 TB 同步重写
