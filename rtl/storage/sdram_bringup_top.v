@@ -1,5 +1,5 @@
 // =============================================================================
-// sdram_bringup_top.v — SDRAM 150MHz 链路 bring-up 验证顶层
+// sdram_bringup_top.v — SDRAM 40MHz 链路 bring-up 验证顶层
 // =============================================================================
 // 【一、在整体系统中的功能】
 //   所属层次 : 顶层（验证专用，不进正式工程 hdmi_td.al）
@@ -7,7 +7,7 @@
 //   数据流位置:
 //       50MHz 晶振(球 R7)
 //            ↓
-//       sdram_pll ──→ 150MHz 0° + 150MHz 180°
+//       sdram_pll ──→ 40MHz 0° + 40MHz 180°
 //            ↓
 //       本模块内的读写序列机（写 8 字 → 读回比对）
 //            ↓
@@ -16,16 +16,28 @@
 //       LED = 结果指示
 //
 // 【二、本模块存在的唯一理由】
-//   阶段四 S5 引入了 `sdram_pll`（1050MHz VCO → 150MHz），但这颗 PLL
-//   **从未在安路 TD 工具里真正综合过**。150MHz 是本工程最高的时钟频率，
-//   若时序收敛不了，整个 SDRAM 帧缓存方案（S5/S6）都是空中楼阁。
+//   阶段四 S5 引入了 `sdram_pll`（原 1050MHz VCO → 150MHz；2026-10-27 两次降频：
+//   1000MHz VCO → 100MHz，再 → 40MHz），这颗 PLL 的**时序收敛结论**决定了
+//   整个 SDRAM 帧缓存方案（S5/S6）能否成立。
 //
 //   本模块把风险前置：只放 PLL + SDRAM 核 + 极简读写序列机，跑一次 headless TD，
 //   用**真实的综合/布局布线/时序报告**回答三个问题：
-//     ① 1050MHz VCO 配置在 EG4S20 上能否被工具接受并锁定
-//     ② 150MHz 时钟域的逻辑能否满足建立/保持时间
+//     ① PLL 配置在 EG4S20 上能否被工具接受并锁定
+//     ② SDRAM 时钟域的逻辑能否满足建立/保持时间
 //     ③ 加密核 `sdr_as_ram` 能否正常进工程并连上 SIP 原语
 //   任一为否，都要在写 S6 全链**之前**回头改架构，而不是等全链写完才发现。
+//
+//   【2026-10-27 补充：本工程已实测出答案】
+//     150MHz 配置下，SiP SDRAM 接口组永远无法收敛（setup WNS −7.232 ns），
+//     根因是 TD 对硬核 IO 的固定 5 ns 惩罚 > 0°/180° 的半周期预算 3.333 ns，
+//     数学上无解。
+//     第一次降频到 100MHz（半周期 5.000 ns）后实测仍为负：
+//       读 DQ（clkc[2]→clkc[1]）SWNS −5.565 ns、写 DQ（clkc[1]→clkc[2]）−2.001 ns，
+//       而内部逻辑域（clkc[1] 自身）是 +2.604 ns、0 违例。
+//     由此反推出与频率无关的常数开销：读 slack = T/2 − 10.565 ns，
+//     写 slack = T/2 − 7.001 ns → 临界频率读 47.33 MHz、写 71.42 MHz。
+//     故第二次降到 40MHz（半周期 12.5 ns），预测读 +1.935 ns、写 +5.499 ns。
+//     详见 rtl/storage/sdram_pll.v 头部【二】节。
 //
 // 【三、设计取舍：为什么用序列机而不是例化 framebuf_arbiter】
 //   验证目标是 **PLL 与 SDRAM 核**，不是仲裁逻辑。序列机只有几十行，
@@ -68,10 +80,10 @@ module sdram_bringup_top (
     wire pll_reset = ~pll_rst_cnt[7];
 
     // -------------------------------------------------------------------------
-    // [2] sdram_pll —— 1050MHz VCO → 150MHz 0° / 150MHz 180°
+    // [2] sdram_pll —— 1000MHz VCO → 40MHz 0° / 40MHz 180°
     // -------------------------------------------------------------------------
-    wire clk_sdr;      // 150MHz 0°，SDRAM 控制器主时钟
-    wire clk_sdr_sft;  // 150MHz 180°，给 SDRAM 器件采样用
+    wire clk_sdr;      // 40MHz 0°，SDRAM 控制器主时钟
+    wire clk_sdr_sft;  // 40MHz 180°，给 SDRAM 器件采样用
     wire pll_locked;
 
     sdram_pll u_pll (
@@ -127,7 +139,7 @@ module sdram_bringup_top (
     wire [31:0] sdram_dq_w;
 
     sdram_ctrl_wrap #(
-        .CLK_FREQ_HZ (150_000_000)
+        .CLK_FREQ_HZ (40_000_000)
     ) u_sdram (
         .clk         (clk_sdr),
         .clk_sft     (clk_sdr_sft),
@@ -254,9 +266,14 @@ module sdram_bringup_top (
                     // 【为什么用 rd_en_q / rd_mismatch 而不是直接比 sdr_rd_dout】
                     //   原写法把 32 位比较器直接串在 sdr_rd_dout → 状态机 → led 的
                     //   组合路径上。TD 实测该路径 8.56ns（其中净延迟 5.99ns）、
-                    //   4 级 LUT，150MHz（6.666ns）下 SWNS = -2.102ns、Fmax 仅
-                    //   114MHz。把比较结果打一拍后，32 位比较退化为
-                    //   "寄存器 → 1 级 LUT → 寄存器"的短路径。
+                    //   4 级 LUT，**在当时的 150MHz（6.666ns）配置下** SWNS =
+                    //   -2.102ns、Fmax 仅 114MHz。把比较结果打一拍后，32 位比较
+                    //   退化为"寄存器 → 1 级 LUT → 寄存器"的短路径。
+                    //   （2026-10-27 时钟已两次降频（100MHz → 40MHz），同一路径的
+                    //     8.56ns 远小于当前 25ns 周期，即使不打拍也够；这里保留
+                    //     打拍是因为它同时是对齐 rd_mismatch 与 sdr_rd_dout 的
+                    //     功能需要。上述 −2.102ns 是 150MHz 下的历史实测值，
+                    //     勿当成当前结论。）
                     //   rd_mismatch 与 sdr_rd_dout 在同一拍求值，天然对齐。
                     if (rd_en_q) begin
                         if (rd_mismatch) begin
@@ -301,8 +318,11 @@ module sdram_bringup_top (
     //     【为什么 led 必须经寄存器输出】
     //       TD 实测：若把 tst_st / tst_err 直接组合驱动 led，
     //       从 u_sdram_sip.ipclk 到 led PAD 的路径达 8.56ns、4 级 LUT，
-    //       150MHz 下 17 个端点建立时间违例（SWNS -2.102ns，Fmax 114MHz）。
+    //       **在当时的 150MHz 配置下** 17 个端点建立时间违例
+    //       （SWNS -2.102ns，Fmax 114MHz）。
     //       加一级寄存器后路径被切断，LED 的 1 拍延迟对肉眼毫无影响。
+    //       （2026-10-27 时钟两次降频后（100MHz → 40MHz），8.56ns 远小于当前
+    //         25ns 周期，该违例已不成立；上述数字是 150MHz 下的历史实测值。）
     // -------------------------------------------------------------------------
     wire tst_pass = (tst_st == T_DONE) && (tst_err == 8'd0);
     wire [7:0] led_next = {tst_err[5:0], pll_locked, tst_pass};

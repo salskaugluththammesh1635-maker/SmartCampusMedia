@@ -20,9 +20,10 @@
 ## 一、当前一句话结论
 
 图片通路的 **RTL 与仿真验证已基本完成**，工程构建流程 **2026-10-25 首次真正打通**（此前 `.al` 缺 12 个源，正式顶层根本无法 elaborate），
-**150 MHz 逻辑自身域已于 2026-10-27 收敛**（`clkc[1]` SWNS +0.326 ns / Fmax 157.729 MHz / 2590 端点 0 违例），
-但 **SiP SDRAM 接口组仍报 setup WNS −7.232 ns**（已定性为 TD 硬核模型 5 ns 固定惩罚 + 半周期预算导致的建模口径问题，改 RTL 无解），
-且 **正式顶层从未上板**。阶段五（基础播放系统）与阶段六（扩展功能）整体仍属未验收状态。
+**静态时序已于 2026-10-27 全部收敛**：把 SDRAM 域两次降频（150 → 100 → **40 MHz**）后，
+setup WNS 从 −7.232 ns 变为 **+1.935 ns、TNS 0.000 ns、7 个 path group 全 0 违例**
+（含此前必负的 SiP 接口两组：读 DQ +1.935 ns、写 DQ +5.630 ns）。
+但 **正式顶层从未上板**。阶段五（基础播放系统）与阶段六（扩展功能）整体仍属未验收状态。
 
 ## 二、功能任务清单（A / B / C 分级）
 
@@ -67,7 +68,7 @@ B 级是评分导向的主攻扩展（目标 **B1+B2 稳定、B3 力争**），C
 | 一 | 板卡与工具链确认 | ✅ | 引脚、时钟、工具链、官方 IP 来源均已确认 | 遗留 2 项上板实测：键盘行序、SD MOSI/MISO 复用 |
 | 二 | 最小系统验证 | 🔶 | PLL、复位、键盘、数码管、LED、蜂鸣器全部仿真通过 | 全部仅仿真级，上板未验证；拨码开关未做 |
 | 三 | HDMI 视频输出 | 🔶 | 时序生成、TMDS 输出、约束、TD 工程、跨域同步、静态检查均完成 | **上板点亮未完成**（出口要求显示器稳定锁定 ≥30 分钟） |
-| 四 | 资源读取与帧缓存 | 🔶 | SD/FAT32/BMP/FIFO/仲裁/控制器/像素读取全部仿真通过；SDRAM 150 MHz 节点已于 2026-10-27 收敛（`clkc[1]` 自身域 SWNS +0.326 ns，Fmax 157.729 MHz，0 违例） | **完整链路 SD→BMP→SDRAM→HDMI 单图无失真显示未达成**；SiP 接口组 setup WNS −7.232 ns（TD 硬核模型口径问题） |
+| 四 | 资源读取与帧缓存 | 🔶 | SD/FAT32/BMP/FIFO/仲裁/控制器/像素读取全部仿真通过；**SDRAM 域时序已于 2026-10-27 全部收敛**（降频到 40 MHz 后全设计 SWNS +1.935 ns / STNS 0 / 7 组 0 违例，含 SiP 接口读 +1.935 ns、写 +5.630 ns） | **完整链路 SD→BMP→SDRAM→HDMI 单图无失真显示未达成**；正式顶层未上板 |
 | 五 | 基础播放系统 | 🔶 | 多图切换、自动轮播+暂停、错误提示、状态显示已实现并仿真；图库张数改为运行时自动扫描 | 基础音频、音视频联动未做；出口要求 A1～A9 全部通过，目前 0 项完全通过 |
 | 六 | 扩展功能 | ⬜ | — | 前置条件（阶段五出口）未满足；B1/B2/B3/C1/C2 全部未开始 |
 | 七 | 工程验证与比赛材料 | ⬜ | — | 长时运行、异常注入、资源时序报告、演示脚本、答辩 PPT、演示视频、最终打包全部未开始 |
@@ -108,25 +109,28 @@ B 级是评分导向的主攻扩展（目标 **B1+B2 稳定、B3 力争**），C
 | 完整图片通路仿真 | 三档全绿：6,205 / **1,228,812**（真实 640×480）/ 6,203（单缓冲对照） | [result.json](reports/s6_integration/simulation/result.json)（2026-10-27 01:09） |
 | HDMI 音频通路 | 2 套 TB 全绿，累计 24 条 PASS | [result.json](reports/s6_integration/audio/result.json)（2026-10-26 22:23） |
 | 静态检查 | `lint_verilog.py` 77 个文件 E0/E1/E2 全 0 | `scripts/lint_verilog.py` |
-| 正式顶层构建 | elaborate exit 0；综合/布局/布线/bitgen 全 PASS（2026-10-27 15:23 按 BUFG 修复后源码出 bit，`#gclk 4/16` 印证）；**但时序不达标，脚本返回 EXIT 3，位流仅为候选** | [timing.txt](reports/s6_integration/timing.txt) / `project/flow_s6_bit.tcl` |
-| 资源占用 | LUT 10012/19600 = 51.08%；寄存器 5334 = 27.21%；LE 10858；BRAM9K 17/64；DSP 13/29；PLL 2/4；GCLK 4/16；IO 41/188 | [最终面积报告](reports/timing_final_20261027/area.txt) |
+| 正式顶层构建 | elaborate exit 0；综合/布局/布线/bitgen 全 PASS；**时序自检通过，脚本返回 EXIT 0（`S6_TIMING_PASSED`）**，2026-10-27 21:12 出 bit（`#gclk 4/16` 印证） | [timing.txt](reports/s6_integration/timing.txt) / `project/flow_s6_bit.tcl` |
+| 资源占用 | LUT 10009/19600 = 51.07%；寄存器 5326 = 27.17%；LE 10849；BRAM9K 17/64；DSP 13/29；PLL 2/4；GCLK 4/16；IO 41/188 | [40MHz 面积报告](reports/timing_40mhz_20261027/area.txt) |
 | 上板（诊断工程） | 数码管 7777、LED0～5 亮、中央红块出现 | [上板记录](reports/image_dm_fix/board_feedback.json) |
-| **静态时序（150 MHz 逻辑）** | **已收敛**：`clkc[1]` 自身域 SWNS **+0.326 ns**、Fmax **157.729 MHz**、2590 端点 0 违例 | [最终时序报告](reports/timing_final_20261027/timing.txt) |
-| **静态时序（SiP 接口）** | **未收敛**：`clkc[2]→clkc[1]` SWNS −7.232 ns / `clkc[1]→clkc[2]` SWNS −3.537 ns，hold 全通过 | [最终时序报告](reports/timing_final_20261027/timing.txt) |
+| **静态时序（全设计）** | **已收敛**：SWNS **+1.935 ns**、STNS **0.000 ns**、HWNS +0.011 ns；**7 个 path group 全部 0 违例** | [40MHz 时序报告](reports/timing_40mhz_20261027/timing.txt) / [分析](reports/timing_40mhz_20261027/README.md) |
+| **静态时序（SiP 接口，曾必负）** | **已收敛**：`clkc[2]→clkc[1]` 读 DQ **+1.935 ns**（0 违例/32 端点）、`clkc[1]→clkc[2]` 写 DQ **+5.630 ns**（0 违例/48 端点） | [40MHz 时序报告](reports/timing_40mhz_20261027/timing.txt) |
+| **降频路线对照** | 150 MHz → −7.232 ns；100 MHz → −5.565 ns；**40 MHz → +1.935 ns**。反推出常数开销：读 `T/2−10.565`、写 `T/2−7.001`，临界频率读 47.33 MHz / 写 71.42 MHz | [40MHz 分析](reports/timing_40mhz_20261027/README.md) |
 
 ## 六、尚未完成清单（按优先级）
 
 ### P0 — 阻塞发布，必须先解决
 
-1. **SDRAM 接口静态时序**。setup WNS −7.232 ns、TNS −335.004 ns，32 个违例端点集中在 SiP SDRAM 接口（`clkc[2]→clkc[1]` −7.232 ns、`clkc[1]→clkc[2]` −3.537 ns）。
-   **2026-10-27 已定性**：根因是 TD 的 SiP 硬核接口模型对两个方向各带 5.000 ns 固定惩罚，而半周期预算只有 3.333 ns——**5 > 3.333，数据通路为空 slack 也必负**（最差路径 Logic Level = 0、net 延迟 0.000 ns，没有任何组合逻辑可优化）。
-   已排除"仅靠图片通路优化可解决"：用只含主时钟 + `derive_clocks` 的最小 `sdram_bringup_top` 拓扑能复现同样的 −7.232 ns。
-   已排除三条捷径（全部实测）：①拆异步组得到 +0.275 ns 是假绿（三组对照实验证明加了 BUFG 但保留 0°/180° 同组时数字一个不变）；②`phys_opt -post_place` 反而降到 0.178 ns；③`phys_opt -post_route` 在 TD 6.2.168116 上直接崩溃（0xC0000005）。
-   **真正要做的是重新建模接口**：给 SiP 引脚补 `set_input_delay` / `set_output_delay` 配合器件 tAC，或对读路径用 `set_multicycle_path` 声明跨两拍（读回的 DQ 本就由加密核内部重采样）。
-   诊断脚本 `project/td_t2_probe_clocks.tcl` 已暴露 SDC 缺陷：6 个时钟网络无驱动、4 条无效约束、7 条缺输入延迟、33 条缺输出延迟
-   （`constraints/dmz_eg4s20_hdmi.sdc` 全文无任何 `set_input_delay` / `set_output_delay`）。
-2. **正式顶层首次上板点亮**。当前唯一上板证据来自独立诊断工程 `image_dm_fix`，不能代表正式顶层。上板后应优先验证读路径稳定性（连续换图、长时轮播），因为那 32 条读回路径正是被 hard-ip 惩罚报成负余量的。
-   **注意**：现存 `project/hdmi_td_Runs/phy_1/hdmi_td.bit` 已是 2026-10-27 15:23 含 BUFG 修复的产物，但构建返回 EXIT 3（时序不达标），它是**候选位流**。上板测的是候选位流，结论必须按「时序未达标条件下的功能验证」陈述。
+1. ~~**SDRAM 接口静态时序**~~ ✅ **2026-10-27 已解决**（降频到 40 MHz）。
+   原先 setup WNS −7.232 ns、TNS −335.004 ns，32 个违例端点集中在 SiP SDRAM 接口。
+   根因是 TD 的 SiP 硬核接口模型对两个方向各带 5.000 ns 固定惩罚，150 MHz 下半周期预算只有 3.333 ns——**5 > 3.333，数据通路为空 slack 也必负**（最差路径 Logic Level = 0、net 延迟 0.000 ns）。
+   第一次降频到 100 MHz（半周期 5.000 ns）实测仍然为负（读 −5.565 / 写 −2.001），但**内部逻辑域是 +2.604 ns、0 违例**，由此反推出与频率无关的常数开销：读 `slack = T/2 − 10.565`、写 `slack = T/2 − 7.001`，临界频率 **读 47.33 MHz / 写 71.42 MHz**（150/100 MHz 两点互证，误差 <0.2 ns）。
+   第二次降到 **40 MHz**（半周期 12.5 ns）后收敛：读 DQ **+1.935 ns**、写 DQ **+5.630 ns**、全设计 SWNS **+1.935 ns / STNS 0.000 ns / 7 组 0 违例**，`flow_s6_bit.tcl` 打印 `S6_TIMING_PASSED` 并返回 EXIT 0。
+   **代价**：带宽从 600 MB/s 降到 160 MB/s，仍是 640×480@60Hz 需求（55.3 MB/s）的 2.9 倍，功能无损失。
+   **未采用的手段**：拆异步组（假绿，三组对照实验已证伪）、`phys_opt`（-post_place 反向、-post_route 崩溃）、`set_multicycle_path`（MEGA65 实测反噬 5.6 ns）。
+   将来若要提频，必须先解决 SiP 接口建模口径（`set_input_delay`/`set_output_delay` 配合器件 tAC），不能再靠降频以外的手段。
+2. **正式顶层首次上板点亮**。当前唯一上板证据来自独立诊断工程 `image_dm_fix`，不能代表正式顶层。上板后应优先验证读路径稳定性（连续换图、长时轮播），因为读 DQ 的 +1.935 ns 是全设计最小余量。
+   **注意**：现存 `project/hdmi_td_Runs/phy_1/hdmi_td.bit` 是 2026-10-27 21:12 按 40 MHz 配置生成的产物，构建返回 EXIT 0 / `S6_TIMING_PASSED`，已不是候选位流。但**从未上过板**，结论仍须按「时序通过 + 未做硬件验证」陈述。
+3. **SDRAM 频率回调的可行性**。临界频率读 47.33 MHz，理论上 47 MHz 也能收敛；若实测发现 40 MHz 下读回偶发错误，需要继续降；若发现余量过大且硬件稳定，可考虑回调。上板后做长时读回压力测试再决定。
 
 ### P1 — A 级必做缺口
 

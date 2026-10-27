@@ -55,7 +55,7 @@
 //      加密核把 DM 也送到物理 DQM，读出同样受它屏蔽；没有写命令时必须置 0。
 //
 // 【五、时钟】
-//   本模块工作在 `sdram_clk`（150MHz，`sdram_pll` 的 C1 输出）单一时钟域。
+//   本模块工作在 `sdram_clk`（40MHz，`sdram_pll` 的 C1 输出）单一时钟域。
 //   `sdram_clk_sft`（同频 180°）**只透传给加密核的 `Sdr_clk_sft`**，
 //   本模块内部**绝不用它驱动任何逻辑**（否则等于自造一个时钟域）。
 //
@@ -73,12 +73,12 @@
 `timescale 1ns / 1ps
 
 module sdram_ctrl_wrap #(
-    parameter CLK_FREQ_HZ      = 150_000_000,  // sdram_clk 频率
+    parameter CLK_FREQ_HZ      = 40_000_000,   // sdram_clk 频率
     parameter SIM_MEM_WORDS    = 262_144,      // 仿真模型容量（字数），默认 1MB = 1/8 帧缓冲
     parameter REFRESH_PERIOD   = 4_096         // 仿真模型多久拉一次 ref_vld（拍）
 ) (
-    input  wire        clk,          // 150MHz（sdram_pll C1）
-    input  wire        clk_sft,      // 150MHz 180°（sdram_pll C2），只透传
+    input  wire        clk,          // 40MHz（sdram_pll C1）
+    input  wire        clk_sft,      // 40MHz 180°（sdram_pll C2），只透传
     input  wire        rst_n,        // 低有效
 
     // ---------------- 控制器状态 ----------------

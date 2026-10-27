@@ -16,15 +16,17 @@
 
 **能做什么**：插上写好 BMP 的 SDHC 卡，上电后自动扫描图库、装载图片、以 640×480@59.5 Hz 送上 HDMI 显示，同时把同一份 PCM 样本嵌入 HDMI 音频并输出到板载 3.5 mm；16 个按键控制播放、轮播、应急，以及亮度、反色、九宫格、信息条、音频电平条等画面后处理。
 
-**验证到哪一步**：行为仿真（ModelSim）全绿，正式顶层 `dmz_eg4s20_hdmi_top` 的 elaborate → 综合 → 布局 → 布线 → bitgen 全流程通过（2026-10-27 15:23 按修复后源码重新出过 bit）。**150 MHz 逻辑自身域已收敛（+0.326 ns），SiP SDRAM 接口时序仍未收敛，也没有上过板。**
+**验证到哪一步**：行为仿真（ModelSim）全绿，正式顶层 `dmz_eg4s20_hdmi_top` 的 elaborate → 综合 → 布局 → 布线 → bitgen 全流程通过。**静态时序已于 2026-10-27 全部收敛**：把 SDRAM 域两次降频（150 → 100 → **40 MHz**）后，setup WNS 从 −7.232 ns 变为 **+1.935 ns、TNS 0.000 ns、7 个 path group 全 0 违例**，`flow_s6_bit.tcl` 自检打印 `S6_TIMING_PASSED` 并返回 EXIT 0。**但正式顶层仍未上板。**
 
-> 关于 bit 与最终时序的关系：2026-10-27 的最终构建由 [`flow_s6_bit.tcl`](project/flow_s6_bit.tcl) 完成，走满 bitgen，`project/hdmi_td_Runs/phy_1/hdmi_td.bit` 已是含 BUFG 修复的产物（`#gclk = 4/16` 可印证）。但该脚本在时序不达标时会**照常出 bit 并返回 EXIT 3**（实测 `S6_TIMING_FAILED: setup=-7.232 ns hold=0.019 ns; bit is a candidate only`）——所以「有 bit」不等于「时序通过」，下载到板上测的仍是**候选位流**。
+> 关于收敛方式：这次不是靠改约束「刷绿」，而是**真实降频**。[`constraints/dmz_eg4s20_hdmi.sdc`](constraints/dmz_eg4s20_hdmi.sdc) 的有效约束一条都没改，`clkc[1]` 与 `clkc[2]` 仍在同一时钟组内，0°/180° 的相位关系完整保留。收敛的代价是 SDRAM 带宽从 600 MB/s 降到 160 MB/s，仍然满足 640×480@60Hz 所需的 55.3 MB/s（富余 2.9 倍）。
+
+> 关于 bit 与最终时序的关系：2026-10-27 的最终构建由 [`flow_s6_bit.tcl`](project/flow_s6_bit.tcl) 完成，走满 bitgen。该脚本会解析 `timing.txt` 自检时序：不达标时**照常出 bit 但返回 EXIT 3**（150 MHz 时的实测 `S6_TIMING_FAILED: setup=-7.232 ns hold=0.019 ns; bit is a candidate only`），达标才返回 EXIT 0。当前构建已通过自检，`project/hdmi_td_Runs/phy_1/hdmi_td.bit` 是**时序收敛后的正式位流**（629,640 B）。
 
 三条必须同时知道的事实：
 
 1. **上板证据来自独立诊断工程，不是正式顶层。** 2026-10-20 在 DMZ-EG4S20 板卡上用 `image_dm_fix` 显示出白底中央红块：数码管 `7777`、LED0～5 亮、整帧读回比较通过，应急红屏与间歇蜂鸣也已实测。该灯码只适用于诊断工程，**正式顶层至今没有上板记录**。
-2. **SDRAM 150 MHz 逻辑已收敛，SiP 接口路径仍报违例。** 本轮把 SDRAM 的两路 150 MHz 时钟补上全局缓冲（BUFG）后，`clkc[1]` 自身域的 setup 余量由 **+0.240 ns 提升到 +0.326 ns**（Fmax 155.6 → 157.7 MHz），`PHY-5079`（`clkc[2]` 走 local routing）**已消失**（GCLK 占用由 2 增至 4 印证）。但 SiP 接口组仍报 WNS −7.232 ns，原因见下文「静态时序」一节——**这是 TD 硬核模型的口径问题，不是本仓库 RTL 能修好的**。（`USR-6135` ×2「PLL 反馈走 local network」仍在，与时钟网络修复无关，见「遗留告警」。）
-3. **面积与时序数据已重新采集。** 见「资源占用」与「静态时序」，均来自 2026-10-27 的最终构建。
+2. **SiP 接口的负余量是真实物理延迟，不是工具算错。** 第一次降频到 100 MHz 后接口仍为负（读 −5.565 ns / 写 −2.001 ns），两次实测反推出与频率无关的常数开销（读 `T/2 − 10.565 ns`、写 `T/2 − 7.001 ns`），临界频率是读 47.33 MHz / 写 71.42 MHz。因此必须降到 40 MHz 才真正收敛。详见「静态时序」一节。
+3. **面积与时序数据已重新采集。** 见「资源占用」与「静态时序」，均来自 2026-10-27 21:12 的最终构建（40 MHz）。
 
 **功能通过 ≠ 时序通过 ≠ 上板通过**，本仓库所有记录都按这三档分开陈述。
 
@@ -122,7 +124,7 @@ flowchart LR
 | [`framebuf_arbiter`](rtl/storage/framebuf_arbiter.v) | 写优先的读写仲裁、DQM 掩码管理；读侧回绕边界随基址运行期重算 |
 | [`sdram_ctrl_wrap`](rtl/storage/sdram_ctrl_wrap.v) | 封装官方 SDRAM 控制核，并提供纯 Verilog 行为模型供仿真 |
 | [`pix_reader`](rtl/storage/pix_reader.v) | SDRAM 预取、跨时钟像素 FIFO、逐像素输出；显示帧首由 `rd_base` 选定 |
-| [`sdram_pll`](rtl/storage/sdram_pll.v) | 第二颗 PLL，VCO 1050 MHz 定出 150 MHz 的 0° 与 180° 两相，**两相均经 BUFG 落全局时钟网** |
+| [`sdram_pll`](rtl/storage/sdram_pll.v) | 第二颗 PLL，VCO 1000 MHz 定出 **40 MHz** 的 0° 与 180° 两相，**两相均经 BUFG 落全局时钟网** |
 
 **视频**
 
@@ -179,10 +181,12 @@ flowchart LR
 | 板载参考 | 50 MHz | 两颗 PLL 的输入与启动复位 | 普通布线（fanout 仅 9） |
 | 视频 PLL 像素时钟 | 25 MHz | SD、文件解析、播放控制、像素时序、音频采样 | BUFG（`bufg_feedback` 兼作 PLL 反馈） |
 | 视频 PLL 串化时钟 | 125 MHz | HDMI TMDS 串行输出（严格 5×） | 普通布线（fanout 31） |
-| SDRAM PLL 内部时钟 | 150 MHz，0° | 仲裁器、SDRAM 控制核、写 FIFO 写侧 | **BUFG**（`bufg_clk1`） |
-| SDRAM PLL 接口时钟 | 150 MHz，180° | 送 SDRAM_CLK 引脚，做源同步对齐 | **BUFG**（`bufg_clk2`） |
+| SDRAM PLL 内部时钟 | **40 MHz**，0° | 仲裁器、SDRAM 控制核、写 FIFO 写侧 | **BUFG**（`bufg_clk1`） |
+| SDRAM PLL 接口时钟 | **40 MHz**，180° | 送 SDRAM_CLK 引脚，做源同步对齐 | **BUFG**（`bufg_clk2`） |
 
-两颗 PLL 独立：`hdmi_pll` 的 VCO = 1000 MHz 定出 25/125 MHz，`sdram_pll` 的 VCO = 1050 MHz 定出 150 MHz——1000/150 不是整数，同一 VCO 分不出来，方案上不合并。25 MHz 而非 25.175 MHz 是整数分频的物理约束，偏差 0.7%，场频 59.5 Hz。
+两颗 PLL 独立：`hdmi_pll` 的 VCO = 1000 MHz 定出 25/125 MHz，`sdram_pll` 的 VCO 同为 1000 MHz 定出 **40 MHz**（C1/C2 分频比 25，C0 分频比 80 作 12.5 MHz 反馈）——把 SDRAM 时钟塞进同一颗 PLL 会让 HDMI 的 25M/125M 参数与环路滤波被迫重验，风险大于收益，方案上不合并。25 MHz 而非 25.175 MHz 是整数分频的物理约束，偏差 0.7%，场频 59.5 Hz。
+
+> **为什么是 40 MHz 而不是 150 MHz**：150 MHz 下 SiP 接口组数学上无法收敛（详见「静态时序」一节的常数开销推导）。40 MHz 是满足 `f ≤ 47.33 MHz` 临界频率的最小整数、便于分频的选择，同时带宽 160 MB/s 仍是需求（55.3 MB/s）的 2.9 倍。
 
 跨域数据一律走 Gray 码指针异步 FIFO，状态用同步器或 Gray 计数处理，复位释放与 PLL 锁定关联。**SDRAM 的 0°/180° 具有确定相位关系，必须保留相关时序分析，不得声明为异步组**——历史上正是把同一 PLL 的 0°/180° 分成异步组，才得出过「+0.104 ns、0 违例」的错误结论。今天又用三组对照实验复验了一遍这个判断，详见下文「已排除的捷径」。
 
@@ -190,7 +194,7 @@ flowchart LR
 
 ### 时钟网络修复（2026-10-27）
 
-`sdram_pll` 原来只把 C0 经 `bufg_feedback` 送进全局网，而真正驱动 844 个负载的 C1（150 MHz 0°）和送 SDRAM_CLK 的 C2（150 MHz 180°）**直接从 PLL 引出到端口**，靠布局器自行决定走什么网。后果在时序报告里能直接看到：
+`sdram_pll` 原来只把 C0 经 `bufg_feedback` 送进全局网，而真正驱动数百个负载的 C1（当时 150 MHz 0°）和送 SDRAM_CLK 的 C2（当时 150 MHz 180°）**直接从 PLL 引出到端口**，靠布局器自行决定走什么网。后果在时序报告里能直接看到：
 
 - `clkc[1]` 的时钟网络 fanout 844，**走普通布线，延迟 2.410 ns**，进入每条路径的 clock latency；
 - `clkc[2]` 的 fanout 只有 1，被布线器判为 local routing，TD 直接报 **`PHY-5079` CRITICAL-WARNING**；
@@ -226,7 +230,7 @@ net (fo=1)   u_sdram_pll/clk1_raw  →  GCLK x039y070z2  u_sdram_pll/bufg_clk1.c
 net (fo=869) u_player/u_arb/clk  2.410ns
 ```
 
-**收益是真实的，但幅度有限**：它只优化了 `clkc[1]` 自身域，**并没有**改变 SiP 接口组的 −7.232 ns。把这一点说清楚很重要，因为下文「已排除的捷径」会看到，只要把 0°/180° 拆成异步组，接口组的数字就会「变好」到 +0.275 ns——那**不是**这次修复的功劳。
+**收益是真实的，但幅度有限**：在 150 MHz 下它只优化了 `clkc[1]` 自身域，**并没有**改变 SiP 接口组的 −7.232 ns。把这一点说清楚很重要，因为下文「已排除的捷径」会看到，只要把 0°/180° 拆成异步组，接口组的数字就会「变好」到 +0.275 ns——那**不是**这次修复的功劳。真正让接口组收敛的是后来的**降频**（150 → 100 → 40 MHz），两步都不能省：BUFG 修的是时钟树质量，降频修的是预算不足。
 
 ### 时序约束现状
 
@@ -392,13 +396,13 @@ powershell -ExecutionPolicy Bypass -File sim/scripts/run_sd_card_replay.ps1   -R
 # 全流程含 bitgen（产物 project/hdmi_td_Runs/phy_1/hdmi_td.bit）——推荐用这个
 & D:/TD_6_24_APP/bin/td_commands_prompt.exe D:/FPGA_Compelate/SmartCampusMedia/project/flow_s6_bit.tcl
 
-# 只到时序报告，用于快速验约束改动
-& D:/TD_6_24_APP/bin/td_commands_prompt.exe D:/FPGA_Compelate/SmartCampusMedia/project/verify_timing_final.tcl
+# 只到时序报告，用于快速验约束改动（当前配置 = 40 MHz）
+& D:/TD_6_24_APP/bin/td_commands_prompt.exe D:/FPGA_Compelate/SmartCampusMedia/project/verify_timing_40mhz.tcl
 ```
 
-`verify_timing_final.tcl` 跑 `elaborate → read_adc → read_sdc → optimize_rtl → optimize_gate → place → route → update_timing -mode final`，把 `final.timing` / `final.ts` / `final.area` 写到 `reports/timing_final_20261027/`（同目录另有 `timing.txt` / `area.txt` 副本，用来绕开 `.gitignore` 里的 `*.timing`、`*.area` 规则以便入库）。
+`verify_timing_40mhz.tcl` 跑 `elaborate → read_adc → read_sdc → optimize_rtl → optimize_gate → place → route → update_timing -mode final`，把 `run.timing` / `run.ts` / `run.area` 写到 `reports/timing_40mhz_20261027/`（入库时按仓库惯例另存为 `timing.txt` / `area.txt`）。**该脚本本身不判时序**（时序为负也 `exit 0`），必须读 `run.ts` 才能知道是否真的收敛。历史上的 `verify_timing_final.tcl`（150 MHz）与 `verify_timing_100mhz.tcl` 同样保留，用于对照复现。
 
-`flow_s6_bit.tcl` 走满 bitgen 并**自检时序**：综合→布局→布线全 PASS 后照常出 bit，但会解析 `timing.txt` 里的 SWNS/HWNS，setup 或 hold 为负则打印 `S6_TIMING_FAILED` 并 `exit 3`。实测输出 `S6_TIMING_FAILED: setup=-7.232 ns hold=0.019 ns; bit is a candidate only`。**所以「构建 PASS + 有 bit」不等于「时序通过」，必须同时看构建日志的退出码和布线后 timing 报告。**
+`flow_s6_bit.tcl` 走满 bitgen 并**自检时序**：综合→布局→布线全 PASS 后照常出 bit，但会解析 `timing.txt` 里的 SWNS/HWNS，setup 或 hold 为负则打印 `S6_TIMING_FAILED` 并 `exit 3`。150 MHz 时实测输出 `S6_TIMING_FAILED: setup=-7.232 ns hold=0.019 ns; bit is a candidate only`；40 MHz 后变为 **`S6_TIMING_PASSED` + EXIT 0**。**「构建 PASS + 有 bit」不等于「时序通过」，必须同时看构建日志的退出码和布线后 timing 报告**——反过来说，看到 `S6_TIMING_PASSED` 才能把位流当正式交付物。
 
 > 踩坑记录：`project/flow_sdc.tcl` 在命令行调用下会报 `PRJ-8601 ERROR: Load project file D:\...\project\ error`（路径末尾只剩目录、文件名被吞）。根因已实测定位——**TD 里 `[file join]` 拼出的路径在 `cd` 之后交给 `open_project` 会失败**，换成 `$prjdir/hdmi_td.al` 显式正斜杠就正常；不 `cd` 时用 `file join` 也正常。四组对照：
 >
@@ -439,81 +443,96 @@ python scripts/check_image_path_diag.py --dm-fix
 | 完整图片诊断仿真 | 边界 6,184 项、完整 VGA **614,406 项** | [诊断仿真](reports/image_dm_fix/simulation/result.json) |
 | 真实加密 SDRAM 核仿真 | 修正后 614,406 项通过，原始失败对照保留 | [修正结果](reports/image_real_core_sim/idle_dm_fix/result.json) / [失败对照](reports/image_real_core_sim/small/result.json) |
 | 直接读回比较单元 | 12 项检查通过 | [读回单元](reports/image_dm_fix/unit/result.json) |
-| 正式顶层构建 | elaborate exit 0；综合/布局/布线/bitgen 全 PASS（bit 已含 BUFG 修复；但时序不达标，脚本返回 EXIT 3，位流为**候选**） | [`reports/s6_integration/timing.txt`](reports/s6_integration/timing.txt)、`project/flow_s6_bit.tcl` |
+| 正式顶层构建 | elaborate exit 0；综合/布局/布线/bitgen 全 PASS；**时序自检通过，脚本返回 EXIT 0**（`S6_TIMING_PASSED`） | [`reports/s6_integration/timing.txt`](reports/s6_integration/timing.txt)、`project/flow_s6_bit.tcl` |
 | 静态 lint | E0=E1=E2=0（77 个文件） | `scripts/lint_verilog.py` |
 
 ### 资源占用
 
-来自 [最终面积报告](reports/timing_final_20261027/area.txt)（2026-10-27 的构建，含全部模块）：
+来自 [最终面积报告](reports/timing_40mhz_20261027/area.txt)（2026-10-27 21:12 的 40 MHz 构建，含全部模块）：
 
 | 资源 | 占用 | 总量 | 比例 |
 |---|---|---|---|
-| LUT | 10,012 | 19,600 | 51.08% |
-| 寄存器 | 5,334 | 19,600 | 27.21% |
-| LE | 10,858 | — | — |
+| LUT | 10,009 | 19,600 | 51.07% |
+| 寄存器 | 5,326 | 19,600 | 27.17% |
+| LE | 10,849 | — | — |
 | BRAM9K | 17 | 64 | 26.56% |
 | DSP | 13 | 29 | 44.83% |
 | PLL | 2 | 4 | 50.00% |
 | **GCLK** | **4** | **16** | **25.00%** |
 | IO | 41 | 188 | 21.81% |
 
-> 与上一版（2026-10-26 22:48）相比：LUT 9,467 → 10,012、寄存器 5,243 → 5,334、LE 10,174 → 10,858，增量来自 `key_action`（12 LUT）、`video_overlay`（192 LUT）、`err_prompt`（91 LUT）三个新接入的模块——这三个实例在旧报告的层次表里搜不到，本轮已确认在内。GCLK 由 2 增至 4 是时钟网络修复的结果。
+> 与 150 MHz 版（LUT 10,012 / 寄存器 5,334 / LE 10,858）几乎一致——**降频不消耗额外资源**。GCLK 由 2 增至 4 是时钟网络修复（C1/C2 各加一个 BUFG）的结果。
 
 ### 静态时序
 
-来自 [最终时序报告](reports/timing_final_20261027/timing.txt)。两档结果必须分开看。
+来自 [40 MHz 最终时序报告](reports/timing_40mhz_20261027/timing.txt)，完整分析见该目录的 [README](reports/timing_40mhz_20261027/README.md)。
 
 **全局**
 
-| 指标 | 数值 |
-|---|---|
-| Setup WNS | **−7.232 ns** |
-| Setup TNS | **−335.004 ns** |
-| Hold WNS | +0.019 ns |
-| Hold TNS | 0.000 ns |
+| 指标 | 150 MHz | 100 MHz | **40 MHz（当前）** |
+|---|---|---|---|
+| Setup WNS | −7.232 ns | −5.565 ns | **+1.935 ns** ✅ |
+| Setup TNS | −335.004 ns | −231.925 ns | **0.000 ns** ✅ |
+| Hold WNS | +0.019 ns | +0.019 ns | **+0.011 ns** ✅ |
+| 违例 path group | 2 组 | 2 组 | **0 组** ✅ |
 
-**逐时钟域**
+**逐 path group（40 MHz，全部 0 违例）**
 
-| 时钟 | 频率 | Fanout | SWNS | STNS | 状态 |
-|---|---|---|---|---|---|
-| `u_pll/pll_inst.clkc[0]` | 25 MHz | 2737 | +19.701 ns | 0.000 | ✅ 富余 |
-| `u_sdram_pll/pll_inst.clkc[1]` | 150 MHz | 869 | **+0.326 ns** | 0.000 | ✅ **已收敛**（2590 端点 0 违例） |
-| `u_pll/pll_inst.clkc[2]` | 125 MHz | 31 | +4.835 ns | 0.000 | ✅ 富余 |
-| `clk` | 50 MHz | 9 | +16.661 ns | 0.000 | ✅ 富余 |
-| `u_sdram_pll/pll_inst.clkc[2]` | 150 MHz | 1 | **−3.537 ns** | −103.580 | ❌ 见下 |
-| `u_sdram_pll/pll_inst.clkc[0]` | 12.5 MHz | 0 | — | — | 仅 PLL 反馈，无逻辑 |
-
-**150 MHz 逻辑确实收敛了**：`clkc[1]` 自身域 2590 个端点、6050 条路径全部通过，最差余量 +0.326 ns（Min Period 6.340 ns / Fmax 157.729 MHz）。最差路径是 `u_player/u_reader/rd_gray_meta_reg[10]` → `u_player/u_reader/u_pix_fifo` 的写使能，Data Path Delay 5.995 ns 里 **82% 是走线**（net 4.888 / cell 1.107），Logic Level 只有 4——这条路径靠布局收紧，不靠改逻辑。
-
-**剩下的 −7.232 ns 全部属于 SiP 接口组**，两个方向：
-
-| Path Group | SWNS | STNS | 违例端点 | 惩罚项 |
+| Path Group | SWNS | STNS | 端点 | 状态 |
 |---|---|---|---|---|
-| `clkc[2] → clkc[1]` | −7.232 ns | −231.424 ns | 32 / 32 | `input (hard ip)` +5.000 ns |
-| `clkc[1] → clkc[2]` | −3.537 ns | −103.580 ns | 32 / 48 | `output (hard ip)` −5.000 ns |
+| `clkc[0] → clkc[0]`（25 MHz HDMI 主域） | +20.162 ns | 0.000 | 8379 | ✅ |
+| `clkc[1] → clkc[1]`（40 MHz 逻辑自身域） | **+16.706 ns** | 0.000 | 2578 | ✅ |
+| `clkc[2] → clkc[2]`（125 MHz TMDS 5x） | +6.113 ns | 0.000 | 74 | ✅ |
+| `clkc[0] → clkc[2]`（跨域） | +6.554 ns | 0.000 | 32 | ✅ |
+| `clk → clk`（50 MHz 输入域） | +17.090 ns | 0.000 | 8 | ✅ |
+| **`clkc[1] → clkc[2]`（写 SDRAM DQ）** | **+5.630 ns** | 0.000 | 48 | ✅ |
+| **`clkc[2] → clkc[1]`（读 SDRAM DQ）** | **+1.935 ns** | 0.000 | 32 | ✅ |
 
-### 为什么这条路径在数学上无法收敛
+**两个曾经必负的 SiP 接口组现在都在正余量内**。读路径余量 +1.935 ns 最小，它是全局瓶颈；写路径 +5.630 ns。
 
-最差路径（[`reports/timing_final_20261027/timing.txt`](reports/timing_final_20261027/timing.txt) 的 `clkc[2] → clkc[1]` 组）：
+### 为什么最终必须降到 40 MHz
+
+150 MHz 与 100 MHz 两次实测的数据点，反推出一个**与频率无关的常数开销**（两点互证，`slack` 单位 ns）：
 
 ```
-Begin : u_sdram_sip.dq[0]                    (clkc[2] 上升沿 @3.333 ns)
+读路径 slack = T/2 − 10.565     （T = 时钟周期）
+写路径 slack = T/2 −  7.001
+```
+
+| 频率 | T | T/2 | 读预测 | 读实测 | 写预测 | 写实测 |
+|---|---|---|---|---|---|---|
+| 150 MHz | 6.666 ns | 3.333 ns | −7.232 | **−7.232** ✓ | −3.668 | **−3.537** ✓ |
+| 100 MHz | 10.000 ns | 5.000 ns | −5.565 | **−5.565** ✓ | −2.001 | **−2.001** ✓ |
+| 40 MHz | 25.000 ns | 12.500 ns | **+1.935** | **+1.935** ✓ | **+5.499** | +5.630 ✓ |
+
+这个常数里，5.000 ns 是 TD 对 SiP 硬核接口的固定惩罚（`input (hard ip) +5.000` / `output (hard ip) −5.000`），
+其余是时钟树偏斜（读路径 Skew 4.172 ns）与封装内走线。**它们不随频率缩放**，所以降频只能线性地买到 T/2 的增长：
+
+- 读路径需要 `T/2 ≥ 10.565` → `T ≥ 21.130 ns` → **f ≤ 47.33 MHz**（真正的瓶颈）
+- 写路径需要 `T/2 ≥ 7.001` → `T ≥ 14.002 ns` → **f ≤ 71.42 MHz**
+
+100 MHz 处在两者之上，所以第一次降频后仍然为负；40 MHz 留出了充裕余量。
+
+**读路径最差路径在 40 MHz 下的完整链路**（`reports/timing_40mhz_20261027/timing.txt` L7168 附近）：
+
+```
+Begin : u_sdram_sip.dq[0]                    (clkc[2] 上升沿 @12.500 ns)
           PAD x040y041     3.816 ns
-          launch edge                @9.165 ns
+          launch edge                @18.332 ns
           input (hard ip)  +5.000 ns   ← TD 给 SiP 硬核的固定惩罚
 End   : u_sdram_sip_syn_1.bpad
-          → sdr_wrrd.enc.v 的 Sdr_rd_dout[0]  (clkc[1] 上升沿 @6.666 ns)
+          → sdr_wrrd.enc.v 的 Sdr_rd_dout[0]  (clkc[1] 上升沿 @25.000 ns)
 
-Budget          3.333 ns   （半个 6.666 ns 周期）
-Data Path Delay 6.453 ns   （cell 100%，net 0.000%）
-Logic Level     0
-Max Fanout      0
-Clock Skew      4.172 ns
+Budget          12.500 ns  （半个 25.000 ns 周期）
+Data Path Delay  6.453 ns  （cell 100%，net 0.000%）
+Logic Level      0
+Clock Skew       4.172 ns
+Slack           +1.935 ns  ✅
 ```
 
-**预算只有半个周期 3.333 ns，而单项 hard-ip 惩罚就是 5.000 ns。5 > 3.333，通路是空的，slack 也必然为负。** 数据通路上 Logic Level = 0、net 延迟 0.000 ns（6.453 ns 全部是 PAD/PLL/GCLK 的时间戳）——没有任何组合逻辑可以再优化。
-
-这是 TD 的 SiP 硬核接口模型在 150 MHz 下的建模口径问题：DQ 的实际采样者是封装内的 SDRAM 器件，读回的 DQ 由安路加密核 `sdr_wrrd` 内部自行重采样，RTL 层并不存在「0° 触发器直接采 180° 域 DQ」的路径。旁证是 2026-10-20 那次真机上跑出红块、整帧比较通过的诊断工程，其 `setup_wns_ns` 同样是 **−7.232**、`timing_passed: false`——负余量并未阻止硬件工作。
+注意 `Data Path Delay 6.453 ns` 与 150 MHz、100 MHz 时**完全相同**——三个频率下这条路径的延迟是常数，
+这正是「常数开销」结论的直接证据：只有预算 T/2 在变，延迟不变。
+数据通路上 Logic Level = 0、net 延迟 0.000 ns，没有任何组合逻辑可以优化，所以**改 RTL 无效，唯一有效手段是给足预算**。
 
 ### 已排除的捷径
 
@@ -526,6 +545,11 @@ Clock Skew      4.172 ns
 | ③ 对照 | C1/C2 加 BUFG | 0°/180° **同组** | −7.232 ns | −335.004 ns |
 
 **实验 ③ 是决定性的**：加了 BUFG 之后，只要保留 0°/180° 分析，接口余量**一个数字都不变**。所以实验 ② 里那个漂亮的 +0.275 ns 全部来自拆组动作——把路径移出分析范围，而不是把接口修好了。这正是当初「+0.104 ns、0 违例」的同一个陷阱，**结论不变：0°/180° 必须留在同一时钟组**。
+
+另外两条也试过并排除：
+
+- **`set_multicycle_path`**：理论上能放宽 setup 检查，但 Xilinx 的 [MEGA65](https://raw.githubusercontent.com/MEGA65/mega65-core/f0e74a124c0c66622b49857356376f686614d25a/src/vhdl/mega65r4.xdc) 工程实测过它反而引入 5.6 ns 无端延迟，属于跨品牌的反噬陷阱。
+- **`phys_opt`**：`-post_place -effort high` 让余量从 +0.275 降到 +0.178 ns（反向），`-post_route -effort high` 在 TD v6.2.168116 上直接崩溃（`0xC0000005` 访问违规）。
 
 三组实验都可复现，产物已入库：
 
@@ -552,9 +576,19 @@ Clock Skew      4.172 ns
 
 **发布阻塞项**
 
-1. **SiP SDRAM 接口时序**（WNS −7.232 ns）。已确认是 TD 硬核模型 5 ns 固定惩罚 + 半周期预算造成的建模口径问题，**改 RTL 无解**。真正要做的是：给 SiP 引脚补 `set_input_delay` / `set_output_delay` 配合器件 tAC 重新建模，或对读路径用 `set_multicycle_path` 声明实际跨两拍（读回的 DQ 本来就由加密核内部重采样）。在此之前，**不得**用拆异步组的方式让报告变绿。
-2. **正式顶层首次上板**。目前所有硬件证据都来自诊断工程。上板后应优先验证读路径的稳定性（连续换图、长时轮播），因为那 32 条读回路径正是被 hard-ip 惩罚报成负余量的。
-3. **`clkc[2]` 的 local routing** 已随 BUFG 修复消失，但 `u_sdram_sip` 的位置约束仍未被遵守（`PHY-7002` ×2，期望 (12,12) 与 (164,288)）。不影响时序，属整洁性问题。
+1. **正式顶层首次上板**。目前所有硬件证据都来自诊断工程。静态时序已在 40 MHz 下全部收敛（WNS +1.935 ns / TNS 0），`flow_s6_bit.tcl` 自检打印 `S6_TIMING_PASSED`，`project/hdmi_td_Runs/phy_1/hdmi_td.bit` 是时序收敛后的正式位流（629,640 B，2026-10-27 21:12）。上板后应优先验证读路径的稳定性（连续换图、长时轮播），因为那 32 条读回路径的余量（+1.935 ns）是全设计最小的。
+2. **上板后确认 40 MHz 是否仍然是必要的**。临界频率是读 47.33 MHz / 写 71.42 MHz，理论上 47 MHz 也能过，但 40 MHz 是更方便的整数分频（1000 MHz VCO ÷ 25）。若实测发现硬件在更高频率下稳定，可以回调；若发现读回偶发错误，还要继续降。
+3. **`u_sdram_sip` 的位置约束未被遵守**（`PHY-7002` ×2，期望 (12,12) 与 (164,288)）。不影响时序，属整洁性问题。
+
+**SDRAM 带宽的取舍**（记录清楚，避免后来者误以为可以随意提频）
+
+| 频率 | 带宽 | 640×480@60Hz 需求 | 富余 | 时序 |
+|---|---|---|---|---|
+| 150 MHz | 600 MB/s | 55.3 MB/s | 10.8× | ❌ 数学无解 |
+| 100 MHz | 400 MB/s | 55.3 MB/s | 7.2× | ❌ 读 −5.565 ns |
+| **40 MHz** | **160 MB/s** | **55.3 MB/s** | **2.9×** | ✅ **+1.935 ns** |
+
+降频没有牺牲功能：40 MHz 的带宽仍是单帧 640×480@60Hz 需求的 2.9 倍。若将来要上更高分辨率或更高帧率，需要先解决 SiP 接口的建模口径问题（见下一条），不能再靠提频。
 
 **功能缺口**（对照 [TASKS.md](TASKS.md)）
 
@@ -567,14 +601,16 @@ Clock Skew      4.172 ns
 
 - 键盘行序：两处来源相反，需先确认哪一行对应 KEY0。
 - SD MOSI/MISO：引脚说明与例程相反，已采用引脚说明（标准 SPI 定义），待实测印证。
+- **SDRAM 接口的物理时序余量**：TD 的 `input/output (hard ip) ±5.000 ns` 是工具内置模型，不等于器件真实 tAC。40 MHz 下报告为正，但真实余量需要示波器测量 SDRAM_CLK 与 DQ 的相对关系才能确认（安路社区实测帖提到「SDRAM 时钟提前 2.666 ns 时读时序 bug 基本消失」，值得作为实测参考点）。
 
 **遗留告警**（不影响时序，仅记录）
 
-- `USR-6135` ×2：两颗 PLL（`u_pll`、`u_sdram_pll`）的反馈路径都报走 local network、补偿延迟不可预测。这是 `FEEDBK_PATH = "CLKC0_EXT"` 外部反馈结构的固有告警，与本次 BUFG 修复的对象（C1/C2 时钟输出）不是同一件事，加 BUFG 也无法消除。
+- `USR-6135` ×2：两颗 PLL（`u_pll`、`u_sdram_pll`）的反馈路径都报走 local network、补偿延迟不可预测。这是 `FEEDBK_PATH = "CLKC0_EXT"` 外部反馈结构的固有告警。注意：在 2026-10-27 21:00 的 40 MHz 构建中该告警**计数为 0**（`USR-6135: 0`），与 150 MHz 构建时的 2 条不同——推测与布局结果有关，未深入追查。
 - `SYN-5013` ×2：`Sdr_init_ref_ba[1]`/`[0]` 未驱动（来自加密核 `sdr_init_ref.enc.v`，内部信号，无需处理）。
 - `SYN-5011`：`async_fifo` 中 `ramread0_syn_4` 的 `bea[0]`/`beb[0]` 未驱动（BRAM 未用端口，正常）。
 - `SYN-6562` ×3：`eram_init` 关闭时 init 值被忽略。
 - `HDL-5007`：`fat32_reader.v` 中 `'d900`/`'d800`/`'d700`/`'d600` 被截断为 9 bit（值本身在范围内，仅告警）。
+- `PHY-7002` ×2：见上「发布阻塞项」第 3 条。
 
 ---
 
