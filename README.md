@@ -280,7 +280,7 @@ powershell -ExecutionPolicy Bypass -File scripts/make_test_bmps.ps1
 | KEY10 | `key_action` → `gallery_probe` | 重扫图库，现场换卡按一下即可 | 仿真 |
 | KEY11 | `key_action` | 九宫格参考线（x=213/426，y=160/320，绿色单像素） | 仿真 |
 | KEY12 | `key_action` | 底部信息条（12 格位图显示图号/模式/亮度/倍率） | 仿真 |
-| KEY13 | `key_action` | 右侧音频电平条（16×128 绿色电平柱，跟随样本幅度） | 仿真 |
+| KEY13 | `key_action` | 音频图层循环：关 → 电平条 → 波形 → 电平+波形 | 仿真 |
 | KEY14 | `key_action` | 蜂鸣器静音（只掐蜂鸣器，与 KEY6 互不影响） | 仿真 |
 | KEY15 | `player_ctrl` | 应急直达：红屏 + 间歇蜂鸣 | **上板确认** |
 

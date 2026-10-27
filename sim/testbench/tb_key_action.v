@@ -43,6 +43,7 @@ module tb_key_action;
     wire       grid_en;
     wire       info_en;
     wire       level_en;
+    wire       wave_en;
     wire       beep_muted;
     wire       rescan_req;
 
@@ -58,6 +59,7 @@ module tb_key_action;
         .grid_en    (grid_en),
         .info_en    (info_en),
         .level_en   (level_en),
+        .wave_en    (wave_en),
         .beep_muted (beep_muted)
     );
 
@@ -139,7 +141,7 @@ module tb_key_action;
     wire all_default = (bright_sel == 3'd0) && (invert_en == 1'b0) &&
                        (auto_sw_sel == 2'd0) && (grid_en == 1'b0) &&
                        (info_en == 1'b0) && (level_en == 1'b0) &&
-                       (beep_muted == 1'b0);
+                       (wave_en == 1'b0) && (beep_muted == 1'b0);
 
     // ---- 循环/计数用 ----
     integer k;
@@ -226,16 +228,20 @@ module tb_key_action;
         press_key(4'd12);
         chk(info_en == 1'b1,                   "K06 KEY12 turns info bar on");
         press_key(4'd13);
-        chk(level_en == 1'b1,                  "K06 KEY13 turns level bar on");
+        chk(level_en == 1'b1 && !wave_en,      "K06 KEY13#1 turns level bar on");
+        press_key(4'd13);
+        chk(!level_en && wave_en == 1'b1,      "K06 KEY13#2 switches to waveform");
+        press_key(4'd13);
+        chk(level_en == 1'b1 && wave_en == 1'b1, "K06 KEY13#3 shows level + waveform");
         press_key(4'd14);
         chk(beep_muted == 1'b1,                "K06 KEY14 mutes the buzzer");
-        // 关回去，确认是翻转而不是置位
+        // 关回去，确认是 4 态循环而不是简单置位
         press_key(4'd11);
         press_key(4'd12);
         press_key(4'd13);
         press_key(4'd14);
-        chk(!grid_en && !info_en && !level_en && !beep_muted,
-                                               "K06 all four switches turn back off");
+        chk(!grid_en && !info_en && !level_en && !wave_en && !beep_muted,
+                                               "K06 all switches and waveform turn back off");
 
         // ---------------- K07 无关键号不得产生任何动作 ----------------
         // 这 8 个键号各有归属: KEY0/1/2/3/15 → player_ctrl，
@@ -255,7 +261,7 @@ module tb_key_action;
         chk_eq8({5'd0, bright_sel}, 8'd1,      "K07 KEY0..KEY6 & KEY15 leave brightness alone");
         chk(invert_en == 1'b0,                 "K07 unrelated keys leave invert alone");
         chk_eq8({6'd0, auto_sw_sel}, 8'd0,     "K07 unrelated keys leave speed alone");
-        chk(!grid_en && !info_en && !level_en && !beep_muted,
+        chk(!grid_en && !info_en && !level_en && !wave_en && !beep_muted,
                                                "K07 unrelated keys leave switches alone");
         chk(rescan_stuck == 0,                 "K07 unrelated keys never pulse rescan");
 
@@ -267,7 +273,7 @@ module tb_key_action;
         press_key(4'd9);
         chk_eq8({6'd0, auto_sw_sel}, 8'd2,     "K08 speed moved to 2");
         chk_eq8({5'd0, bright_sel}, 8'd0,      "K08 KEY9 did not touch brightness");
-        chk(!invert_en && !grid_en && !info_en && !level_en && !beep_muted,
+        chk(!invert_en && !grid_en && !info_en && !level_en && !wave_en && !beep_muted,
                                                "K08 KEY9 did not touch any switch");
         press_key(4'd14);                      // 只动静音
         chk_eq8({6'd0, auto_sw_sel}, 8'd2,     "K08 KEY14 did not touch speed");
