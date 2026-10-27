@@ -36,6 +36,9 @@
 //       供顶层直接接 image_player 的 load_req。player_ctrl 文件头【五】
 //       明确要求"顶层需在 gallery_valid 上升沿补一个 start 脉冲来装载首图"，
 //       本模块把这件事放在"图库就绪"的同一处产生，顶层不必另加脉冲发生器。
+//     · 可重扫（KEY10，2026-10-26 新增）: 收到 rescan 脉冲（且 sd_ok=1、
+//       已停在终态）时清掉 done/fail/err_code 并从 IMG001 重新枚举一遍。
+//       用于现场拔插 SD 卡换素材后不必整板断电重启。
 //
 // 【三、接口与内部结构】
 //   参数:
@@ -46,6 +49,14 @@
 //     sd_ok(输入电平)   来自 sd_probe 的链路健康标志；**上升沿**启动扫描。
 //                      用边沿而不是电平: 保证只在 SD 刚就绪时跑一次，
 //                      复位前的电平残留不会误触发第二轮
+//     rescan(输入脉冲)  来自 key_action 的 KEY10 重扫请求（2026-10-26 新增）。
+//                      只在 sd_ok=1 **且当前处于 G_DONE/G_FAIL 终态**时被采纳:
+//                      清 done/fail/err_code，回到 G_ARST 从 IMG001 重新枚举，
+//                      结束后照常再发一次 first_img_req（顶层据此重载当前图）。
+//                      为什么限制在终态: 枚举途中把 fat32_reader 复位会留下
+//                      无人认领的块读事务；一次完整枚举仅几十毫秒，等它跑完即可。
+//                      为什么要求 sd_ok: 卡不在时重扫只会连串超时，还会把有效的
+//                      count 清成 0，现场表现为"按一下图没了"。
 //     blk_start(输出)   直通内部 fat32_reader 的读块请求（1 拍脉冲）
 //     blk_addr[31:0](输出) 直通扇区号
 //     blk_done/blk_err  读块握手（由 sd_spi_ctrl 提供，顶层仲裁后接入）
@@ -92,6 +103,13 @@ module gallery_probe #(
     input  wire        rst_n,        // 异步复位，低有效
     // —— 启动条件 ——
     input  wire        sd_ok,        // 电平: SD 链路健康（上升沿启动扫描）
+    // —— 重新扫描请求（KEY10）——
+    input  wire        rescan,       // 脉冲: 1 = 从第 1 个名字重新枚举。
+                                     //   只在 sd_ok=1 时被采纳（没插卡时按此键无效果）；
+                                     //   采纳后清掉 done/fail/err_code 两个终态标志，
+                                     //   回到 G_ARST 重新走一遍"复位子模块→发 start"，
+                                     //   结束时照常再发一次 first_img_req（顶层据此重载首图）。
+                                     //   用途: 现场拔插 SD 卡换素材后不必整板断电重启。
     // —— 对接 sd_spi_ctrl（顶层仲裁后接入）——
     output wire        blk_start,    // 直通: 读块请求（1 拍脉冲）
     output wire [31:0] blk_addr,     // 直通: 扇区号（电平）
@@ -187,6 +205,25 @@ module gallery_probe #(
             f32_start     <= 1'b0;
             first_img_req <= 1'b0;
             sd_ok_d       <= sd_ok;             // 每拍更新，G_IDLE 据此判边沿
+            // ---- 重扫请求（KEY10）: 只在两个终态被采纳 ----
+            //   为什么只允许终态: 终态一定是"子模块已交回结果、SD 事务已全部结束"
+            //   的时刻，此时重新开始不会打断正在进行的那一轮事务
+            //   （G_ARST/G_RUN 期间 sd_spi_ctrl 可能正在读扇区，中途把子模块
+            //   复位掉会留下一笔无人认领的块读，随后发的 start 可能被吞）。
+            //   一次完整枚举只需几十毫秒，等它跑完再按即可。
+            //   为什么要求 sd_ok=1: 卡没就绪时重新枚举只会连串超时，还会把本来
+            //   有效的 done/count 清成 0，现场表现就是"按一下图没了"。
+            //   清 done/fail/err_code 与 G_IDLE 启动时保持一致，
+            //   保证"重扫"与"上电首扫"走同一套初始条件。
+            if (rescan && sd_ok && ((st == G_DONE) || (st == G_FAIL))) begin
+                st        <= G_ARST;
+                probe_idx <= 5'd1;
+                hit_cnt   <= 5'd0;
+                rst_cnt   <= 3'd0;
+                done      <= 1'b0;
+                fail      <= 1'b0;
+                err_code  <= 4'd0;
+            end else begin
             case (st)
                 // 空闲: 等 SD 链路就绪的上升沿（电平残留不触发）
                 G_IDLE: begin
@@ -237,11 +274,12 @@ module gallery_probe #(
                         end
                     end
                 end
-                // 终态自锁: 成功/失败都保持，直到整板复位
+                // 终态自锁: 成功/失败都保持，直到整板复位或收到 rescan
                 G_DONE: done <= 1'b1;
                 G_FAIL: fail <= 1'b1;
                 default: st <= G_IDLE;
             endcase
+            end
         end
     end
 

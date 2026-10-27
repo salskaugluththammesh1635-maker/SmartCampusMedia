@@ -34,7 +34,7 @@ module pix_reader #(
 	input wire rd_idle,                 // 无读组、在飞返回或输出数据
 	input wire rd_restart_done,         // 仲裁器确已执行重启的单拍脉冲
 	output wire rd_restart,             // SDRAM 域的单拍重启请求
-	output wire [ADDR_WIDTH-1:0] rd_base,// 重启目标帧首，保持不变
+	input wire [ADDR_WIDTH-1:0] rd_base,// 当前显示缓冲区首地址，由上层选定
 	input wire pix_clk,                 // 像素域时钟
 	input wire rst_n_pix,               // 像素域低有效复位
 	input wire de,                      // 当前拍处于有效显示区
@@ -118,7 +118,6 @@ module pix_reader #(
 	assign fifo_wr_en = rd_valid && !fifo_wr_full; // 写入与返回在同一边沿发生
 	assign rd_count_next = rd_count + 1'b1; // 模计数位宽大于最大占用，允许自然回绕
 	assign rd_req = run_sync && credit_ok; // 停请求门控保持即时响应
-	assign rd_base = FRAME_BASE; // 请求期间与完成期间基址都稳定
 	assign rd_restart = restart_sync ^ restart_prev; // 翻转事件恢复为 SDRAM 单拍
 	assign pix_valid = de && display_enable &&
 		(pix_count[0] ? word_valid : !fifo_rd_empty); // 缺字时不谎报有效

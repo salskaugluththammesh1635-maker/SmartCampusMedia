@@ -1,0 +1,79 @@
+{
+    "startedAt":  "2026-10-20T13:28:19.7462703+08:00",
+    "status":  "failed",
+    "physicalTimingValidated":  false,
+    "sources":  [
+                    {
+                        "sha256":  "C4C7A02C5C70C9A6B75D2710C97706886A9DD22F10587A7F466C3A5206563F31",
+                        "path":  "ip/local/sdram/global_def.v"
+                    },
+                    {
+                        "sha256":  "C7D7FE07D75F66AA88D9F986B3006319C995162434F104F9990664B374CDFDD2",
+                        "path":  "ip/local/sdram/sdr_wrrd.enc.v"
+                    },
+                    {
+                        "sha256":  "622432952E6838AAD5A10BC8092FDF2C89E60173E04310ABFE442EF98AD52F7D",
+                        "path":  "ip/local/sdram/sdr_init_ref.enc.v"
+                    },
+                    {
+                        "sha256":  "A3555C3D2A6675DA55055651F00CB60102239042ED3E5DF06970BFEE88FFD7F1",
+                        "path":  "ip/local/sdram/sdr_as_ram.enc.v"
+                    },
+                    {
+                        "sha256":  "6AAD09C411B00E319EA6E7FF5A85453EB990532541AE368084406F78A276690B",
+                        "path":  "ip/local/sdram/IS42s32200.v"
+                    },
+                    {
+                        "sha256":  "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0",
+                        "path":  "rtl/common/async_fifo.v"
+                    },
+                    {
+                        "sha256":  "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78",
+                        "path":  "rtl/video/video_timing_gen.v"
+                    },
+                    {
+                        "sha256":  "CD56B24FCB78971A34FA275927EA1AA711C31960DEB6A1902B4737BA47F282CC",
+                        "path":  "reports/dm_mask_fix/baseline/framebuf_arbiter.v"
+                    },
+                    {
+                        "sha256":  "6435BD47F74A33D2A94690CAED8492311B4436C6783CA00F4045F34F14F30EEF",
+                        "path":  "rtl/storage/sdram_ctrl_wrap.v"
+                    },
+                    {
+                        "sha256":  "61356313865C217CD7E09EB4D9D47D6ADE543266CD45F2F0A888A662D14530E7",
+                        "path":  "rtl/storage/pix_reader.v"
+                    },
+                    {
+                        "sha256":  "D6E77072253A610394B45177E4A535F44EC8B56B4ADEA8A37C26C2D5EA66AFE4",
+                        "path":  "rtl/storage/fat32_reader.v"
+                    },
+                    {
+                        "sha256":  "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB",
+                        "path":  "rtl/storage/bmp_parser.v"
+                    },
+                    {
+                        "sha256":  "2CF9190F637075F17F73B9DB33B29278D14E131EDA89E7AF09B470E4633E9DAA",
+                        "path":  "rtl/storage/img_loader.v"
+                    },
+                    {
+                        "sha256":  "147FCFC3B62E835CBFB98FFA36CF635733D846E0E6CCC476C37130BD92023AAB",
+                        "path":  "rtl/storage/image_path_probe.v"
+                    },
+                    {
+                        "sha256":  "EE76CB3E36B8BE69C564A25E1FD6925AC5BDFC2FF4CB3183AB40595F56E12D6A",
+                        "path":  "rtl/storage/image_readback_diag.v"
+                    },
+                    {
+                        "sha256":  "A5F0FB6D9264603F647D474D8BB89EE8C2F399DBE79B55E6E1457B8FE78D7DA9",
+                        "path":  "project/image_readback_diag/image_player_readback_diag.v"
+                    },
+                    {
+                        "sha256":  "23184ECEC75CB40ED1839008E717F4CA9874FDEA88036729396401E83983C039",
+                        "path":  "reports/image_real_core_sim/tb_image_real_core.v"
+                    }
+                ],
+    "exitCode":  0,
+    "passed":  false,
+    "checks":  1030,
+    "errors":  514
+}

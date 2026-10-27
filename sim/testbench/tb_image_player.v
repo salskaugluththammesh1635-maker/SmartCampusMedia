@@ -1,9 +1,11 @@
 // Integration test: real FAT32, BMP, async FIFOs, arbiter, SDRAM model and video timing.
 // Only the external sector service is modeled. Golden pixels use displayed x/y.
 `timescale 1ns / 1ps
-module tb_image_player #(parameter FULL=0);
+module tb_image_player #(parameter FULL=0, parameter SEAMLESS=1);
     localparam W=FULL ? 640 : 32, H=FULL ? 480 : 16, NSEC=FULL ? 4096 : 64;
     localparam SPC=FULL ? 8 : 1, FAT_SIZE=FULL ? 8 : 1, MAX_BMP=FULL ? 1048576 : 8192;
+    // 双缓冲要两整帧，容量必须是 2 的幂：640x480 两帧 = 307200 字，取 524288。
+    localparam MEM_WORDS = FULL ? (SEAMLESS ? 524288 : 262144) : 1024;
     localparam [31:0] PART_LBA=4;
     localparam [15:0] L_MBR=0,L_VBR=4,L_FAT1=5,L_FAT2=FULL ? 13 : 6,L_DIR0=FULL ? 21 : 7,L_FILE=FULL ? 37 : 9;
     reg clk=0, sdr_clk=0, rst_n=0;
@@ -43,7 +45,7 @@ module tb_image_player #(parameter FULL=0);
         .V_ACTIVE(H), .V_FP(FULL ? 10 : 8), .V_SYNC(2), .V_BP(FULL ? 33 : 12)) timing (
         .pixel_clk(clk), .rst_n(rst_n), .hs(hs), .vs(vs), .de(de),
         .active_x(x), .active_y(y), .frame_start(), .vblank(vblank));
-    image_player #(.WIDTH(W), .HEIGHT(H), .LOAD_TIMEOUT(FULL ? 10000000 : 200000), .MEM_WORDS(FULL ? 262144 : 1024)) dut (
+    image_player #(.WIDTH(W), .HEIGHT(H), .LOAD_TIMEOUT(FULL ? 10000000 : 200000), .MEM_WORDS(MEM_WORDS), .SEAMLESS(SEAMLESS)) dut (
         .pix_clk(clk), .rst_n_pix(rst_n), .sdr_clk(sdr_clk), .sdr_clk_sft(~sdr_clk), .rst_n_sdr(rst_n && memory_online),
         .sd_ready(sd_ready), .sd_failed(sd_failed), .blk_busy(mdl_st != M_IDLE),
         .load_req(load_req), .image_index(image_index), .blk_start(blk_start), .blk_addr(blk_addr),
@@ -59,6 +61,26 @@ module tb_image_player #(parameter FULL=0);
             if (cond !== 1'b1) begin fails=fails+1; $display("FAIL: %0s t=%0t",msg,$time); end
         end
     endtask
+    // 前台帧首翻转次数：双缓冲切换的唯一外部可观测证据，用于断言换帧确实发生。
+    reg front_sel_d = 1'b0;
+    integer front_changes = 0;
+    integer seam_checked = 0;      // 已提交帧在显且装载进行中的拍数
+    integer seam_gaps = 0;         // 上述拍数中 de 有效却没有像素的拍数（必须为 0）
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            front_sel_d <= 1'b0;
+            front_changes = 0;
+        end else begin
+            front_sel_d <= dut.front_sel;
+            if (dut.front_sel !== front_sel_d) front_changes = front_changes + 1;
+            // 无缝的核心契约：重载期间前台帧不得断供。
+            // 这两项跨复位累积，由用例按基准取增量，避免复位把证据抹掉。
+            if (SEAMLESS && image_ready && dut.loading) begin
+                seam_checked = seam_checked + 1;
+                if (de && !pixel_valid) seam_gaps = seam_gaps + 1;
+            end
+        end
+    end
     task request_image;
         input [8:0] idx;
         integer request_guard;
@@ -73,9 +95,14 @@ module tb_image_player #(parameter FULL=0);
     task terminal;
         integer guard;
         begin
+            // 双缓冲下 image_ready 常驻为 1，不能用它判装载结束。
+            // 装载期(dut.loading)与提交挂起(dut.commit_pending)都清掉，才算这一次请求真正落地；
+            // 失败时 failed 置位立即返回，此时旧帧仍在显示。
             guard=0;
             repeat(4) @(negedge clk);
-            while(!image_ready && !failed && guard<(FULL ? 11000000 : 220000)) begin @(negedge clk); guard=guard+1; end
+            while((dut.loading || dut.commit_pending) && !failed && guard<(FULL ? 11000000 : 220000)) begin
+                @(negedge clk); guard=guard+1;
+            end
             chk(guard<(FULL ? 11000000 : 220000),"load reaches a terminal within bound");
         end
     endtask
@@ -378,18 +405,36 @@ module tb_image_player #(parameter FULL=0);
         build_bmp(W,H,54,0); build_image(W,H,54,0,4,0);
         repeat(8) @(negedge clk); rst_n=1;
         terminal; chk(image_ready && !failed,"boot image is committed"); check_frame;
+        $display("CASE 2: top-down BMP reload with different pixel data");
+        pattern_id=1; build_bmp(W,H,54,1); build_image(W,H,54,1,4,0);
+        begin : seamless_reload
+            integer changes_before;
+            changes_before = front_changes;
+            request_image(1); terminal; chk(image_ready && !failed,"top-down reload commits"); check_frame;
+            if (SEAMLESS) begin
+                // 换帧必须在后台帧写完之后发生，且恰好一次。
+                chk(front_changes == changes_before + 1,"seamless reload flips the front buffer exactly once");
+                // 装载全程前台帧持续供给：这是"无缝"的直接证据。
+                chk(seam_checked > 0,"reload overlaps the displayed frame, giving seamlessness a chance to break");
+                chk(seam_gaps == 0,"front frame never starves while the back buffer loads");
+            end else begin
+                chk(front_changes == changes_before,"single-buffer mode never flips the front selection");
+            end
+        end
+        // FULL 用例只跑前两个 CASE（整帧 614,404 项检查已足够覆盖几何），
+        // 双缓冲的两帧切换证据必须在这之前收齐，不能放在后面的用例里。
         if(FULL) begin
+            $display("SEAMLESS: mode=%0d front_flips=%0d overlap_cycles=%0d starve_cycles=%0d",
+                SEAMLESS, front_changes, seam_checked, seam_gaps);
             $display("SUMMARY: FULL 640x480 checks=%0d errors=%0d",checks,fails);
             if(fails==0) $display("ALL CHECKS PASSED: image_player_full");
             else $display("CHECKS FAILED: image_player_full");
             $finish;
         end
-        $display("CASE 2: top-down BMP reload with different pixel data");
-        pattern_id=1; build_bmp(W,H,54,1); build_image(W,H,54,1,4,0);
-        request_image(1); terminal; chk(image_ready && !failed,"top-down reload commits"); check_frame;
         $display("CASE 3: missing image, then retry without resetting SD");
         request_image(2); terminal; chk(failed && error_code==1,"missing file reports FAT location failure");
-        chk(!image_ready,"failed load is never displayed");
+        // 双缓冲下装载失败保留上一帧继续显示；单帧模式必须立刻退掉，因为马上要覆盖它。
+        chk(SEAMLESS ? image_ready : !image_ready,"failed load keeps the committed frame in seamless mode");
         request_image(1); terminal; chk(image_ready && !failed,"retry succeeds"); check_frame;
         $display("CASE 4: malformed BMP header");
         disk[L_FILE*512]=0;
@@ -415,12 +460,15 @@ module tb_image_player #(parameter FULL=0);
         $display("CASE 9: stalled sector service reaches the load watchdog");
         service_stall=1;
         request_image(1); terminal;
-        chk(failed && !image_ready && error_code==9,"stalled load cannot wait forever or publish a frame");
+        // 装载侧失败（超时）不破坏已显示帧，双缓冲下旧帧必须还在。
+        chk(failed && (SEAMLESS ? image_ready : !image_ready) && error_code==9,
+            "stalled load cannot wait forever or publish a frame");
         service_stall=0;
         request_image(1); terminal; chk(image_ready && !failed,"timed-out load can retry when service returns");
         $display("CASE 10: SD startup failure, then retry after recovery");
         @(negedge clk); rst_n=0; sd_ready=0; sd_failed=1;
         repeat(8) @(negedge clk); rst_n=1;
+        // 整机复位已经清掉 image_ready，双缓冲与单帧在这一步行为相同。
         terminal; chk(failed && !image_ready && error_code==6,"SD startup failure reports error 6");
         sd_ready=1; sd_failed=0;
         request_image(1); terminal; chk(image_ready && !failed,"SD recovery request loads a new image");
@@ -429,11 +477,13 @@ module tb_image_player #(parameter FULL=0);
         memory_online=0;
         repeat(10) @(negedge clk);
         chk(failed && !image_ready && error_code==8,"memory reset while displaying invalidates the frame");
-        chk(!dut.path_rst_pix && !dut.path_rst_sdr,"both storage domains are held in reset");
+        chk(!dut.store_rst_pix && !dut.store_rst_sdr,"both storage domains are held in reset");
         memory_online=1;
         request_image(1); terminal; chk(image_ready && !failed,"memory lock recovery permits a complete reload");
         check_frame;
         chk(oob_hits==0,"no out-of-range sector requests");
+        $display("SEAMLESS: mode=%0d front_flips=%0d overlap_cycles=%0d starve_cycles=%0d",
+            SEAMLESS, front_changes, seam_checked, seam_gaps);
         $display("SUMMARY: checks=%0d errors=%0d",checks,fails);
         if(fails==0) $display("ALL CHECKS PASSED: image_player");
         else $display("CHECKS FAILED: image_player");

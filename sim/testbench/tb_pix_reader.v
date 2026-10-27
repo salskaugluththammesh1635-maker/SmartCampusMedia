@@ -22,6 +22,7 @@ module tb_pix_reader;
 	localparam H_TOTAL = PIX_PER_LINE + H_FP + H_SYNC + H_BP;
 	localparam V_TOTAL = LINES + V_FP + V_SYNC + V_BP;
 	localparam FRAME_WORDS = PIX_PER_LINE * LINES / 2;
+localparam FRAME_BASE = 21'd0;
 	localparam FRAME_GROUPS = FRAME_WORDS / 4;
 	localparam WAIT_BOUND = H_TOTAL * V_TOTAL * 2;
 	reg clk_sdr = 1'b0;
@@ -52,7 +53,7 @@ module tb_pix_reader;
 	wire [9:0] active_y;
 	wire rd_req, rd_ack, rd_valid, rd_idle, rd_restart_done, rd_restart;
 	wire [31:0] rd_data;
-	wire [20:0] rd_base;
+	reg [20:0] rd_base = FRAME_BASE; // 由上层选定的显示帧首，本 TB 固定第 0 帧
 	wire [15:0] pix_rgb565;
 	wire pix_valid;
 	wire [2:0] stat;

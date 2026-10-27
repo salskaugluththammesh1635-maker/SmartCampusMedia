@@ -1,5 +1,5 @@
 ﻿{
-    "startedAt":  "2026-10-20T01:56:21.6471292+08:00",
+    "startedAt":  "2026-10-27T00:55:06.3177919+08:00",
     "status":  "passed",
     "sources":  [
                     {
@@ -11,15 +11,15 @@
                         "path":  "rtl/video/video_timing_gen.v"
                     },
                     {
-                        "sha256":  "CD56B24FCB78971A34FA275927EA1AA711C31960DEB6A1902B4737BA47F282CC",
+                        "sha256":  "38F2D7AF2A3FDD850D5F3A536609AA0B452D8A01F3B4E12F7FBCDCB805C1A730",
                         "path":  "rtl/storage/framebuf_arbiter.v"
                     },
                     {
-                        "sha256":  "954290B76E35A33561C268895D5D0075BF5E03D6A87E92DC1A15FF718D097DA8",
+                        "sha256":  "6435BD47F74A33D2A94690CAED8492311B4436C6783CA00F4045F34F14F30EEF",
                         "path":  "rtl/storage/sdram_ctrl_wrap.v"
                     },
                     {
-                        "sha256":  "61356313865C217CD7E09EB4D9D47D6ADE543266CD45F2F0A888A662D14530E7",
+                        "sha256":  "01B64F20E1731EB6A28E4C595E0E2800AA6408A82355AEA8258A7AD9BBBD66CE",
                         "path":  "rtl/storage/pix_reader.v"
                     },
                     {
@@ -35,11 +35,11 @@
                         "path":  "rtl/storage/img_loader.v"
                     },
                     {
-                        "sha256":  "DACEF829916BBA25C5B115B691015A704824404D89E79EA6CADB59507F2184B5",
+                        "sha256":  "3FC785A32B9934BAFB87BFC4FB22C53077884139A765C411B3A9A946AF27BF68",
                         "path":  "rtl/storage/image_player.v"
                     },
                     {
-                        "sha256":  "2347D970657004C5489BA8588AA248478768A9ECAA53FA50B4D14D5F16C98560",
+                        "sha256":  "35D7D472762EC3AB3EF7B7458400361A8BFC73BE2B8675B6E8FB2A576667ECC8",
                         "path":  "sim/testbench/tb_image_player.v"
                     }
                 ],
@@ -48,16 +48,23 @@
                       "log":  "image_player.txt",
                       "exitCode":  0,
                       "name":  "image_player",
-                      "checks":  6202,
+                      "checks":  6205,
                       "passed":  true
                   },
                   {
                       "log":  "image_player_full.txt",
                       "exitCode":  0,
                       "name":  "image_player_full",
-                      "checks":  614404,
+                      "checks":  1228812,
+                      "passed":  true
+                  },
+                  {
+                      "log":  "image_player_single.txt",
+                      "exitCode":  0,
+                      "name":  "image_player_single",
+                      "checks":  6203,
                       "passed":  true
                   }
               ],
-    "finishedAt":  "2026-10-20T01:59:13.1068633+08:00"
+    "finishedAt":  "2026-10-27T01:09:34.4871113+08:00"
 }

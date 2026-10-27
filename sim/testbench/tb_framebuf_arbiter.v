@@ -234,8 +234,8 @@ module tb_framebuf_arbiter;
                     chk(app_rd_addr == expected_rd_addr, "read starts at expected sequential or captured restart base");
                 else chk(app_rd_addr == model_rd_base, "read address remains locked inside a group");
                 if (model_rd_phase == 3) begin
-                    if (expected_rd_addr + 4 >= FRAME_BASE + FRAME_WORDS)
-                        expected_rd_addr = FRAME_BASE;
+                    if (expected_rd_addr + 4 >= captured_restart_base + FRAME_WORDS)
+                        expected_rd_addr = captured_restart_base;
                     else expected_rd_addr = expected_rd_addr + 4;
                 end
                 if (last_direction == 1)

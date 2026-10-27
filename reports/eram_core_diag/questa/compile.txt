@@ -1,0 +1,18 @@
+Model Technology ModelSim SE-64 vlog 2022.1 Compiler 2022.01 Jan 29 2022
+** Warning: (vlog-8891) All optimizations are disabled because the -novopt option is in effect. This will cause your simulation to run very slowly. If you are using this switch to preserve visibility for Debug or PLI features, please see the User's Manual section on Preserving Object Visibility with vopt. -novopt option is now deprecated and will be removed in future releases.
+Start time: 12:06:49 on Oct 20,2026
+vlog -sv -mfcu -permissive "+define+SIMULATION" "+incdir+D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram" D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/global_def.v D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_wrrd.enc.v D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/IS42s32200.v D:/FPGA_Compelate/SmartCampusMedia/rtl/storage/sdram_ctrl_wrap.v 
+Errors: 0, Warnings: 1
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_wrrd.enc.v(77): (vlib-13006) Could not find the package (<protected>).  Design read will continue, but expect a cascade of errors after this failure.  Furthermore if you experience a vopt-7 error immediately before this error then please check the package names or the library search paths on the command line.
+-- Compiling module sdr_init_ref
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(12): (vlib-13006) Could not find the package (std).  Design read will continue, but expect a cascade of errors after this failure.  Furthermore if you experience a vopt-7 error immediately before this error then please check the package names or the library search paths on the command line.
+-- Compiling module sdr_as_ram
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(12): (vlib-13006) Could not find the package (std).  Design read will continue, but expect a cascade of errors after this failure.  Furthermore if you experience a vopt-7 error immediately before this error then please check the package names or the library search paths on the command line.
+-- Compiling module IS42s32200
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/IS42s32200.v(14): (vlib-13006) Could not find the package (std).  Design read will continue, but expect a cascade of errors after this failure.  Furthermore if you experience a vopt-7 error immediately before this error then please check the package names or the library search paths on the command line.
+-- Compiling module sdram_ctrl_wrap
+** Error: D:/FPGA_Compelate/SmartCampusMedia/rtl/storage/sdram_ctrl_wrap.v(74): (vlib-13006) Could not find the package (std).  Design read will continue, but expect a cascade of errors after this failure.  Furthermore if you experience a vopt-7 error immediately before this error then please check the package names or the library search paths on the command line.
+-- Compiling module sdram_behavior_model
+** Error: D:/FPGA_Compelate/SmartCampusMedia/rtl/storage/sdram_ctrl_wrap.v(221): (vlib-13006) Could not find the package (std).  Design read will continue, but expect a cascade of errors after this failure.  Furthermore if you experience a vopt-7 error immediately before this error then please check the package names or the library search paths on the command line.
+End time: 12:06:50 on Oct 20,2026, Elapsed time: 0:00:01
+Errors: 6, Warnings: 0

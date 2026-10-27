@@ -260,14 +260,20 @@ ALL CHECKS PASSED: gallery_probe
 
 ## 7. 未解决问题
 
-1. **`project/hdmi_td.al` 未加入 `gallery_probe.v` 源项。** TD 工程需要人工
-   Read Design 添加该文件后才能综合。这是**已知未完成项**，不是「应该能自动带上」。
-   （`.al` 本身只列了 14 个 HDL 源，而 `project/hdmi` 下有 27 个跟踪文件，
-   这是存量问题，本轮不扩大范围去整理它。）
+1. ~~`project/hdmi_td.al` 未加入 `gallery_probe.v` 源项。~~ **已在本轮后续修复，且问题比初判严重得多。**
+   复查时发现 `.al` 自提交 `e41315a` 起就缺 **12 个模块源**（不止 `gallery_probe` 一项）：
+   `sdram_pll`、`sdram_ctrl_wrap`、`async_fifo`、`fat32_reader`、`bmp_parser`、`img_loader`、
+   `framebuf_arbiter`、`pix_reader`、`player_ctrl`、`sd_spi_ctrl`、`sd_probe`、`image_player`。
+   实测 `flow_t2_elaborate.tcl` 报 6 条 `HDL-7144 instantiate unknown module` 与 6 条
+   `HDL-8007 ... is a black box`，**elaborate exit 4 —— 正式顶层此前根本无法构建**。
+   该问题已在同一轮修复（`.al` 从 9 个 `.v` 扩到 26 个，并补 4 个 `ip/local/sdram/` 文件），
+   修复后 elaborate exit 0，完整综合/布局/布线/bitgen 全 PASS。详见
+   [任务总览](../TASKS.md) §七。
 2. **没有上板。** 真卡目录遍历、换卡后的扫描行为、真卡上 `err=4` 的判定，
    全部都只有行为级仿真证据。
 3. **SiP SDRAM 接口 setup WNS `-7.232ns` 未变。** 本轮改动全在功能层，
    **没有新增任何时序证据**。这是发布阻塞项，与图库扫描无关，也不能声称已解决。
+   （`.al` 修复后跑完整流程复测，WNS 仍为 −7.232 ns、TNS −335.004 ns，与修复前一致。）
 4. **`color_bar_ref.v` 编译失败**（缺 `video_define.v` include 路径），
    属存量问题，未在本轮修复；全量编译时临时排除该文件。
 5. `readable-verilog-generator` 严格门禁 `delivery_ready` 仍未通过
@@ -287,8 +293,10 @@ ALL CHECKS PASSED: gallery_probe
 
 按 `docs/s6_integration_2026-10-20.md` §8 与阶段五出口准则，建议顺序：
 
-1. **把 `gallery_probe.v` 加入 `project/hdmi_td.al`**，跑 TD 综合确认资源与时序无新增违例
-   （注意：SiP 的 `-7.232ns` 仍会在，这里只确认**没有变得更差**）。
+1. 把 `gallery_probe.v` 加入 `project/hdmi_td.al` 并跑 TD 综合 —— **已在本轮完成**。
+   `.al` 实际缺 12 个模块源（详见 §7 第 1 条），补全后跑完整流程：资源 LUT 8215/19600 = 41.91%
+   （LUT-as-logic 5079/8852 = 57.38%）、IO 41/188、PLL 2/4、BRAM 6、DSP 13；
+   时序 setup −7.232 ns / hold +0.023 ns，**与修复前完全一致，未新增违例**。
 2. **上板验证图库扫描**：插 3 张连续卡 → 首图自动显示、KEY1/KEY0 能切到第 2/3 张；
    换 1 张卡复位 → 只有首图，「下一张」不动作也不报错。
 3. **上板验证缺图截断**：卡上放 IMG001 + IMG003（缺 002）→ 只能看到 IMG001。

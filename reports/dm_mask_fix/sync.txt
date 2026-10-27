@@ -1,0 +1,45 @@
+=== 同步 主源 -> TD 工程副本 ===
+  [未变化] project\src\seg_decoder.v
+  [未变化] project\hdmi\seg_decoder.v
+  [未变化] project\src\seg_scan4.v
+  [未变化] project\hdmi\seg_scan4.v
+  [未变化] project\src\key_matrix_4x4.v
+  [未变化] project\hdmi\key_matrix_4x4.v
+  [未变化] project\src\buzzer_tone.v
+  [未变化] project\hdmi\buzzer_tone.v
+  [未变化] project\hdmi\pwm_audio_out.v
+  [未变化] project\hdmi\sd_spi_ctrl.v
+  [未变化] project\hdmi\sd_probe.v
+  [未变化] project\hdmi\fat32_reader.v
+  [未变化] project\hdmi\bmp_parser.v
+  [未变化] project\hdmi\async_fifo.v
+  [已更新] project\hdmi\framebuf_arbiter.v
+  [未变化] project\hdmi\sdram_pll.v
+  [已更新] project\hdmi\sdram_ctrl_wrap.v
+  [未变化] project\hdmi\sdram_bringup_top.v
+  [未变化] project\hdmi\img_loader.v
+  [未变化] project\hdmi\image_player.v
+  [未变化] project\hdmi\pix_reader.v
+  [未变化] project\hdmi\player_ctrl.v
+  [未变化] project\hdmi\dmz_eg4s20_hdmi_top.v
+  [未变化] project\hdmi\hdmi_pll.v
+  [未变化] project\hdmi\hdmi_tx.vhd
+  [未变化] project\hdmi\video_timing_gen.v
+  [未变化] project\hdmi\test_pattern_gen.v
+  [未变化] project\src\dmz_eg4s20_min_top.v
+  [未变化] project\src\dmz_eg4s20_min.adc
+  [未变化] project\hdmi\dmz_eg4s20_hdmi.adc
+  [未变化] project\hdmi\dmz_eg4s20_hdmi.sdc
+  [未变化] project\hdmi\enc\DVITransmitter.enc.vhd
+  [未变化] project\hdmi\enc\SerializerN_1_lvds.enc.vhd
+  [未变化] project\hdmi\enc\SerializerN_1_lvds_dat.enc.vhd
+  [未变化] project\hdmi\enc\TMDSEncoder.enc.vhd
+同步完成: 2/35 个副本被更新
+
+=== 同步后静态检查（rtl + 两个工程副本）===
+
+����ļ���: 57
+E0(�ļ���): 0    E1(��ֵ����): 0    E2(������): 0
+����: ͨ�������� / �޻��ø�ֵ / �޶�������
+
+[OK] lint 通过。TD 中重新编译: 选中 Read Design 按 Shift+R

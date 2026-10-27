@@ -13,11 +13,15 @@ $sources = @(
     'rtl/storage/fat32_reader.v', 'rtl/storage/gallery_probe.v',
     'rtl/storage/bmp_parser.v',
     'rtl/storage/img_loader.v', 'rtl/control/player_ctrl.v',
+    'rtl/control/err_prompt.v', 'rtl/audio/buzzer_tone.v',
+    'rtl/control/key_action.v', 'rtl/video/video_overlay.v',
     'sim/testbench/tb_sd_spi_protocol.v', 'sim/testbench/tb_sd_spi_ctrl.v',
     'sim/testbench/tb_sd_probe.v', 'sim/testbench/tb_fat32_reader.v',
     'sim/testbench/tb_gallery_probe.v',
     'sim/testbench/tb_bmp_parser.v', 'sim/testbench/tb_img_loader.v',
-    'sim/testbench/tb_player_ctrl.v'
+    'sim/testbench/tb_player_ctrl.v',
+    'sim/testbench/tb_err_prompt.v', 'sim/testbench/tb_buzzer_tone.v',
+    'sim/testbench/tb_key_action.v', 'sim/testbench/tb_video_overlay.v'
 )
 $hashes = @($sources | ForEach-Object {
     @{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $root $_) -Algorithm SHA256).Hash }
@@ -42,7 +46,11 @@ try {
         @{name='gallery_probe'; top='tb_gallery_probe'; marker='ALL CHECKS PASSED: gallery_probe'; arguments=@()},
         @{name='bmp_parser'; top='tb_bmp_parser'; marker='ALL CHECKS PASSED: bmp_parser'; arguments=@()},
         @{name='img_loader'; top='tb_img_loader'; marker='ALL CHECKS PASSED: img_loader'; arguments=@()},
-        @{name='player_ctrl'; top='tb_player_ctrl'; marker='ALL CHECKS PASSED: player_ctrl'; arguments=@()}
+        @{name='player_ctrl'; top='tb_player_ctrl'; marker='ALL CHECKS PASSED: player_ctrl'; arguments=@()},
+        @{name='err_prompt'; top='tb_err_prompt'; marker='*** ALL CHECKS PASSED ***'; arguments=@()},
+        @{name='buzzer_tone'; top='tb_buzzer_tone'; marker='*** ALL CHECKS PASSED ***'; arguments=@()},
+        @{name='key_action'; top='tb_key_action'; marker='ALL CHECKS PASSED: key_action'; arguments=@()},
+        @{name='video_overlay'; top='tb_video_overlay'; marker='ALL CHECKS PASSED: video_overlay'; arguments=@()}
     )
     foreach ($case in $cases) {
         $log = $case.name + '.txt'

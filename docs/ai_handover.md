@@ -13,12 +13,64 @@
 项目必须严格遵守《全国大学生嵌入式芯片与系统设计竞赛 2026 FPGA 创新设计赛道选题指南》中
 "选题一：基于安路 EG4S20 的 HDMI 多媒体播放系统"的要求（指南 PDF 位于工作区根目录）。
 
-## 2026-10-25 会话状态快照（S7 前置切片：图库自动扫描，本节为最新事实基线）
+## 2026-10-26 会话状态快照（S7：KEY7～KEY14 键位分配，本节为最新事实基线）
+
+> **先读 `TASKS.md`** 与 **`docs/keymap_2026-10-26.md`**：前者是任务总览，后者是 16 键键位表的唯一权威来源。
+>
+> 若要动**错误提示 / 数码管显示 / 蜂鸣器声音**，必须先读 **`docs/error_prompt_2026-10-27.md`**：
+> 它是 A8 与 P1-9 的完整交接（5 类用户动作助记符表、告警音设计依据、`sd_cd` 只提示不重探的原因、未验证清单）。
+> 错误码语义的唯一真相源是 `rtl/control/err_prompt.v` 的块③，**不要在别处复制那张映射表**。
+
+1. **本轮改动**：把 `TASKS.md` A5 遗留的"16 键仅用 8 个"补完 —— KEY7～KEY14 全部编号到功能，
+   且全部收拢到**唯一一个译码模块** `rtl/control/key_action.v`（142 行）。新增画面后处理模块
+   `rtl/video/video_overlay.v`（185 行，纯组合）承接亮度/反色/OSD/音频电平条。
+   详细设计、取舍理由与未验证项见 `docs/keymap_2026-10-26.md`。
+2. **八个新键**：KEY7 亮度五档循环、KEY8 反色、KEY9 轮播倍率 ×1~×4、KEY10 图库重扫、
+   KEY11 九宫格参考线、KEY12 底部信息条、KEY13 音频电平条、KEY14 蜂鸣器静音。
+   **16 键到本轮为止全部分配完毕，无空键、无一键两用。**
+3. **改动的既有模块（最小侵入）**：
+   - `player_ctrl` 新增输入端口 `auto_sw_sel[1:0]`，轮播间隔由编译期常量变成运行时可缩放；
+     `AUTO_TICKS` 显式 32 位，新增 `auto_target` 与 `auto_sw_sel_d`（改档当拍清计时器，避免"按一下连跳两张"）。
+     **默认档 0 下 `auto_target == AUTO_TICKS`，逐拍等价于改造前**。它**不认识 KEY9**。
+   - `gallery_probe` 新增输入端口 `rescan`，在唯一时序块内加一条终态重扫分支（前置条件 `rescan && sd_ok && (G_DONE||G_FAIL)`）。
+   - `dmz_eg4s20_hdmi_top`：加 `key_action`/`video_overlay` 例化；`video_rgb` 改为经 `video_overlay`；
+     蜂鸣器接法改为 `beep_muted ? 3'd0 : (alarm_req ? 3'd3 : (mode==2 ? 3'd2 : 3'd1))`。
+   - `dmz_eg4s20_bringup_top`：同步键位表、补接 `loader_index` 与 `vblank`、`tone_sel` 由 2 位改正为 3 位。
+4. **本轮实测通过**（ModelSim 10.1d 行为仿真，报告在 `reports/s7_keymap/frontend/`）：
+   - 前端回归 **13 个用例全部 passed=True，exit 0**：sd_protocol_default 62、sd_protocol_fast 64、
+     sd_spi_ctrl 23、sd_probe 14、fat32_reader 40、gallery_probe 37、bmp_parser 37、img_loader 43、
+     player_ctrl 94、err_prompt 43、buzzer_tone 23、**key_action 40**、**video_overlay 64**
+   - `tb_dmz_eg4s20_bringup` 全 PASS / `errors = 0`，并**消除了两条历史 ModelSim 警告**
+     （`u_vtg` 缺 `vblank` 的 TFMPC、`u_buzz` 端口 3 vs 2 的 PCDPC）
+   - `python scripts/lint_verilog.py rtl project/src project/hdmi`：**77 文件，E0/E1/E2 全 0**
+   - `scripts/sync_src.ps1`：通过（11/41 个副本更新）
+5. **仍未通过（不得含糊）**：
+   - **八个新键从未上板按下**，全部结论只到仿真档。
+   - **`video_overlay` 没有重新综合布线**，LUT 占用与关键路径影响未知。
+   - SiP SDRAM 接口 setup WNS `-7.232ns` 未变；本轮改动全在 `clk_pixel` 域，**没有新增时序证据**。
+   - 正式顶层 `dmz_eg4s20_hdmi_top` 仍无任何上板记录。
+6. **上板第一步不是试新功能，而是先确认键盘行序**（`docs/pending_confirmations.md` 的未决冲突）。
+   行序若反，`key_code` 整体错位，八个新键会成对互换。确认方法见 `docs/keymap_2026-10-26.md` 第八节；
+   若确认反序，**只需改 `key_matrix_4x4` 内的行序映射**，`key_action` 的 8 个键号 `localparam` 不受影响。
+7. **工程固定动作（本轮再次踩到的坑）**：
+   - 新增 `.v` 必须同时改 `project/hdmi_td.al`，否则 TD 判 black box（历史上 commit `e41315a` 因此缺 12 个源）；
+   - 新增 TB 必须同时加进 `sim/scripts/run_frontend_regression.ps1` 的 `$sources`，否则根本不会被编译；
+   - 改完 `rtl/` 必跑 `scripts/sync_src.ps1`（自带 lint）。
+8. **B 级/C 级进度更新（如实）**：B1 由 ⬜ 改 🔶（有九宫格/信息条/电平条，但**没有字符字形，显示不了文字字幕**，
+   `rtl/osd/` 仍为空）；B3 由 ⬜ 改 🔶（亮度/反色/倍率运行时可调，但参数不保存、无菜单）；
+   C1 由 ⬜ 改 🔶（电平柱跟随 PCM，但**没有 FFT，不是频谱**）。B2 仍 ⬜。
+9. **不要把行为仿真通过说成综合通过或上板通过。**
+
+## 2026-10-25 会话状态快照（S7 前置切片：图库自动扫描，历史基线）
+
+> **先读 `TASKS.md`**：那里是"一共要做哪些任务、完成了什么、还剩什么"的单页总览，
+> 含三档验证口径（仿真 / 综合布线 / 上板）的判定标准与 P0~P4 优先级清单。
 
 1. **本轮改动**：新增 `rtl/storage/gallery_probe.v`（248 行）与 `sim/testbench/tb_gallery_probe.v`；
    改 `rtl/top/dmz_eg4s20_hdmi_top.v`（删除编译参数 `GALLERY_COUNT`，SD 仲裁由二选一扩成三段串行，
    首图装载脉冲改由扫描器提供）；`scripts/sync_src.ps1`、`sim/scripts/run_frontend_regression.ps1`
-   各加一条映射/用例。详细设计见 `docs/s7_gallery_probe_2026-10-25.md`。
+   各加一条映射/用例；**后段修复 `project/hdmi_td.al` 缺源（见第 5 条）**；新增 `TASKS.md` 任务总览。
+   详细设计见 `docs/s7_gallery_probe_2026-10-25.md`。
 2. **解决的工程问题**：图库张数原为编译参数 `GALLERY_COUNT = 5'd1`，换一批素材必须改参数、重新综合、
    重新下载 bit。现场插卡时张数未知，写死会有两种必然故障：卡里 3 张但参数 1 → 永远只看到首图；
    参数 3 但只有 1 张 → 第二轮落到不存在的文件上报错锁死。现在张数是运行时可测的事实。
@@ -33,12 +85,21 @@
 4. **仍未通过（不得含糊）**：
    - SiP SDRAM 接口 setup WNS `-7.232ns` 未变，本轮全在功能层，**没有新增时序证据**。
    - 行为模型 ≠ 真核；**没有上板**。图库扫描的上板表现（真卡目录遍历、换卡行为）未实测。
-   - `project/hdmi_td.al` 未加入 `gallery_probe.v` 源项，TD 工程需人工 Read Design 添加后才能综合。
-     这是**已知未完成项**，不是"应该能自动带上"。
-5. **接口提示**：`gallery_probe` 端口为 `clk/rst_n/sd_ok`、`blk_start/blk_addr/blk_done/blk_err/data_byte/data_valid`
+     **正式顶层 `dmz_eg4s20_hdmi_top` 至今没有任何上板记录**；唯一上板证据来自独立诊断工程 `image_dm_fix`。
+5. **本轮后段追加修复（重要，推翻了本节早前的判断）**：`project/hdmi_td.al` **不是"只缺 gallery_probe 一项"**，
+   而是自提交 `e41315a` 起就缺 **12 个模块源**（`sdram_pll`、`sdram_ctrl_wrap`、`async_fifo`、`fat32_reader`、
+   `bmp_parser`、`img_loader`、`framebuf_arbiter`、`pix_reader`、`player_ctrl`、`sd_spi_ctrl`、`sd_probe`、
+   `image_player`），加上本轮新增的 `gallery_probe` 共 13 个。实测 elaborate 报 6 条 `HDL-7144`
+   + 6 条 `HDL-8007` 后 **exit 4 —— 正式顶层此前根本无法构建**。
+   已修复（`.al` 扩到 26 个 `.v` + 4 个 `ip/local/sdram/` 文件，顶层 CompileOrder 改 200），
+   修复后 **elaborate exit 0**，完整 `flow_s6_bit.tcl` 跑通（综合/布局/布线/bitgen 全 PASS）。
+   详见 `docs/progress.md` 的 S7-0 章节。
+6. **接口提示**：`gallery_probe` 端口为 `clk/rst_n/sd_ok`、`blk_start/blk_addr/blk_done/blk_err/data_byte/data_valid`
    （直通 `sd_spi_ctrl`）、`done/fail/count[4:0]/first_img_req/err_code[3:0]`。
    `count=0` 是**合法结果**（扫描完成但无图），与 `fail` 是两种终局。
-6. **不要把行为模型通过说成综合通过、真核通过或上板通过。**
+7. **构建现状**：完整流程可跑，但 `S6_TIMING_FAILED: setup=-7.232 ns hold=0.023 ns`，脚本 exit 3，
+   生成的 bit 仅作候选。**流程跑通 ≠ 时序收敛，不得混为一谈。**
+8. **不要把行为模型通过说成综合通过、真核通过或上板通过。**
 
 ## 2026-10-21 会话状态快照（S6-2 读取链路契约修复，历史基线）
 

@@ -1,11 +1,24 @@
 {
-  "checkedAt": "2026-10-20T11:59:41.485777+08:00",
-  "status": "board_reproduced_white_readback",
-  "errors": [],
+  "checkedAt": "2026-10-26T22:38:57.415665+08:00",
+  "status": "evidence_invalid",
+  "errors": [
+    "Changed input: rtl/audio/buzzer_tone.v",
+    "Changed input: rtl/storage/sdram_ctrl_wrap.v",
+    "Changed input: rtl/storage/framebuf_arbiter.v",
+    "Changed input: rtl/control/player_ctrl.v",
+    "Changed input: rtl/top/dmz_eg4s20_hdmi_top.v",
+    "Changed input: rtl/storage/framebuf_arbiter.v",
+    "Changed input: rtl/storage/sdram_ctrl_wrap.v",
+    "Input newer than build start: rtl/audio/buzzer_tone.v",
+    "Input newer than build start: rtl/storage/sdram_ctrl_wrap.v",
+    "Input newer than build start: rtl/storage/framebuf_arbiter.v",
+    "Input newer than build start: rtl/control/player_ctrl.v",
+    "Input newer than build start: rtl/top/dmz_eg4s20_hdmi_top.v"
+  ],
   "path": "project\\image_path_diag_td_Runs\\phy_1\\image_path_diag.bit",
   "bytes": 629646,
   "sha256": "2A762608516FA80E85A91D828CDD8376F51281930BEEF78C5BDE1CEC46E0A207",
-  "build_inputs_match": true,
+  "build_inputs_match": false,
   "project_sha256_after_build": "67886B6D568E8AFEDFA7BE2ADE2094918E2F787328979080E1AF62F682E0560E",
   "setup_wns_ns": -7.232,
   "hold_wns_ns": 0.023,
@@ -27,16 +40,5 @@
       "checks": 614405,
       "passed": true
     }
-  ],
-  "board_feedback": {
-    "source": "user_report",
-    "display": "7711",
-    "red_square_visible": false,
-    "interpretation": "decode and unmasked write commands contained red; all observed memory returns were white",
-    "led_on": [
-      0,
-      1,
-      2
-    ]
-  }
+  ]
 }

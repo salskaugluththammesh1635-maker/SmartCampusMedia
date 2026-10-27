@@ -1,0 +1,4 @@
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module sdr_init_ref
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(212): Illegal concatenation of an unsized constant.
+-- Compiling module sdr_as_ram

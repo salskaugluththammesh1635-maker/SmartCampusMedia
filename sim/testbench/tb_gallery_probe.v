@@ -58,6 +58,8 @@ module tb_gallery_probe;
     reg         gp_blk_err   = 1'b0;
     reg  [7:0]  gp_data_byte = 8'h00;
     reg         gp_data_valid= 1'b0;
+    // 重扫请求（KEY10 → gallery_probe.rescan）: 平时 0，需要重扫的用例里打一拍
+    reg         rescan      = 1'b0;
     wire        gp_done;
     wire        gp_fail;
     wire [4:0]  gp_count;
@@ -71,6 +73,7 @@ module tb_gallery_probe;
         .clk           (clk),
         .rst_n         (rst_n),
         .sd_ok         (sd_ok),
+        .rescan        (rescan),
         .blk_start     (gp_blk_start),
         .blk_addr      (gp_blk_addr),
         .blk_done      (gp_blk_done),
@@ -334,6 +337,7 @@ module tb_gallery_probe;
         begin
             rst_n = 1'b0;
             sd_ok = 1'b0;
+            rescan = 1'b0;
             repeat (4) @(negedge clk);
             rst_n = 1'b1;
             repeat (2) @(negedge clk);
@@ -348,6 +352,18 @@ module tb_gallery_probe;
         end
     endtask
 
+    // 打一拍 rescan（KEY10）: 硬件上按键事件本身就是单拍脉冲，
+    // 这里必须同拍还原成 1 拍，否则会掩盖"只在终态采纳"这条约束。
+    task pulse_rescan;
+        begin
+            @(negedge clk);
+            rescan = 1'b1;
+            @(negedge clk);
+            rescan = 1'b0;
+            @(negedge clk);
+        end
+    endtask
+
     // 等扫描进入终态（done 或 fail）。超时即报错，避免回归"假通过"
     task wait_scan_done;
         integer guard;
@@ -358,6 +374,21 @@ module tb_gallery_probe;
                 guard = guard + 1;
             end
             if (guard >= 200000) $display("TIMEOUT: scan terminal state not reached");
+        end
+    endtask
+
+    // 等终态被 rescan 清掉（done/fail 同时为 0 说明已回到 G_ARST）。
+    // 为什么先清再 wait_scan_done: wait_scan_done 的条件是 done||fail，
+    //   若 rescan 后立刻调用，此时 done 还没被清，循环会当场退出 —— 假通过。
+    task wait_terminal_clear;
+        integer guard;
+        begin
+            guard = 0;
+            while ((gp_done || gp_fail) && (guard < 64)) begin
+                @(negedge clk);
+                guard = guard + 1;
+            end
+            if (guard >= 64) $display("TIMEOUT: terminal state not cleared after rescan");
         end
     endtask
 
@@ -468,6 +499,74 @@ module tb_gallery_probe;
         $display("  W07: done=%b count=%0d pulses=%0d", gp_done, gp_count, firq_pulses - firq_base);
         chk(gp_done && !gp_fail, "W07 second scan completes");
         chk(gp_count == 5'd3,    "W07 rescan reproduces count = 3");
+
+        // ---------------- W08 终态下 rescan 重扫（KEY10）----------------
+        // 现场场景: 拔卡换素材后不重新上电，按一下 KEY10 让图库重新枚举。
+        // 这里验证三件事: ①终态能被 rescan 打断并重扫；②结果会按新镜像更新；
+        //                ③重扫结束仍要发恰好一拍 first_img_req（否则新图库不会上屏）。
+        // 注意本 TB 的 MAX_COUNT = 4，故两次扫描都取不超过 4 张，
+        //   否则测到的是"到上限即停"（W03 已覆盖），而不是"重扫换了新结果"。
+        $display("");
+        $display("--- W08: rescan at terminal state picks up the new gallery ---");
+        build_gallery(9'd2, 9'd0);
+        do_reset;
+        start_scan;
+        wait_scan_done;
+        chk(gp_count == 5'd2, "W08 first scan sees 2 images");
+        // 换卡: 镜像从 2 张变成 4 张，此时不复位、只按 KEY10
+        build_gallery(9'd4, 9'd0);
+        firq_base = firq_pulses;
+        pulse_rescan;
+        wait_terminal_clear;
+        chk(!gp_done && !gp_fail, "W08 rescan clears the terminal state");
+        wait_scan_done;
+        $display("  W08: done=%b count=%0d err=%0d pulses=%0d",
+                 gp_done, gp_count, gp_err, firq_pulses - firq_base);
+        chk(gp_done && !gp_fail,              "W08 rescan reaches done again");
+        chk(gp_count == 5'd4,                 "W08 count updated to the new 4 images");
+        chk((firq_pulses - firq_base) == 1,   "W08 rescan asserts first_img_req once");
+
+        // ---------------- W09 非终态（扫描进行中）的 rescan 必须被忽略 --------
+        // 为什么必须有这一条: 请求是从按键来的，用户可以在任意时刻按下去。
+        //   如果 G_ARST/G_RUN 期间也响应 rescan，probe_idx 会被反复清 1，
+        //   扫描永远走不到 4 号名，表现为"图库永远只有 1 张"——很难在现场查。
+        $display("");
+        $display("--- W09: rescan during scan is ignored ---");
+        build_gallery(9'd3, 9'd0);
+        do_reset;
+        start_scan;
+        // 在扫描尚未结束时就按 KEY10
+        repeat (6) @(negedge clk);
+        chk(!gp_done && !gp_fail, "W09 scan still running before the keypress");
+        pulse_rescan;
+        wait_scan_done;
+        $display("  W09: done=%b count=%0d", gp_done, gp_count);
+        chk(gp_done && !gp_fail, "W09 scan completes despite mid-scan rescan");
+        chk(gp_count == 5'd3,    "W09 mid-scan rescan did not truncate the count");
+
+        // ---------------- W10 失败终态下的 rescan（拔卡后插回）--------------
+        // 现场场景: 卡接触不良 → 扫描失败 → 用户重新插卡 → 按 KEY10 恢复。
+        // 这条验证"失败态也能被 rescan 恢复"，而不只是成功态。
+        $display("");
+        $display("--- W10: rescan recovers from a failed scan ---");
+        build_gallery(9'd3, 9'd0);
+        do_reset;
+        err_inject = 1'b1;
+        start_scan;
+        wait_scan_done;
+        err_inject = 1'b0;
+        chk(gp_fail && !gp_done,  "W10 first scan fails as injected");
+        firq_base = firq_pulses;
+        pulse_rescan;
+        wait_terminal_clear;
+        chk(!gp_done && !gp_fail, "W10 rescan clears the failed state");
+        wait_scan_done;
+        $display("  W10: done=%b fail=%b count=%0d err=%0d pulses=%0d",
+                 gp_done, gp_fail, gp_count, gp_err, firq_pulses - firq_base);
+        chk(gp_done && !gp_fail,              "W10 rescan succeeds after the card recovers");
+        chk(gp_count == 5'd3,                 "W10 count restored to 3");
+        chk(gp_err == 4'd0,                   "W10 stale error code cleared by rescan");
+        chk((firq_pulses - firq_base) == 1,   "W10 recovery rescan asserts first_img_req once");
 
         // ---------------- 收尾 ----------------
         $display("");

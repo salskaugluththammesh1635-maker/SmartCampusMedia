@@ -252,7 +252,8 @@ module image_player_readback_diag #(
 	end
 
 	wire rd_req, rd_ack, rd_valid, rd_idle, rd_restart, rd_restart_done;
-	wire [20:0] rd_base;
+	wire [20:0] rd_base; // 单帧诊断工程固定第 0 帧；pix_reader 的基址已改为输入端口
+	assign rd_base = 21'd0;
 	wire [31:0] rd_data, sdr_rd_dout;
 	wire sdr_rd_en;
 	framebuf_arbiter #(.WR_ADDR_FROM_FIFO(1), .FRAME_WORDS(FRAME_WORDS)) u_arb (

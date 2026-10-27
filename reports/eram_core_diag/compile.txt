@@ -1,0 +1,2 @@
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_wrrd.enc.v(83): in protected region
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(212): Illegal concatenation of an unsized constant.

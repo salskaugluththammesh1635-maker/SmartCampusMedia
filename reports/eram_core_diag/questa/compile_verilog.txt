@@ -1,0 +1,29 @@
+Model Technology ModelSim SE-64 vlog 2022.1 Compiler 2022.01 Jan 29 2022
+** Warning: (vlog-8891) All optimizations are disabled because the -novopt option is in effect. This will cause your simulation to run very slowly. If you are using this switch to preserve visibility for Debug or PLI features, please see the User's Manual section on Preserving Object Visibility with vopt. -novopt option is now deprecated and will be removed in future releases.
+Start time: 12:08:29 on Oct 20,2026
+vlog -mfcu -permissive "+define+SIMULATION" D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/global_def.v D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_wrrd.enc.v D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/IS42s32200.v D:/FPGA_Compelate/SmartCampusMedia/rtl/storage/sdram_ctrl_wrap.v 
+** Warning (downgraded): D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_wrrd.enc.v(3): (vlog-13298) System Verilog time units may not be used in Verilog.
+** Warning (downgraded): D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_wrrd.enc.v(3): (vlog-13298) System Verilog time units may not be used in Verilog.
+** Warning: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_wrrd.enc.v(77): (vlog-2121) Illegal concatenation of an unsized constant. Will treat it as a 32-bit value.
+** Warning (downgraded): D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(2): (vlog-13298) System Verilog time units may not be used in Verilog.
+** Warning (downgraded): D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(2): (vlog-13298) System Verilog time units may not be used in Verilog.
+-- Compiling module sdr_init_ref
+** Warning: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(206): (vlog-2121) Illegal concatenation of an unsized constant. Will treat it as a 32-bit value.
+** Warning: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(206): (vlog-2121) Illegal concatenation of an unsized constant. Will treat it as a 32-bit value.
+** Warning (downgraded): D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(2): (vlog-13298) System Verilog time units may not be used in Verilog.
+** Warning (downgraded): D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(2): (vlog-13298) System Verilog time units may not be used in Verilog.
+-- Compiling module sdr_as_ram
+** Warning (downgraded): D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/IS42s32200.v(12): (vlog-13298) System Verilog time units may not be used in Verilog.
+** Warning (downgraded): D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/IS42s32200.v(12): (vlog-13298) System Verilog time units may not be used in Verilog.
+-- Compiling module IS42s32200
+** Warning (downgraded): D:/FPGA_Compelate/SmartCampusMedia/rtl/storage/sdram_ctrl_wrap.v(72): (vlog-13298) System Verilog time units may not be used in Verilog.
+** Warning (downgraded): D:/FPGA_Compelate/SmartCampusMedia/rtl/storage/sdram_ctrl_wrap.v(72): (vlog-13298) System Verilog time units may not be used in Verilog.
+-- Compiling module sdram_ctrl_wrap
+-- Compiling module sdram_behavior_model
+
+Top level modules:
+	IS42s32200
+	sdram_ctrl_wrap
+	sdram_behavior_model
+End time: 12:08:30 on Oct 20,2026, Elapsed time: 0:00:01
+Errors: 0, Warnings: 14

@@ -61,6 +61,8 @@ module framebuf_arbiter #(
 	reg rd_grp_active;                // 读组尚未走完
 	reg rd_rst_pend;                  // 已捕获重启请求
 	reg [ADDR_WIDTH-1:0] rd_base_hold; // 已捕获重启目标
+	reg [ADDR_WIDTH-1:0] rd_frame_base; // 运行期读帧首，随重启基址更新
+	reg [ADDR_WIDTH-1:0] rd_frame_last; // 运行期读帧末组首，随重启基址预计算
 	reg [4:0] rd_outstanding;          // 精确在飞数，最多 31
 	reg [15:0] rd_wait_cnt;            // 最近回包后的无进展计数
 	reg rd_fault;                     // 不可安全自动恢复的读故障
@@ -180,12 +182,17 @@ module framebuf_arbiter #(
 			rd_grp_active <= 1'b0;
 			rd_rst_pend <= 1'b0;
 			rd_base_hold <= FRAME_BASE;
+			rd_frame_base <= FRAME_BASE;
+			rd_frame_last <= FRAME_LAST;
 			rd_restart_done <= 1'b0;
 		end else begin
 			rd_restart_done <= 1'b0;
 			if (rd_restart) begin
 				rd_rst_pend <= 1'b1;
 				rd_base_hold <= rd_base;
+				// 读基址可在双缓冲下指向任意帧首，回绕边界必须随之预计算。
+				rd_frame_base <= rd_base;
+				rd_frame_last <= rd_base + FRAME_WORDS - 4;
 			end
 			if (restart_apply) begin
 				rd_addr <= rd_base_hold;
@@ -196,7 +203,7 @@ module framebuf_arbiter #(
 				rd_grp_active <= !rd_last_beat;
 				if (rd_last_beat) begin
 					rd_beat <= 2'd0;
-					if (rd_addr >= FRAME_LAST) rd_addr <= FRAME_BASE;
+					if (rd_addr >= rd_frame_last) rd_addr <= rd_frame_base;
 					else rd_addr <= rd_addr + 4;
 				end else rd_beat <= rd_beat + 2'd1;
 			end

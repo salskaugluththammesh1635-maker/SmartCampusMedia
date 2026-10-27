@@ -1,0 +1,595 @@
+# Verilog Review
+
+- delivery_ready: False
+- repair_required: True
+- rerun_required_after_repair: True
+
+## Findings
+- `VG001` [error] File must start with `timescale 1ns / 1ps`.
+- `VG007` [error] Standard bilingual header with English/Chinese sections is required.
+- `VG007` [error] English header is missing required field(s): Company, Engineer, Create Date, Design Name, Module Name, Description, Simulations, Referrences, Dependencies, Version, Revision Date, History
+- `VG007` [error] Chinese header is missing required field(s): 版权归属, 开发人员, 创建日期, 设计名称, 模块名称, 模块说明, 仿真工程, 参考资料, 依赖文件, 当前版本, 修订日期, 修订历史
+- `VG068` [error] Header Description/Simulations fields must use the fixed bilingual path contract (`description/testbench` in English and `Description/TestBench` in Chinese).
+- `VG007` [error] Header history must contain at least one dated record with a Vx.y version.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG025` [error] Control statements must use explicit begin/end blocks.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG025` [error] Control statements must use explicit begin/end blocks.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG025` [error] Control statements must use explicit begin/end blocks.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG025` [error] Control statements must use explicit begin/end blocks.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG025` [error] Control statements must use explicit begin/end blocks.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG025` [error] Control statements must use explicit begin/end blocks.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG004` [error] RTL indentation must use Tab characters, not space indentation.
+- `VG006` [error] Generated delivery should normally contain one synthesizable RTL module per file.
+- `VG009` [error] Module `sdram_ctrl_wrap` port list should use Chinese group comments such as 全局信号, 用户接口, or protocol 接口 groups.
+- `VG010` [error] input port `clk` must use `i_` prefix.
+- `VG010` [error] input port `clk_sft` must use `i_` prefix.
+- `VG010` [error] input port `rst_n` must use `i_` prefix.
+- `VG010` [error] output port `init_done` must use `o_` prefix.
+- `VG010` [error] output port `ref_vld` must use `o_` prefix.
+- `VG010` [error] output port `busy` must use `o_` prefix.
+- `VG010` [error] input port `app_wr_en` must use `i_` prefix.
+- `VG010` [error] input port `app_wr_addr` must use `i_` prefix.
+- `VG010` [error] input port `app_wr_din` must use `i_` prefix.
+- `VG010` [error] input port `app_wr_dm` must use `i_` prefix.
+- `VG010` [error] input port `app_rd_en` must use `i_` prefix.
+- `VG010` [error] input port `app_rd_addr` must use `i_` prefix.
+- `VG010` [error] output port `sdr_rd_en` must use `o_` prefix.
+- `VG010` [error] output port `sdr_rd_dout` must use `o_` prefix.
+- `VG010` [error] output port `sdram_clk` must use `o_` prefix.
+- `VG010` [error] output port `sdram_cke` must use `o_` prefix.
+- `VG010` [error] output port `sdram_cs_n` must use `o_` prefix.
+- `VG010` [error] output port `sdram_ras_n` must use `o_` prefix.
+- `VG010` [error] output port `sdram_cas_n` must use `o_` prefix.
+- `VG010` [error] output port `sdram_we_n` must use `o_` prefix.
+- `VG010` [error] output port `sdram_ba` must use `o_` prefix.
+- `VG010` [error] output port `sdram_addr` must use `o_` prefix.
+- `VG010` [error] output port `sdram_dm` must use `o_` prefix.
+- `VG010` [error] inout port `sdram_dq` must use `io_` prefix.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Top-level outputs must be driven through internal `_o` signals and assign bridges, not output reg ports.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Top-level outputs must be driven through internal `_o` signals and assign bridges, not output reg ports.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG012` [error] Module parameter `CLK_FREQ_HZ` must use `C_` + uppercase naming.
+- `VG012` [error] Module parameter `SIM_MEM_WORDS` must use `C_` + uppercase naming.
+- `VG012` [error] Module parameter `REFRESH_PERIOD` must use `C_` + uppercase naming.
+- `VG030` [error] Inline wire initialization is forbidden; declare wire and use a separate assign.
+- `VG014` [warning] Output port `init_done` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [warning] Output port `ref_vld` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [warning] Output port `sdr_rd_dout` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [warning] Output port `sdr_rd_en` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [warning] Output port `sdram_addr` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [warning] Output port `sdram_ba` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [warning] Output port `sdram_cas_n` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [warning] Output port `sdram_clk` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [warning] Output port `sdram_dm` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [warning] Output port `sdram_ras_n` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [warning] Output port `sdram_we_n` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG031` [error] Non-trivial RTL must use fixed Erie region banners.
+- `VG009` [error] Module `sdram_behavior_model` port list should use Chinese group comments such as 全局信号, 用户接口, or protocol 接口 groups.
+- `VG010` [error] input port `clk` must use `i_` prefix.
+- `VG010` [error] input port `rst_n` must use `i_` prefix.
+- `VG010` [error] output port `init_done` must use `o_` prefix.
+- `VG010` [error] output port `ref_vld` must use `o_` prefix.
+- `VG010` [error] input port `app_wr_en` must use `i_` prefix.
+- `VG010` [error] input port `app_wr_addr` must use `i_` prefix.
+- `VG010` [error] input port `app_wr_din` must use `i_` prefix.
+- `VG010` [error] input port `app_wr_dm` must use `i_` prefix.
+- `VG010` [error] input port `app_rd_en` must use `i_` prefix.
+- `VG010` [error] input port `app_rd_addr` must use `i_` prefix.
+- `VG010` [error] output port `sdr_rd_en` must use `o_` prefix.
+- `VG010` [error] output port `sdr_rd_dout` must use `o_` prefix.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Top-level outputs must be driven through internal `_o` signals and assign bridges, not output reg ports.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Top-level outputs must be driven through internal `_o` signals and assign bridges, not output reg ports.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG011` [error] Port declarations must not include wire/reg/logic in final ANSI header style.
+- `VG012` [error] Module parameter `SIM_MEM_WORDS` must use `C_` + uppercase naming.
+- `VG012` [error] Module parameter `REFRESH_PERIOD` must use `C_` + uppercase naming.
+- `VG012` [error] Module parameter `INIT_CYCLES` must use `C_` + uppercase naming.
+- `VG012` [error] Module parameter `REF_VLD_CYCLES` must use `C_` + uppercase naming.
+- `VG012` [error] Module parameter `RD_LATENCY` must use `C_` + uppercase naming.
+- `VG013` [error] Register `mem` should use reg_/cnt_/state_/flag_/enc_/dec_ prefix or `_o` output suffix.
+- `VG013` [error] Register `init_cnt` should use reg_/cnt_/state_/flag_/enc_/dec_ prefix or `_o` output suffix.
+- `VG015` [error] Internal non-array reg declaration `init_cnt` must be explicitly initialized inside the module; when backfilling a missing initializer, use exact ` = 0;`.
+- `VG013` [error] Counter-like signal `init_cnt` should use `cnt_` prefix.
+- `VG013` [error] Register `ref_cnt` should use reg_/cnt_/state_/flag_/enc_/dec_ prefix or `_o` output suffix.
+- `VG015` [error] Internal non-array reg declaration `ref_cnt` must be explicitly initialized inside the module; when backfilling a missing initializer, use exact ` = 0;`.
+- `VG013` [error] Counter-like signal `ref_cnt` should use `cnt_` prefix.
+- `VG013` [error] Register `ref_active` should use reg_/cnt_/state_/flag_/enc_/dec_ prefix or `_o` output suffix.
+- `VG015` [error] Internal non-array reg declaration `ref_active` must be explicitly initialized inside the module; when backfilling a missing initializer, use exact ` = 0;`.
+- `VG013` [error] Register `rd_lat_data` should use reg_/cnt_/state_/flag_/enc_/dec_ prefix or `_o` output suffix.
+- `VG013` [error] Register `rd_lat_vld` should use reg_/cnt_/state_/flag_/enc_/dec_ prefix or `_o` output suffix.
+- `VG013` [error] Register `app_rd_addr_d` should use reg_/cnt_/state_/flag_/enc_/dec_ prefix or `_o` output suffix.
+- `VG015` [error] Internal non-array reg declaration `app_rd_addr_d` must be explicitly initialized inside the module; when backfilling a missing initializer, use exact ` = 0;`.
+- `VG013` [error] Register `addr_d_vld` should use reg_/cnt_/state_/flag_/enc_/dec_ prefix or `_o` output suffix.
+- `VG015` [error] Internal non-array reg declaration `addr_d_vld` must be explicitly initialized inside the module; when backfilling a missing initializer, use exact ` = 0;`.
+- `VG013` [error] Register `burst_cnt` should use reg_/cnt_/state_/flag_/enc_/dec_ prefix or `_o` output suffix.
+- `VG015` [error] Internal non-array reg declaration `burst_cnt` must be explicitly initialized inside the module; when backfilling a missing initializer, use exact ` = 0;`.
+- `VG013` [error] Counter-like signal `burst_cnt` should use `cnt_` prefix.
+- `VG030` [error] Inline wire initialization is forbidden; declare wire and use a separate assign.
+- `VG014` [error] Output port `init_done` is assigned in an always block; drive an internal `_o` signal and bridge with assign.
+- `VG014` [warning] Output port `init_done` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG014` [error] Output port `ref_vld` is assigned in an always block; drive an internal `_o` signal and bridge with assign.
+- `VG014` [warning] Output port `ref_vld` has no explicit assign bridge detected; confirm direct output assignment is intentional.
+- `VG020` [error] Always block `always@(posedge clk or negedge rst_n)` assigns multiple targets ['addr_d_vld', 'app_rd_addr_d', 'burst_cnt', 'init_cnt', 'init_done', 'mem', 'rd_lat_data', 'rd_lat_vld', 'ref_active', 'ref_cnt', 'ref_vld']; split to one target per always.
+- `VG022` [error] Sequential always `always@(posedge clk or negedge rst_n)` must use nonblocking assignments only.
+- `VG020` [error] Always block `always@(posedge clk or negedge rst_n)` has complex lvalues and multiple targets; formatter must not guess a split.
+- `VG031` [error] Non-trivial RTL must use fixed Erie region banners.
+- `VG041` [warning] Comment for port `clk` should be Chinese-first and semantic, not only fallback text.
+- `VG040` [error] signal `sdr_rst` should have a same-line semantic comment.
+- `VG040` [error] assign `busy` should have a same-line semantic comment.
+- `VG040` [error] assign `sdram_cke` should have a same-line semantic comment.
+- `VG040` [error] assign `sdram_cs_n` should have a same-line semantic comment.
+- `VG066` [error] Comment for port `app_wr_addr` repeats or closely reuses comment from port `app_wr_en`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `app_wr_din` repeats or closely reuses comment from port `app_wr_en`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `app_wr_dm` repeats or closely reuses comment from port `app_wr_en`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `app_rd_en` repeats or closely reuses comment from port `app_wr_en`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `app_rd_addr` repeats or closely reuses comment from port `app_wr_en`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdr_rd_en` repeats or closely reuses comment from port `app_wr_en`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdr_rd_dout` repeats or closely reuses comment from port `app_wr_en`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdram_cke` repeats or closely reuses comment from port `sdram_clk`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdram_cs_n` repeats or closely reuses comment from port `sdram_clk`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdram_ras_n` repeats or closely reuses comment from port `sdram_clk`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdram_cas_n` repeats or closely reuses comment from port `sdram_clk`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdram_we_n` repeats or closely reuses comment from port `sdram_clk`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdram_ba` repeats or closely reuses comment from port `sdram_clk`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdram_addr` repeats or closely reuses comment from port `sdram_clk`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdram_dm` repeats or closely reuses comment from port `sdram_clk`; write entity-specific RTL intent.
+- `VG066` [error] Comment for port `sdram_dq` repeats or closely reuses comment from port `sdram_clk`; write entity-specific RTL intent.
+- `VG040` [error] parameter `SIM_MEM_WORDS` should have a same-line semantic comment.
+- `VG040` [error] parameter `REFRESH_PERIOD` should have a same-line semantic comment.
+- `VG040` [error] parameter `INIT_CYCLES` should have a same-line semantic comment.
+- `VG040` [error] parameter `REF_VLD_CYCLES` should have a same-line semantic comment.
+- `VG040` [error] parameter `RD_LATENCY` should have a same-line semantic comment.
+- `VG040` [error] localparam `MEM_AW` should have a same-line semantic comment.
+- `VG040` [error] port `clk` should have a same-line semantic comment.
+- `VG040` [error] port `rst_n` should have a same-line semantic comment.
+- `VG040` [error] port `init_done` should have a same-line semantic comment.
+- `VG040` [error] port `ref_vld` should have a same-line semantic comment.
+- `VG040` [error] port `app_wr_en` should have a same-line semantic comment.
+- `VG040` [error] port `app_wr_addr` should have a same-line semantic comment.
+- `VG040` [error] port `app_wr_din` should have a same-line semantic comment.
+- `VG040` [error] port `app_wr_dm` should have a same-line semantic comment.
+- `VG040` [error] port `app_rd_en` should have a same-line semantic comment.
+- `VG040` [error] port `app_rd_addr` should have a same-line semantic comment.
+- `VG040` [error] port `sdr_rd_en` should have a same-line semantic comment.
+- `VG040` [error] port `sdr_rd_dout` should have a same-line semantic comment.
+- `VG040` [error] signal `mem` should have a same-line semantic comment.
+- `VG040` [error] signal `init_cnt` should have a same-line semantic comment.
+- `VG040` [error] signal `ref_cnt` should have a same-line semantic comment.
+- `VG040` [error] signal `ref_active` should have a same-line semantic comment.
+- `VG040` [error] signal `rd_lat_data` should have a same-line semantic comment.
+- `VG040` [error] signal `rd_lat_vld` should have a same-line semantic comment.
+- `VG040` [error] signal `rd_grp_new` should have a same-line semantic comment.
+- `VG040` [error] signal `rd_beat_idx` should have a same-line semantic comment.
+- `VG040` [error] signal `rd_eff_addr` should have a same-line semantic comment.
+- `VG040` [error] signal `i` should have a same-line semantic comment.
+- `VG040` [error] assign `rd_grp_new` should have a same-line semantic comment.
+- `VG040` [error] assign `rd_beat_idx` should have a same-line semantic comment.
+- `VG040` [error] assign `rd_eff_addr` should have a same-line semantic comment.
+- `VG040` [error] assign `sdr_rd_en` should have a same-line semantic comment.
+- `VG040` [error] assign `sdr_rd_dout` should have a same-line semantic comment.
+- `VG040` [error] Always block `always@(posedge clk or negedge rst_n)` should have a nearby leading comment explaining behavior.
+- `VG062` [error] process assignment `init_done` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_vld` should have a same-line semantic comment.
+- `VG062` [error] process assignment `init_cnt` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_cnt` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_active` should have a same-line semantic comment.
+- `VG062` [error] process assignment `app_rd_addr_d` should have a same-line semantic comment.
+- `VG062` [error] process assignment `addr_d_vld` should have a same-line semantic comment.
+- `VG062` [error] process assignment `burst_cnt` should have a same-line semantic comment.
+- `VG062` [error] process assignment `rd_lat_data[i]` should have a same-line semantic comment.
+- `VG062` [error] process assignment `rd_lat_vld[i]` should have a same-line semantic comment.
+- `VG062` [error] process assignment `init_cnt` should have a same-line semantic comment.
+- `VG062` [error] process assignment `init_done` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_cnt` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_active` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_vld` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_cnt` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_active` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_vld` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_cnt` should have a same-line semantic comment.
+- `VG062` [error] process assignment `ref_cnt` should have a same-line semantic comment.
+- `VG062` [error] process assignment `rd_lat_data[i]` should have a same-line semantic comment.
+- `VG062` [error] process assignment `rd_lat_vld[i]` should have a same-line semantic comment.
+- `VG062` [error] process assignment `rd_lat_data[RD_LATENCY-1]` should have a same-line semantic comment.
+- `VG062` [error] process assignment `rd_lat_vld[RD_LATENCY-1]` should have a same-line semantic comment.
+- `VG062` [error] process assignment `app_rd_addr_d` should have a same-line semantic comment.
+- `VG062` [error] process assignment `addr_d_vld` should have a same-line semantic comment.
+- `VG062` [error] process assignment `rd_lat_vld[RD_LATENCY-1]` should have a same-line semantic comment.
+- `VG042` [error] Comment coverage is too low for generated RTL (6.74%); add semantic comments near declarations, assigns, always blocks, FSM, and instances.
+- `VG085` [BLOCKER] 存在无法静态确定的表达式位宽。
+- `VG091` [WARNING] 数组索引应使用简单信号，避免直接嵌入表达式。
+- `VG091` [WARNING] 数组索引应使用简单信号，避免直接嵌入表达式。
+- `VG091` [WARNING] 数组索引应使用简单信号，避免直接嵌入表达式。
+- `VG091` [WARNING] 数组索引应使用简单信号，避免直接嵌入表达式。
+- `VG091` [WARNING] 数组索引应使用简单信号，避免直接嵌入表达式。
+- `VG103` [BLOCKER] 存在无法静态识别的过程赋值左值。
+- `VG110` [BLOCKER] 同一时序块中存在未统一复位的触发器目标。
+- `VG113` [BLOCKER] 同一时序块中存在未统一复位的触发器目标。
+- `VG122` [BLOCKER] 算术结果位宽超过赋值目标位宽。
+- `VG122` [BLOCKER] 算术结果位宽超过赋值目标位宽。
+- `VG122` [BLOCKER] 算术结果位宽超过赋值目标位宽。
+- `VG125` [BLOCKER] 字面量声明为 16 位，但实际值只需要 1 位。
+- `VG125` [BLOCKER] 字面量声明为 16 位，但实际值只需要 1 位。
+- `VG125` [BLOCKER] 字面量声明为 16 位，但实际值只需要 1 位。
+- `VG125` [BLOCKER] 字面量声明为 2 位，但实际值只需要 1 位。
+- `VG125` [BLOCKER] 字面量声明为 2 位，但实际值只需要 1 位。
+- `VG129` [BLOCKER] 时序逻辑必须使用非阻塞赋值。
+- `VG129` [BLOCKER] 时序逻辑必须使用非阻塞赋值。
+- `VG129` [BLOCKER] 时序逻辑必须使用非阻塞赋值。
+- `VG129` [BLOCKER] 时序逻辑必须使用非阻塞赋值。
+- `VG129` [BLOCKER] 时序逻辑必须使用非阻塞赋值。
+- `VG137` [BLOCKER] 存在无法静态确定的表达式位宽。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG138` [WARNING] 常量未显式声明位宽和进制。
+- `VG142` [BLOCKER] wire 声明包含内联初始化赋值。
+- `VG145` [BLOCKER] 组合逻辑完整依赖锥最多允许三个源信号，超限逻辑必须由时序 reg 隔断。
+- `VG145` [BLOCKER] 组合逻辑完整依赖锥最多允许三个源信号，超限逻辑必须由时序 reg 隔断。
+- `VG146` [BLOCKER] 组合逻辑操作锥超过强预算；优先加入流水寄存器、注册标志或预译码，并将复杂 FSM 条件拆为多周期时序步骤。这些修改可能改变可见延迟；若协议延迟不可变化，必须阻断并进行人工架构审查。
+- `VG146` [BLOCKER] 当前目标的组合操作锥包含 formatter 无法确定的结构，禁止按低计数放行。
+- `VG146` [BLOCKER] 当前目标的组合操作锥包含 formatter 无法确定的结构，禁止按低计数放行。
+- `VG146` [BLOCKER] 当前目标的组合操作锥包含 formatter 无法确定的结构，禁止按低计数放行。
+- `VG146` [BLOCKER] 当前目标的组合操作锥包含 formatter 无法确定的结构，禁止按低计数放行。
+- `VG146` [BLOCKER] 组合逻辑操作锥超过强预算；优先加入流水寄存器、注册标志或预译码，并将复杂 FSM 条件拆为多周期时序步骤。这些修改可能改变可见延迟；若协议延迟不可变化，必须阻断并进行人工架构审查。
+- `VG146` [BLOCKER] 当前目标的组合操作锥包含 formatter 无法确定的结构，禁止按低计数放行。
+- `VG147` [BLOCKER] 当前目标的组合操作锥包含 formatter 无法确定的结构，禁止按低计数放行。
+- `VG151` [BLOCKER] 参数默认值无法在受限环境中确定。
+- `VG151` [BLOCKER] 公开 parameter 没有适用的参数合同。
+- `VG151` [BLOCKER] 公开 parameter 没有适用的参数合同。
+- `VG151` [BLOCKER] 公开 parameter 没有适用的参数合同。
+- `VG151` [BLOCKER] 参数默认值无法在受限环境中确定。
+- `VG151` [BLOCKER] 公开 parameter 没有适用的参数合同。
+- `VG151` [BLOCKER] 公开 parameter 没有适用的参数合同。
+- `VG151` [BLOCKER] 公开 parameter 没有适用的参数合同。
+- `VG151` [BLOCKER] 公开 parameter 没有适用的参数合同。
+- `VG151` [BLOCKER] 公开 parameter 没有适用的参数合同。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 输出端口没有可确认的驱动源。
+- `VG153` [BLOCKER] 信号被读取但没有可确认的驱动源。
+- `VG153` [BLOCKER] 信号被读取但没有可确认的驱动源。
+- `VG153` [BLOCKER] 信号被读取但没有可确认的驱动源。
+- `VG153` [BLOCKER] 信号被读取但没有可确认的驱动源。
+- `VG154` [WARNING] 声明未参与当前模块的可观察逻辑。
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.
+- `COMMENT_COMMENT_PLACEMENT` [error] Verilog code line must use a same-line or adjacent explanatory comment in the requested language.

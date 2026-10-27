@@ -79,6 +79,8 @@ module sdram_pll (
     wire clk0_out;          // C0 经全局缓冲后的 12.5MHz（仅反馈用，不对外）
     wire clk1_raw;          // C1 原始输出（150MHz 0°，未走 BUFG）
     wire clk2_raw;          // C2 原始输出（150MHz 180°，未走 BUFG）
+    wire clk1_buf;          // C1 经 BUFG 后的 150MHz 0°（= 全设计 SDRAM 主时钟）
+    wire clk2_buf;          // C2 经 BUFG 后的 150MHz 180°（仅送 SDRAM_CLK 引脚）
 
     // -------------------------------------------------------------------------
     // [0] 悬空端口占位
@@ -104,13 +106,36 @@ module sdram_pll (
 
     // -------------------------------------------------------------------------
     // [2] 150MHz 0° / 180° 的全局缓冲
-    //     与官方 clk_pll.v 的差异说明：官方直接把 clk1_out/clk2_out 从 PLL
-    //     原语引出到顶层端口，由 TD 在布局时自动插入全局缓冲。
-    //     本工程同样直接引出（见下方 assign），保持与官方一致。
-    //     若综合后时序报告显示这两个时钟未上 GCLK，才需要手工加 BUFG。
+    //     【2026-10-27 修复：必须手工插入 BUFG，不能依赖工具自动推断】
+    //     修复前：C1/C2 直接从 PLL 原语 `assign` 到顶层端口，依赖 TD 布局时
+    //             自动插入全局缓冲。实测布线后：
+    //               - 只有 C0（经 bufg_feedback）落到了 GCLK；
+    //               - C1 走的是普通布线网络，fanout 844、网线延迟 2.410ns；
+    //               - C2 更糟，fanout=1 且被判定为 local routing
+    //                 （TD 报 PHY-5079 CRITICAL-WARNING）。
+    //             直接后果就是 reports/s6_integration/timing.txt 里的
+    //             clkc[1]→clkc[2] SWNS -3.668ns、clkc[2]→clkc[1] SWNS -7.232ns：
+    //             时钟树延迟（PAD 3.8ns + 走线 2.3~2.6ns）被完整算进了数据通路，
+    //             而这两条路径的数据段本身只有 0 级逻辑（Logic Level 0/1）。
+    //     修复后：C1/C2 各自经 EG_LOGIC_BUFG 落到 GCLK，
+    //             ① 时钟树延迟由全局网络统一承担，不再计入数据通路；
+    //             ② 两颗时钟的 skew 从 0.480ns 收敛到 GCLK 量级（<0.1ns）；
+    //             ③ PHY-5079 的 local routing 告警随之消失。
+    //     注：C0 已经走 bufg_feedback，**不能**再加第二个 BUFG
+    //         （一个 PLL 通道只能进一个 BUFG，否则反馈路径与时钟路径不一致）。
     // -------------------------------------------------------------------------
-    assign sdram_clk     = clk1_raw;   // C1 = 150MHz 0°
-    assign sdram_clk_sft = clk2_raw;   // C2 = 150MHz 180°
+    EG_LOGIC_BUFG bufg_clk1 (
+        .i (clk1_raw),
+        .o (clk1_buf)
+    );
+
+    EG_LOGIC_BUFG bufg_clk2 (
+        .i (clk2_raw),
+        .o (clk2_buf)
+    );
+
+    assign sdram_clk     = clk1_buf;   // C1 = 150MHz 0°（经 GCLK）
+    assign sdram_clk_sft = clk2_buf;   // C2 = 150MHz 180°（经 GCLK）
 
     // -------------------------------------------------------------------------
     // [3] PLL 本体

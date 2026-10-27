@@ -1,6 +1,12 @@
 # 开发阶段进度表（progress）
 
-> **2026-10-21 最新状态**：`pix_reader` / `framebuf_arbiter` / `sdram_ctrl_wrap` 的读取链路按官方四拍契约重写，旧 TB 的极性错误与"地址变化即组首"假设一并纠正；三套存储 TB + 全尺寸 640×480 + image_player 全链 + 前端 8 个 TB 全部本轮实测通过（详见文末 [S6-2 章节](#s6-2读取链路的契约缺陷修复与可复现回归2026-10-21)）。**仍未上板，SiP 时序违例未变，严格交付门禁未通过**。
+> **2026-10-27 最新状态（S11）**：修掉 `sdram_pll` 的真缺陷——C1（150 MHz 0°）与 C2（150 MHz 180°）输出**没有走全局时钟网**，只给 C0 补了 BUFG。给 C1/C2 各补一级 `EG_LOGIC_BUFG` 后，`clkc[1]` 自身域 setup 余量 **+0.240 → +0.326 ns**（Fmax 155.618 → **157.729 MHz**），`PHY-5079`（时钟走 local routing）与 `USR-6135`（PLL 反馈走 local network）两条 CRITICAL-WARNING **归零**，`#gclk` 2→4。**150 MHz 逻辑本身已经收敛（2590 端点 0 违例）**，剩下的 WNS −7.232 ns 全部属于 SiP 接口组，已定性为 TD 硬核模型的建模口径问题（半周期预算 3.333 ns < hard-ip 固定惩罚 5.000 ns，通路为空 slack 也必负，`Logic Level=0`、`net 延迟 0.000 ns`）。**同时复验了历史结论**：三组对照实验证明"拆异步组"得到的 +0.275 ns 是假绿，0°/180° 必须留在同一时钟组。**仍未上板**（详见文末 [S11 章节](#s11sdram-时钟网络修复与时序收敛定性2026-10-27)）。
+>
+> **2026-10-27 状态（S10）**：`image_player` 完成**双缓冲无缝切换**，`TASKS.md` A6 的缺口「单缓冲，切图期间显示测试图」闭合。装载写后台帧、前台继续读旧帧，写完整后等垂直消隐换帧首；重载期间屏幕一帧不断，装载失败保留上一帧。改造面仅 3 个 RTL（`pix_reader` 的 `rd_base` 改 input、`framebuf_arbiter` 读侧回绕边界改为运行期量、`image_player` 加双缓冲状态与复位解耦），**顶层与 `player_ctrl` 零改动**。图像链三档全绿（真实 640×480 断言 1,228,812 条，`overlap_cycles=2085846`、`starve_cycles=0`），存储回归 4 套全绿，lint E0/E1/E2 全 0（详见文末 [S10 章节](#s10双缓冲无缝切换2026-10-27)）。
+>
+> **2026-10-26 状态（S9）**：KEY7～KEY14 八个键全部编号到功能，收拢到唯一译码点 `key_action`，画面侧新增纯组合 `video_overlay`（亮度/反色/九宫格/信息条/音频电平条）。前端回归 **13 个用例全绿**（新增 `key_action` 40 条、`video_overlay` 64 条），lint E0/E1/E2 全 0，`bringup_top` 的两条历史 ModelSim 警告已消除。**八个新键从未上板，未重新综合布线，键盘行序仍未确认**（详见文末 [S9 章节](#s9key7key14-键位分配与画面后处理2026-10-26)）。
+>
+> **2026-10-21 状态**：`pix_reader` / `framebuf_arbiter` / `sdram_ctrl_wrap` 的读取链路按官方四拍契约重写，旧 TB 的极性错误与"地址变化即组首"假设一并纠正；三套存储 TB + 全尺寸 640×480 + image_player 全链 + 前端 8 个 TB 全部本轮实测通过（详见文末 [S6-2 章节](#s6-2读取链路的契约缺陷修复与可复现回归2026-10-21)）。**仍未上板，SiP 时序违例未变，严格交付门禁未通过**。
 >
 > **2026-10-20 状态**：阶段四 S6 全链已经集成到 `dmz_eg4s20_hdmi_top`，完整 640×480 图片和异常恢复均有 ModelSim 自检证据。新增 `image_player`，接入 `pix_reader`、播放控制和第二颗 SDRAM PLL；单缓冲装载期间回落测试图。TD 已可出候选 bit，但 SDRAM 接口与相关 150MHz 路径的时序尚未完成验收，不能标为 S6 上板完成。当前细节、命令及结果见 [S6 集成交接](s6_integration_2026-10-20.md)。
 >
@@ -110,11 +116,11 @@
 | **PLL 时钟设计** | ✅ | `rtl/video/hdmi/hdmi_pll.v`：50MHz → 25MHz 像素 + **125MHz 串化（严格 5 倍）**。参数依据官方 tx_pll.v 结构推导：VCO = 25×40 = 1000MHz，C0=1000/40=25MHz（BUFG 反馈+像素），C2=1000/8=125MHz |
 | **HDMI 顶层** | ✅ | `rtl/top/dmz_eg4s20_hdmi_top.v`：全系统**单一时钟域**（25MHz 像素时钟），含 PLL/复位同步器/键盘/测试图/数码管/LED/蜂鸣器，PLL 锁定指示输出到 LED[4] |
 | **HDMI 约束** | ✅ | `constraints/dmz_eg4s20_hdmi.adc`：35 个 IO，含 HDMI 四对差分 `CLK=P1/D0=N1/D1=P4/D2=J3`（LVDS33） |
-| **TD 工程搭建** | ✅ | `project/hdmi_td.al`（手写工程文件）：8 Verilog + 5 VHDL（含 4 个官方加密核）+ 1 ADC，CompileOrder 按依赖排序 |
+| **TD 工程搭建** | ✅ | `project/hdmi_td.al`（手写工程文件）：**26 Verilog + 5 VHDL（含 4 个官方加密核）+ 1 ADC**，CompileOrder 按依赖排序。**2026-10-25 修复**：此前该文件自提交 `e41315a` 起只列 9 个 Verilog 源，而顶层例化了 12 个彼时缺失的模块（`sdram_pll`、`sdram_ctrl_wrap`、`async_fifo`、`fat32_reader`、`bmp_parser`、`img_loader`、`framebuf_arbiter`、`pix_reader`、`player_ctrl`、`sd_spi_ctrl`、`sd_probe`、`image_player`），elaborate 报 6 条 `HDL-7144` + 6 条 `HDL-8007` 后 exit 4 —— **正式顶层此前根本无法构建**。补全后 elaborate exit 0 |
 | **工程同步机制** | ✅ | `scripts/sync_src.ps1` 升级为**双工程同步**（bringup_td + hdmi_td），带 MD5 增量比对与同步后 lint 双查 |
 | 静态检查 | ✅ | lint 26 文件：E0/E1/E2 全 0；ModelSim 语法检查：新增 2 模块编译通过 |
-| **TD 综合布线（进行中）** | 🔶 | 待用户在 TD 中打开 `hdmi_td.al` 跑 Read Design，验证：①加密核 license ②VHDL/Verilog 混合编译 ③PLL 配置可综合 |
-| 上板点亮 | ⬜ | 显示器稳定锁定 ≥30 分钟无异常 |
+| **TD 综合布线** | ✅ | 2026-10-25 修复 `.al` 后跑通完整 `flow_s6_bit.tcl`：`S6_PASS-optimize_rtl` → `optimize_gate` → `place` → `route` → `S6_BIT_FLOW_DONE`。**注意：流程跑通不等于时序收敛**，`S6_TIMING_FAILED: setup=-7.232 ns hold=0.023 ns`，脚本 exit 3，bit 仅作候选 |
+| 上板点亮 | ⬜ | 显示器稳定锁定 ≥30 分钟无异常。**正式顶层至今无上板记录**（唯一上板证据来自独立诊断工程 `image_dm_fix`） |
 | 记录分辨率与时序参数 | ⬜ | reports/hdmi_timing_report.md |
 
 **阶段出口准则**：显示器稳定锁定 ≥30 分钟无异常。
@@ -148,7 +154,7 @@
 | 任务 | 状态 | 交付物 |
 |---|---|---|
 | 多图片切换（上一张/下一张） | 🔶 | `gallery_probe` 图库自动扫描 + `player_ctrl` 切图逻辑已仿真通过；切图的实际装载尚未上板 |
-| 自动轮播 + 播放/暂停 | 🔶 | `player_ctrl` 轮播定时器与暂停逻辑已仿真通过（tb_player_ctrl 85 条 PASS），未上板 |
+| 自动轮播 + 播放/暂停 | 🔶 | `player_ctrl` 轮播定时器与暂停逻辑已仿真通过（tb_player_ctrl 94 条 PASS），且轮播间隔可经 KEY9 运行时缩放；未上板 |
 | 基础音频输出 | ⬜ | rtl/audio, audio_test |
 | 音视频联动（页面→音频关联） | ⬜ | 联动记录 |
 | 错误状态提示（缺图/格式错） | 🔶 | 图库扫描失败/装载失败已映射到 LED[7] 与数码管第 4 位（1=SD、2=装载、3=图库）；未上板 |
@@ -158,17 +164,21 @@
 
 > **图库自动扫描已补齐（2026-10-25，S7 前置切片）**：原顶层用编译参数 `GALLERY_COUNT=1` 写死张数，换卡必须重新综合。新增 `rtl/storage/gallery_probe.v`，在 `sd_ok` 上升沿后从 `IMG001.BMP` 起逐个探测根目录，遇第一个缺失即停（err=4 视为正常结束），上限 31 张，输出 `count` 给 `player_ctrl.gallery_count`、`done` 给 `gallery_valid`，并在完成时发 1 拍 `first_img_req` 装载首图（满足 `player_ctrl` 文件头【五】对顶层的首图脉冲要求）。`parameter GALLERY_COUNT` 已从顶层删除。SD 总线仲裁由二选一扩成 `sd_probe → gallery_probe → image_player` 三段严格串行。**仿真已闭环，仍未上板。**
 
-## 阶段六：扩展功能 ⬜
+## 阶段六：扩展功能 🔶
 
 前置条件：阶段五出口准则通过。**每加一项必须回归验证基础功能。**
 
 | 任务 | 状态 | 交付物 |
 |---|---|---|
-| B1 图层叠加与字幕 | ⬜ | rtl/osd, osd_test |
+| B1 图层叠加与字幕 | 🔶 | `rtl/video/video_overlay.v`：九宫格参考线（KEY11）、底部 12 格信息条（KEY12）、右侧音频电平条（KEY13）。**只有位图块，没有字符字形，显示不了文字字幕**；`rtl/osd/` 仍为空。未上板 |
 | B2 淡入淡出转场 | ⬜ | rtl/video/transition, 转场测试 |
-| B3 实时参数调节与 OSD | ⬜ | 亮度/速度调节 + 参数显示 |
-| C1 音频可视化（音量柱起步） | ⬜ | rtl/audio/audio_visualizer |
+| B3 实时参数调节与 OSD | 🔶 | 亮度五档（KEY7）、反色（KEY8）、轮播倍率 ×1~×4（KEY9）均运行时可调；参数值经 KEY12 信息条可见。**不保存、无菜单入口**。未上板 |
+| C1 音频可视化（音量柱起步） | 🔶 | `video_overlay` 内电平柱直接取 PCM 幅度（取绝对值后映射 bit[20:14] 到 0~127 像素），KEY13 开关。**无 FFT，不是频谱**。未上板 |
 | C2 图片自适应缩放（视余力） | ⬜ | 缩放模块 |
+
+> **本轮（2026-10-26，S9）把 B1/B3/C1 从零起点推到"有第一层实现"**：三个能力合并在一个纯组合模块 `video_overlay` 里完成，
+> 零 BRAM、零新增时钟域、零寄存器。它们共用的关键是"像素坐标 + 当前参数 → 输出颜色"这一条纯组合通路。
+> **三项都只有仿真证据，且都没有重新综合布线。**
 
 **阶段出口准则**：至少 B1+B2 稳定完成且回归通过。
 
@@ -1259,10 +1269,511 @@ Clock Summary
    本轮改动全部在功能层，**没有新增任何时序证据**。
 4. **没有上板**。本轮结论限于 ModelSim 行为仿真。
 
+## S7-0：TD 工程缺源修复与正式顶层首次构建（2026-10-25）
+
+本节记录一个**长期存在但未被发现**的工程缺陷，以及修复后的完整构建结果。
+
+### 缺陷：`project/hdmi_td.al` 缺 12 个模块源
+
+`project/hdmi_td.al` 是正式图片工程（顶层 `dmz_eg4s20_hdmi_top`）的工程文件。
+它从提交 `e41315a`（feat: integrate SD-to-HDMI image playback）起就只列 9 个 Verilog 源，
+而顶层此后陆续例化了 12 个模块，全部不在源列表里：
+
+`sdram_pll`、`sdram_ctrl_wrap`、`async_fifo`、`fat32_reader`、`bmp_parser`、`img_loader`、
+`framebuf_arbiter`、`pix_reader`、`player_ctrl`、`sd_spi_ctrl`、`sd_probe`、`image_player`。
+
+（`gallery_probe` 于 2026-10-25 新增，是第 13 个缺失项。）
+
+**实测症状**（`td_commands_prompt.exe ./project/flow_t2_elaborate.tcl`）：
+
+```
+HDL-7144 CRITICAL-WARNING: instantiate unknown module sdram_pll in hdmi/dmz_eg4s20_hdmi_top.v(45)
+HDL-7144 CRITICAL-WARNING: instantiate unknown module player_ctrl in hdmi/dmz_eg4s20_hdmi_top.v(80)
+HDL-7144 CRITICAL-WARNING: instantiate unknown module sd_spi_ctrl in hdmi/dmz_eg4s20_hdmi_top.v(116)
+HDL-7144 CRITICAL-WARNING: instantiate unknown module sd_probe in hdmi/dmz_eg4s20_hdmi_top.v(122)
+HDL-7144 CRITICAL-WARNING: instantiate unknown module gallery_probe in hdmi/dmz_eg4s20_hdmi_top.v(131)
+HDL-7144 CRITICAL-WARNING: instantiate unknown module image_player in hdmi/dmz_eg4s20_hdmi_top.v(152)
+HDL-8007 ERROR: sdram_pll is a black box ...   (共 6 条)
+```
+
+elaborate **exit 4** —— 正式顶层此前**根本无法构建**。
+
+### 为什么之前没被发现
+
+`reports/s6_build.txt`（2026-10-20 01:56）显示当时 analyze 了 25 个 `.v`，含全部模块。
+那份 log 早于 `e41315a`（18:43）的提交，说明 `.al` 是在该提交里被误删源项的。
+此后没有任何一次构建记录是针对**当前** `.al` 跑的，缺陷因此一直潜伏。
+此前交付文档里「只需人工加 gallery_probe 一项」的判断是错的。
+
+### 修复
+
+`project/hdmi_td.al`：
+
+1. 在 `hdmi_pll.v`（CompileOrder 9）之后、`dmz_eg4s20_hdmi_top.v` 之前，插入 13 个业务模块
+   （CompileOrder 100~112）。
+2. 顶层 `dmz_eg4s20_hdmi_top.v` 的 CompileOrder 由 14 改为 **200**（确保排在所有子模块之后）。
+3. 新增 4 个 `ip/local/sdram/` 文件：`global_def.v`、`sdr_wrrd.enc.v`、`sdr_init_ref.enc.v`、
+   `sdr_as_ram.enc.v`（CompileOrder 300~303，路径 `../ip/local/sdram/xxx`）。
+4. 新增节点统一 `UsedInSyn/UsedInP&R=true`、`BelongTo=design_1`。
+
+**注意**：`.al` 里的 `UsedInP&R` 含未转义 `&`，标准 XML 解析器会拒绝
+（`'>' is an unexpected token ... Line 16`）。这是 TD 原文件的既有格式，TD 自身可解析，**不要"修复"它**。
+
+### 修复后的完整构建结果
+
+`flow_t2_elaborate.tcl`：**elaborate exit 0**，6 个 unknown module 全部消失。
+
+`flow_s6_bit.tcl` 全流程：
+
+```
+S6_PASS-optimize_rtl
+S6_PASS-optimize_gate
+S6_PASS-place
+S6_PASS-route
+S6_BIT_FLOW_DONE
+S6_TIMING_FAILED: setup=-7.232 ns hold=0.023 ns; bit is a candidate only
+```
+
+**流程 exit 3 是时序判定失败，不是构建失败。** 生成的 bit：`project/hdmi_td_Runs/phy_1/hdmi_td.bit`（629,640 B）。
+
+资源占用（`reports/s6_integration/area.txt`）：
+
+| 项目 | 占用 | 总量 | 比例 |
+|---|---|---|---|
+| IO | 41 | 188 | 21.81% |
+| LUT | 8215 | 19600 | 41.91% |
+| LUT-as-logic | 5079 | 8852 | 57.38% |
+| LUT&reg | 3136 | 8852 | 35.43% |
+| PLL | 2 | 4 | 50% |
+| BRAM | 6 | — | — |
+| DSP | 13 | — | — |
+
+时钟域 LUT 分布：`u_pll/clkc[0]` 25MHz 用 3179 LUT-as-logic + 1024 LUT-as-dram + 3 BRAM + 13 DSP；
+`clkc[2]` 125MHz 用 27；`u_sdram_pll/clkc[1]` 150MHz 用 267。
+
+### 边界说明（不得含糊）
+
+1. **时序未收敛**：setup WNS −7.232 ns、TNS −335.004 ns，hold WNS +0.023 ns。
+   修复 `.al` **没有改变**这个数字，本轮不产生任何新的时序证据。
+2. **仍无正式顶层上板记录**。唯一上板证据来自独立诊断工程 `image_dm_fix`。
+3. 存量 TD 告警（均非本轮引入）：
+   `PHY-7002 CRITICAL-WARNING: Instance u_sdram_sip location (12, 12)/(164, 288) is not honored`、
+   `PHY-5079 CRITICAL-WARNING: Marked 1 clock net(s) utilize the local routing resources`、
+   `USR-6135 CRITICAL-WARNING: The feedback path of PLL u_pll/pll_inst is on local network`（`u_sdram_pll` 同）。
+
+## S8：HDMI 音频嵌入（2026-10-26）
+
+把只有视频的 HDMI 输出改成带内嵌音频的 HDMI 1.4b 输出，并用按播放状态变化的 PCM 替换原来固定 440 Hz 的 PWM 测试音。完整论述见 [HDMI 音频嵌入](hdmi_audio_2026-10-26.md)。
+
+### 换核（唯一可行路径）
+
+原 `hdmi_tx.vhd` 只是把 VHDL 加密核 `DVITransmitter` 做端口映射，**该核端口里没有音频**（`RED_I/GREEN_I/BLUE_I`、`HS_I/VS_I/VDE_I`、4 根 TMDS），无法"在现有链路上加音频"。改用 `project/reference/lab_ex5_i2s/` 里的 `hdmi_1_4b_transmitter_core_wrapper.enc.v`（328,975 B），依据是参考工程 `HDMI1.4b_Transmitter_v1.0.al` 为 `<Family>EG4</Family>` / `<Device>EG4S20BG256</Device>`，**与本板同器件**。
+
+例化参数：`HTOTAL=800 HSA=96 HFP=16 HBP=48 HACTIVE=640 / VTOTAL=525 VSA=2 VFP=10 VBP=33 VACTIVE=480 / VIDEO_TPG="Disable" / VIDEO_VIC=1 / AUDIO_SAMPLE_RATE="48K" / IIC_SCL_DIV=250`。
+
+### 新增 6 个模块
+
+| 模块 | 作用 | 关键点 |
+|---|---|---|
+| `rtl/audio/audio_tone_gen.v` | 48 kHz / 24 bit PCM 音源 | 分数分频使能；8 音 LUT；三角波；**静音时仍发 valid** |
+| `rtl/video/hdmi/audio_arc.v` | ACR 包 CTS/N | `ACR_N=6144`，`AUDIO_DIV=48` |
+| `rtl/video/hdmi/video_rgb_to_axis.v` | RGB+DE+VS → AXIS | VS 跳变后行首发 `user`，`x_cnt==639` 发 `last` |
+| `rtl/video/hdmi/hdmi_phy.v` | 4 路 10 bit TMDS 串化 | 输入先全位反序 |
+| `rtl/video/hdmi/lane_lvds_10_1.v` | 单 lane 2 bit/拍移位 | `EG_LOGIC_ODDR(d1=data[0], d0=data[1])` |
+| `rtl/audio/pcm_to_pwm.v` | PCM → 1 bit sigma-delta | 静音输出恒 0 |
+
+顶层 `rtl/top/dmz_eg4s20_hdmi_top.v` 由 209 行增至 402 行：删除 `hdmi_tx`，接入上述六模块，新增 `playback_state[2:0]` 七态状态机驱动音高（音视频联动），`audio_left` 同一份样本同时送 HDMI 核与 `pcm_to_pwm`。
+
+### 时钟方案（不加第三颗 PLL）
+
+APUG092 文档原文："HDMI1.4b Transmitter Core 的四个接口 EDID Interface、Video Interface、Audio Interface 和 ACR Interface 都是工作在 Pixel Clock 时钟域下。" 因此音频只需在 25 MHz 域按 48 kHz 节拍给样本，`audio_tone_gen` / `audio_arc` 直接跑 `clk_pixel`。官方例程的 12.288 MHz PLL + I2S 回环只是演示"I2S 输入"功能，且那颗 PLL 实际出 12.295082 MHz（+0.06%）。
+
+### 本板无 DDC（硬件事实，非软件取舍）
+
+三处核实：① `EG4S20_综合底板.pdf` 第 0 页 U7(AZ1045-04F ESD 阵列) 只接 4 对差分 + HDMI_5V，无 SCL/SDA 到 FPGA；② `板卡和引脚说明.pdf` §3.3 只列 4 个信号；③ 参考工程 `pin.adc` 的 DDC 是 `P2/R2`（HX4S20C 板），不可移植。处理：`O_ddc_scl`/`IO_ddc_sda` 内部悬空、不引出端口、不约束管脚；`I_edid_read_trig` 固定 `1'b0`；**不做 EDID 协商**，信息包按参数静态构造。
+
+### 验证证据
+
+**仿真（通过）**：`sim/scripts/run_audio_regression.ps1`，2 用例全绿、24 条 PASS。
+
+```
+hdmi_audio_path: passed=True; passLines=19
+pwm_audio_out_legacy: passed=True; passLines=5
+```
+
+`tb_hdmi_audio_path.v` 实测：采样率 `valid=48000`（误差 0）、`acr_n=6144`、ACR `acr=1000` 包/秒、包间隔 `gap=24999` 拍、G4 过零 `flips=785`（理论 784）、E4 `165`、C4 `131`、PWM 占空比 `490 permille`、ST_IDLE `valid=4800 nonzero=0`。
+
+**综合布线（通过，时序与基线同一路径）**：
+
+```
+S6_PASS-optimize_rtl / optimize_gate / place / route
+S6_BIT_FLOW_DONE
+S6_TIMING_FAILED: setup=-7.232 ns hold=0.011 ns; bit is a candidate only
+```
+
+**构建时间绑定**：以下数字取自 `reports/s6_integration/build_hdmi_audio_rerun.txt`（`Run Date = Mon Oct 26 22:43:05 2026`，bit 产物 22:48:28）。首次构建 `build_hdmi_audio.txt`（22:25:29 启动）早于 `rtl/audio/buzzer_tone.v` 最后写入（22:30:38），那一版用的是旧源码，数字已作废。
+
+加密核被 TD 正确读入：日志有 `HDL-1007 : analyze verilog file hdmi/enc/hdmi_1_4b_transmitter_core_wrapper.enc.v` 与带全部参数的 `elaborate module hdmi_1_4b_transmitter_core_wrapper(...)`。
+
+资源对比：
+
+| 项目 | 改造前 | 改造后 | 变化 |
+|---|---|---|---|
+| LUT | 8215 (41.91%) | 9467 (48.30%) | +1252 |
+| REG | 3773 (19.25%) | 5243 (26.75%) | +1470 |
+| LE | 8852 | 10174 | +1322 |
+| BRAM | 3 | 17 | **+14** |
+| DSP / PLL / IO | 13 / 2 / 41 | 13 / 2 / 41 | 0 |
+
+新模块自身占用（`area.txt` 分模块表，列序 `le / lut / ripple / seq / bram`）：`u_hdmi_core` le 1752 / lut 1328 / seq 1334 / bram 14（加密核），`u_axis` 231/230/85，`u_tone` 164/117/91，`u_arc` 61/35/45，`u_pwm_audio` 52/26/39，`u_phy` 45/36/45（`u_lane_ch0/1/2 + u_lane_clk` 分别 16/12/12/5 LE）。**加密核一个实例吃掉新增 LUT 的 98% 与全部 14 块 BRAM。**
+
+**时序结论**：WNS 仍是 −7.232 ns，且最差路径与改造前**完全同一路径同一数值**：
+
+```
+Begin Point : u_sdram_sip.dq[0]        (u_sdram_pll clkc[2], 150 MHz 180°)
+End Point   : u_sdram_sip_syn_1.bpad   (u_sdram_pll clkc[1], 150 MHz 0°)
+Slack       : -7.232 ns
+```
+
+这是 SiP SDRAM 器件接口路径，与本次音频改动无因果关系。**本次改动没有引入新的时序违例。**
+
+### 边界说明（不得含糊）
+
+1. **加密核无法仿真**：Anlogic RSA + AES128-CBC 加密件，ModelSim ASE 无对应私钥无法编译。仿真只覆盖到"交给核的 AXIS / audio / ACR 三组信号正确"为止，核内部行为（TMDS 编码、音频包插入、相位匹配）**未被仿真验证**。
+2. **上板未做**：正式顶层从未上板，音频是否真从显示器出来**未验证**。三档口径下状态是"仿真 + 综合布线通过，上板未验证"，不能宣称"能出声"。
+3. **音频是合成音**：8 音 LUT + 三角波，无 WAV/MP3 解码、无 SD 卡音频素材。
+4. **无音量控制**：KEY6 只有静音开关。
+5. **旧模块保留但不构建**：`rtl/audio/pwm_audio_out.v`、`rtl/video/hdmi/hdmi_tx.vhd` 留在源码树作历史参照与回退路径；`project/hdmi_td.al` 的 VHDL 段已清空。
+
+### 证据链影响
+
+`scripts/check_image_path_diag.py` 现在报 `evidence_invalid`（`Changed input: rtl/audio/buzzer_tone.v`、`rtl/control/player_ctrl.v`、`rtl/top/dmz_eg4s20_hdmi_top.v` 等）。**这是预期的失效，不是回归**：该脚本把 2026-10-20 那次诊断构建的 SHA256 绑死在源码上，本次改动让旧证据按设计自动失效——这正是"证据链原则"要求的。诊断工程 `image_dm_fix` 的结论仍然是它当时那版代码的结论，未被本次改动推翻，也不能用来为本次改动背书。
+
+## S9：KEY7～KEY14 键位分配与画面后处理（2026-10-26）
+
+把 `TASKS.md` A5 遗留的"16 键仅用 8 个"补完：KEY7～KEY14 八个键全部编号到功能，并顺势补上 B1/B3/C1 三项空白任务的第一层实现。完整论述（含逐键设计理由、取舍、上板前须知）见 [键位分配与实现交接](keymap_2026-10-26.md)。
+
+### 新增 2 个模块
+
+| 模块 | 行数 | 作用 | 关键点 |
+|---|---|---|---|
+| `rtl/control/key_action.v` | 142 | KEY7～KEY14 的**唯一**译码点 | 只有 1 个时序 always 块；8 个键号写成 `localparam`；`rescan_req` 在块首无条件清 0 做成单拍脉冲 |
+| `rtl/video/video_overlay.v` | 185 | 亮度五档 / 反色 / 九宫格 / 信息条 / 音频电平条 | **纯组合零寄存器**，与输入同拍；处理顺序 亮度→反色→OSD，OSD 不受前两级影响；全关时 `rgb_out === rgb_in` |
+
+### 改动的既有模块（最小侵入）
+
+- `rtl/control/player_ctrl.v`：新增输入 `auto_sw_sel[1:0]`。原轮播间隔是编译期常量 `AUTO_TICKS`，现改为
+  `wire [31:0] auto_target = (sel==1)?(T<<1):(sel==2)?(T+(T<<1)):(sel==3)?(T<<2):T;`，判据由 `auto_cnt == AUTO_TICKS-1`
+  改成 `auto_cnt == auto_target-1`。新增 `auto_sw_sel_d` 检测改档并在当拍清计时器（否则从 ×4 的 15 s 按到 ×1 的 5 s
+  会当场跳一张，用户感觉"按一下连跳两张"）。**默认档 0 下 `auto_target == AUTO_TICKS`，逐拍等价于改造前。**
+  ×3 写成 `T+(T<<1)` 而非 `T*3`，避免推乘法器；上限 5 s × 4 = 500,000,000 < 2²⁹。
+- `rtl/storage/gallery_probe.v`：新增输入 `rescan`，在**唯一**时序块内加一条前置分支
+  `if (rescan && sd_ok && ((st==G_DONE)||(st==G_FAIL)))` → 清 `done/fail/err_code`、回 `G_ARST` 重扫。
+  三个条件缺一不可：`sd_ok` 保证没插卡时按键无副作用；`st` 必须是终态保证扫描中按键被忽略
+  （否则两个扫描序列交叠，`probe_idx`/`hit_cnt` 被写脏，张数变成随机值）。
+- `rtl/top/dmz_eg4s20_hdmi_top.v`：加 `key_action` / `video_overlay` 例化；`video_rgb` 由直接表达式改成
+  `video_base` → `video_overlay` → `video_rgb`；蜂鸣器改为 `beep_muted ? 3'd0 : (alarm_req ? 3'd3 : (mode==2 ? 3'd2 : 3'd1))`。
+- `rtl/top/dmz_eg4s20_bringup_top.v`：同步键位表；补接历史上漏掉的 `loader_index` 与 `vblank`；
+  `tone_sel` 由 2 位常量改正为 3 位（`buzzer_tone` 的该端口本来就是 3 位）。
+
+### 验证证据
+
+**仿真（通过）**：前端回归 13 个用例全部 `passed=True`、exit 0，报告在 `reports/s7_keymap/frontend/`：
+
+```
+sd_protocol_default: passed=True; passLines=62
+sd_protocol_fast:    passed=True; passLines=64
+sd_spi_ctrl:         passed=True; passLines=23
+sd_probe:            passed=True; passLines=14
+fat32_reader:        passed=True; passLines=40
+gallery_probe:       passed=True; passLines=37
+bmp_parser:          passed=True; passLines=37
+img_loader:          passed=True; passLines=43
+player_ctrl:         passed=True; passLines=94
+err_prompt:          passed=True; passLines=43
+buzzer_tone:         passed=True; passLines=23
+key_action:          passed=True; passLines=40
+video_overlay:       passed=True; passLines=64
+```
+
+- `tb_key_action.v`（新增 298 行）9 个用例 K01～K09 / 40 条断言：复位默认值、五档循环、反色翻转、四位回绕、
+  重扫**恰好 1 拍脉冲且从不连续两拍为高**、四个开关独立、无关键号（KEY0~KEY6/KEY15）按下后 8 个输出全不变、
+  互不干扰、复位恢复。
+- `tb_video_overlay.v`（新增 425 行）10 个用例 V01～V10 / 64 条断言，**无时钟驱动**，全部"设坐标 → `#1` → 采样"，
+  268 ns 跑完。关键：V03 五档亮度实测 `255→255/224/192/161/127`、`128→128/112/96/80/64`、`64→64/56/48/40/32`；
+  V06 电平条 `sample=524288` → `level_top=348`、`2097151` → `253`、零样本只剩 `y=380` 一行；
+  V10 **最暗 + 反色下 OSD 四元素颜色一字不变，同时图像层 `FF→80` 确实被调暗又反色**。
+- `tb_player_ctrl.v`：补 U19（`dut_fast` 实测 ×1 间隔 240~260 拍、×4 间隔 985~1015 拍）、U20（层次引用
+  `dut.auto_target` 断言 25M/50M/75M/100M 四档阈值）；U05 改名"非本模块键号"并补 `key_code=14`。
+- `tb_gallery_probe.v`：补 W08（终态重扫 → `count` 由 2 变 4、`first_img_req` 恰好 1 拍）、
+  W09（**扫描中 rescan 必须被忽略**，`count` 仍为 3）、W10（失败态重扫 → `count=3`、`err=0`）。
+- `tb_dmz_eg4s20_bringup`：全 PASS / `errors = 0`，并消除了两条历史 ModelSim 警告
+  （`u_vtg` 缺 `vblank` 的 TFMPC、`u_buzz` 端口 3 vs 2 的 PCDPC）。
+
+**静态检查（通过）**：`python scripts/lint_verilog.py rtl project/src project/hdmi` → 77 文件，E0/E1/E2 全 0。
+`scripts/sync_src.ps1` 通过（11/41 个副本更新）。
+
+### 边界说明（不得含糊）
+
+1. **八个新键从未上板按下**。全部结论只到仿真档。
+2. **没有重新综合布线**：`video_overlay` 是大块组合比较逻辑，LUT 占用与关键路径影响**未知**；
+   SiP SDRAM 接口 WNS 仍为 −7.232 ns（本轮改动全在 `clk_pixel` 域，不碰 150 MHz 路径，**没有新增时序证据**）。
+3. **信息条不是字幕**：12 个格位显示的是二进制位图块，不是字符。真正的文字字幕需要字模 ROM 与逐行扫描，
+   `rtl/osd/` 至今为空。B1 只完成了"图层叠加"这一半。
+4. **音频电平条不是频谱**：只取 PCM 幅度画柱，没有 FFT。C1 只完成"幅度可视化"。
+5. **参数不保存**：亮度/反色/倍率掉电即恢复默认。
+
+### 工程教训（本轮再次踩到）
+
+- 新增 `.v` 必须同时改 `project/hdmi_td.al`，否则 TD 判 black box（历史 commit `e41315a` 因此缺 12 个源）；
+- 新增 TB 必须同时加进 `sim/scripts/run_frontend_regression.ps1` 的 `$sources`，否则根本不会被编译；
+- 该回归脚本判定中还含一条正则 `FAIL\b`：**TB 里任何以 `FAIL` 开头的打印行都会让整例判失败**，即使用例本身通过。
+
+## S10：双缓冲无缝切换（2026-10-27）
+
+`TASKS.md` A6 的缺口「未上板；单缓冲，切图期间显示测试图，无双缓冲无缝切换」就此闭合。
+`image_player` 从单帧缓冲改为**双缓冲无缝切换**：装载写后台帧、前台继续读旧帧，
+写完整后等下一个垂直消隐再换帧首。重载期间屏幕一帧不断，装载失败保留上一帧。
+完整论述（含方案推导、逐模块改动、失败语义不对称的原因）见
+[双缓冲无缝切换实现交接](seamless_double_buffer_2026-10-27.md)。
+
+### 改造面：3 个 RTL，顶层零改动
+
+| 文件 | 改动 | 要点 |
+|---|---|---|
+| `rtl/storage/pix_reader.v` | +1/−2 行 | `rd_base` 由 `output`（`assign rd_base = FRAME_BASE`）改为 **input**，由上层选帧 |
+| `rtl/storage/framebuf_arbiter.v` | +9 行 | 新增 `rd_frame_base`/`rd_frame_last`，读侧回绕边界随 `rd_restart` 捕获的基址重算 |
+| `rtl/storage/image_player.v` | 274 → 334 行 | 双缓冲索引、复位解耦、提交挂起、失败语义分离 |
+| `rtl/top/dmz_eg4s20_hdmi_top.v` | **0 行** | 对外保持 `rgb565`/`pixel_valid`/`image_ready` 语义不变，缓冲封装在模块内 |
+
+**写侧一行未改**：`framebuf_arbiter` 在 `WR_ADDR_FROM_FIFO=1` 下写地址由 57 bit FIFO 携带，
+`image_player` 只需在 `word_addr` 上加 `back_off` 偏移。
+
+### 核心设计：两处必须改，两处必须拆
+
+1. **读侧 wrap 判据（必须改）**：改造前 `if (rd_addr >= FRAME_LAST) rd_addr <= FRAME_BASE;`
+   只认编译期 `FRAME_BASE = 0`。读基址设成 153600 后，第一组读完 `rd_addr >= 153596` 立刻成立，
+   回绕回 0 —— 即读后台帧时实际读到第 0 帧。改为 `rd_frame_last`/`rd_frame_base` 运行期量。
+2. **复位必须拆（必须拆）**：旧设计 `path_rst_pix`/`path_rst_sdr` 一套复位同时管
+   `img_loader`/`bmp_parser`/双 FIFO/`framebuf_arbiter`/`sdram_ctrl_wrap`/`pix_reader`，
+   装载一开始就断供前台。拆为 `loader_rst_*`（随装载启停）与 `store_rst_*`
+   （`store_enable = loader_enable || (SEAMLESS && image_ready)`，已有在显帧就保持释放）。
+3. **`arb_error_sync` 单独用 `rst_n_pix` 复位**：仲裁故障粘滞，跟着装载清掉会让看门狗失效。
+4. **提交挂起**：`C_COMMIT` 只置 `commit_pending`，等 `vblank_rise`（或首次装载 `!image_ready`）
+   才 `front_sel <= back_sel`，换帧落在消隐内不撕裂。
+
+### 失败语义刻意不对称
+
+| 失败类型 | 错误码 | `image_ready` | 屏幕 |
+|---|---|---|---|
+| 装载侧（缺图/坏 BMP/像素数/超时） | 1~7、9 | **保持 1** | 继续显示上一帧 |
+| 存储侧（仲裁错误、SDRAM 失锁） | 8 | **必须清 0** | 回落测试图 |
+
+存储侧必须清的原因是 `pix_reader` 的 `rst_n_pix = store_rst_pix && image_ready`、
+`reader_async_sdr = store_rst_sdr && image_ready` —— **显示通路的复位释放依赖 `image_ready`**，
+不撤则粘滞错误永远清不掉。装载侧不涉及显示通路，保留旧帧安全。
+
+`SEAMLESS=0` 退回单帧缓冲，`back_sel` 恒 0、读写都落第 0 帧，**逐拍等价于改造前**，
+保留作对照档以证明新逻辑没改坏旧路径。
+
+### 验证证据
+
+**仿真（通过）**：`run_image_regression.ps1 -FullVga` 三档全绿，报告在 `reports/s6_integration/simulation/`：
+
+| 用例 | 断言数 | 结果 | 无缝证据 |
+|---|---|---|---|
+| `image_player`（32×16 快速） | 6205 | errors=0 | `front_flips=2 overlap_cycles=258005 starve_cycles=0` |
+| `image_player_full`（真实 640×480） | 1,228,812 | errors=0 | `front_flips=2 overlap_cycles=2085846 starve_cycles=0` |
+| `image_player_single`（`-gSEAMLESS=0` 对照） | 6203 | errors=0 | `front_flips=0 overlap_cycles=0 starve_cycles=0` |
+
+- `overlap_cycles` = 「已有在显帧且后台正在装载」的拍数。**大于 0 才有无缝可言**，
+  单帧档必然为 0。真实尺寸下 2,085,846 拍 ≈ 83 ms @25 MHz。
+- `starve_cycles` = 上述拍中 `de` 有效却无像素的拍数，**必须为 0**，这是无缝的直接判据。
+- 新增断言（CASE 2）：`front_changes == changes_before + 1`（恰好翻一次）、
+  `seam_checked > 0`（**防假通过**：装载与显示必须真的重叠过）、`seam_gaps == 0`。
+
+**存储回归（通过）**：`run_storage_regression.ps1 -Suite All` →
+`tb_async_fifo` 24 项、`tb_framebuf_arbiter` 50,900 项/15 场景、`tb_sdram_ctrl_wrap` 154,771 项、
+`tb_pix_reader` 108 项，全部 errors=0。`tb_framebuf_arbiter` 参考模型的读侧 wrap 判据同步改为
+`captured_restart_base + FRAME_WORDS`（旧判据写死 `FRAME_BASE`，不改则 T13 必红）。
+
+**静态检查（通过）**：`python scripts\lint_verilog.py rtl` → 39 文件，E0/E1/E2 全 0。
+
+### 工程教训
+
+- **`if(FULL) $finish` 位置错误会静默跳过断言**：`tb_image_player.v` 的 FULL 分支原本在 CASE 1
+  之后就 `$finish`，意味着改造前「FULL 全尺寸通过」只覆盖了 CASE 1，新加的双缓冲断言被整个跳过。
+  已把该块移到 CASE 2 之后。**这类「测试台结构性漏测」比断言写错更难发现**——它不报错、不告警，
+  只是少跑了。
+- **`wire` 改 `reg` 时，所有例化点都要查**：`pix_reader.rd_base` 变输入端口后，
+  除 3 个自研 TB 外，还有 3 个历史诊断工程（`project/image_*_diag/`、`project/image_dm_fix/`）
+  里 `wire [20:0] rd_base;` 失去驱动源。这些工程不走 `sync_src.ps1`，容易漏。
+- **`edit` 工具会丢 UTF-8 BOM**：`run_image_regression.ps1` 原带 BOM，编辑后 BOM 丢失，
+  而 Windows PowerShell 5.1 在无 BOM 时按 GBK 解析，文件内 28 个中文字符会变乱码。
+  已用 `UTF8Encoding($true)` 补回。**改带中文的 `.ps1` 后必须查 BOM。**
+- `tb_probe_order.v`/`tb_probe_pix.v` 无法加载是**既有问题**（被 `.gitignore:54` 的
+  `sim/testbench/tb_probe_*.v` 排除、且引用的 `dut.fifo_wr_data` 等信号早已不存在），
+  与本次改动无关，不作为交付证据。
+
+### 遗留
+
+1. **未上板**；**SiP SDRAM 150 MHz setup 违例未变**（WNS −7.232 ns），本次改动未经过真实布线后时序验收。
+2. 资源占用未重新测量（新增约 2 个 21 bit 寄存器 + 1 个加法器 + 跨域同步寄存器，预计增量极小）。
+3. **失败可见性变弱**：装载侧失败时屏幕仍显旧帧，须靠数码管 DIG2/LED 判故障。这是无缝的代价。
+4. 只支持 2 缓冲；SDRAM 能放 13 帧，N 缓冲需另一套调度，本次不做。
+
+## S11：SDRAM 时钟网络修复与时序收敛定性（2026-10-27）
+
+任务目标：解决正式顶层 `dmz_eg4s20_hdmi_top` 的时序收敛问题，起点是布线后
+**setup SWNS −7.232 ns / STNS −335.004 ns**、64 个违例端点全部集中在 SiP SDRAM 接口。
+
+### 一、先把违例拆开看：64 个端点其实分属两件事
+
+`reports/s6_integration/timing.txt` 的 7 个 Path Group 里，只有三组有故事：
+
+| Path Group | 修复前 SWNS | 修复前 STNS | 违例端点 | 性质 |
+|---|---|---|---|---|
+| `clkc[1] → clkc[1]` Self | +0.240 ns | 0 | **0 / 2590** | 真实 150 MHz 逻辑，已收敛但余量薄 |
+| `clkc[2] → clkc[1]` | **−7.232 ns** | −231.424 ns | 32 / 32 | SiP 接口读回 |
+| `clkc[1] → clkc[2]` | **−3.537 ns** | −103.580 ns | 32 / 48 | SiP 接口写出 |
+
+后两组同属一颗 PLL 的 0°/180° 双相时钟。**关键发现：`clkc[1]` 自身域早就收敛了**，
+所以"150 MHz 收敛不了"这个说法本身是错的——收敛不了的是接口组，两者根因完全不同。
+
+### 二、真缺陷：C1/C2 输出没有走全局时钟网
+
+`rtl/storage/sdram_pll.v` 原来只有 C0 经 `bufg_feedback` 进 BUFG（且兼作 PLL 反馈），
+真正驱动 844 个负载的 **C1（150 MHz 0°）** 和送 SDRAM_CLK 的 **C2（150 MHz 180°）**
+直接从 PLL 引到端口，由布局器自行决定走什么网络。后果在报告里可以直接读到：
+
+| 现象 | 证据 |
+|---|---|
+| C1 走普通布线，延迟 2.410 ns | Clock Summary `clk1` fanout 869，路径 launch 段 `net u_sdram_pll/clk1_raw 2.410ns` |
+| C2 被判 local routing | **`PHY-5079` CRITICAL-WARNING**：CTS Local Wire Summary 显示 `clkc[2] → u_sdr_as_ram/SDRAM_CLK`，fanout 1，LocalWireNum 1 |
+| 两颗 PLL 反馈都走 local network | **`USR-6135` CRITICAL-WARNING ×2**：补偿延迟不可预测 |
+
+修复：给 C1、C2 各补一级 `EG_LOGIC_BUFG`。
+
+```verilog
+wire clk1_buf, clk2_buf;
+EG_LOGIC_BUFG bufg_clk1 (.i (clk1_raw), .o (clk1_buf));
+EG_LOGIC_BUFG bufg_clk2 (.i (clk2_raw), .o (clk2_buf));
+assign sdram_clk     = clk1_buf;
+assign sdram_clk_sft = clk2_buf;
+```
+
+**不能给 C0 再加第二个 BUFG**——一个 PLL 通道只能进一个 BUFG，C0 已通过 `bufg_feedback` 进去了。
+
+收益（`clkc[1]` 自身域）：
+
+| 指标 | 修复前 | 修复后 |
+|---|---|---|
+| Setup WNS | +0.240 ns | **+0.326 ns** |
+| Min Period / Fmax | 6.426 ns / 155.618 MHz | **6.340 ns / 157.729 MHz** |
+| 违例端点 | 0 / 2590 | 0 / 2590 |
+| `PHY-5079` / `USR-6135` | 1 / 2 | **0 / 0** |
+| `#gclk` | 2 / 16 | **4 / 16** |
+
+修复后报告明确显示时钟走 GCLK：
+`net (fo=1) u_sdram_pll/clk1_raw → GCLK x039y070z2 u_sdram_pll/bufg_clk1.clko 0.000ns`。
+
+### 三、接口违例为什么改 RTL 无解
+
+`clkc[2] → clkc[1]` 最差路径（修复后仍是最差）：
+
+```
+Begin : u_sdram_sip.dq[0]                   (clkc[2] rise @3.333)
+          PAD x040y041      3.816 ns
+          launch edge               @9.165 ns
+          input (hard ip)   +5.000 ns   ← TD 对 SiP 硬核的固定惩罚
+End   : u_sdram_sip_syn_1.bpad → sdr_wrrd.enc.v 的 Sdr_rd_dout[0]  (clkc[1] rise @6.666)
+
+Budget          3.333 ns
+Data Path Delay 6.453 ns  （cell 100%，net 0.000%）
+Logic Level     0
+Max Fanout      0
+Clock Skew      4.172 ns
+```
+
+**预算 3.333 ns（半个周期），单项 hard-ip 惩罚 5.000 ns。5 > 3.333，通路为空 slack 也必负。**
+`Logic Level = 0`、`net 延迟 0.000 ns`——数据通路上没有任何组合逻辑可以优化。
+另一方向 `clkc[1] → clkc[2]` 同构，惩罚项是 `output (hard ip) −5.000 ns`。
+
+物理含义：DQ 的实际采样者是封装内的 SDRAM 器件，读回的 DQ 由安路加密核 `sdr_wrrd`
+内部自行重采样，RTL 层并不存在"0° 触发器直接采 180° 域 DQ"的路径。这是 TD 的 SiP
+硬核接口模型在 150 MHz 下的建模口径问题。
+
+旁证：2026-10-20 那次真机跑出红块、整帧比较通过的诊断工程，
+`reports/image_dm_fix/candidate.json` 里 `setup_wns_ns` 同样是 **−7.232**、`timing_passed: false`、
+`status: "functional_board_pass_reported_timing_failed"`——负余量并未阻止硬件工作。
+
+### 四、三组对照实验：拆异步组是假绿（复验历史结论）
+
+仓库既有立场（`README.md:183`、本文件 S5-4）明确禁止把 0°/180° 声明为异步组。
+本轮一度按"拆组"方式做过，SWNS 从 −7.232 变成 +0.275，看着像修好了。
+为了区分"BUFG 修复的功劳"和"拆组动作的功劳"，补做了第三组对照：
+
+| 实验 | RTL | 时钟组 | SWNS | STNS |
+|---|---|---|---|---|
+| ① 原始 | C1/C2 无 BUFG | 0°/180° 同组 | −7.232 ns | −335.004 ns |
+| ② 拆组 | C1/C2 **加 BUFG** | 0°/180° **拆异步** | +0.275 ns | 0.000 ns |
+| ③ 对照 | C1/C2 **加 BUFG** | 0°/180° **同组** | −7.232 ns | −335.004 ns |
+
+**实验 ③ 是决定性的**：加了 BUFG 之后，只要保留 0°/180° 分析，接口余量**一个数字都不变**。
+所以实验 ② 里那个 +0.275 ns 全部来自把路径移出分析范围，与 BUFG 无关、与接口无关。
+**结论与历史一致：0°/180° 必须留在同一时钟组，不得再用拆组方式让报告变绿。**
+
+最终 SDC 因此回退为原始 5 条有效约束，只在文件头补充了上述调查结论，
+避免后来者重走这条路。
+
+### 五、两条已实测排除的优化手段
+
+| 手段 | 结果 | 结论 |
+|---|---|---|
+| `phys_opt -post_place -effort high` | SWNS 0.275 → **0.178 ns**（更差） | 它为全局重布线腾资源，反而打散了那条依赖短走线的路径 |
+| `phys_opt -post_route -effort high` | **`0xC0000005` 崩溃**，流程在 PASS-route 后中断 | TD 6.2.168116 缺陷，不要用 |
+
+### 六、收敛后的真实瓶颈
+
+`clkc[1]` 自身域最差路径（`final.timing`）：
+
+```
+u_player/u_reader/rd_gray_meta_reg[10] → u_player/u_reader/u_pix_fifo/ramread0_syn_5216.e[0]
+Data Path Delay 5.995 ns  （cell 1.107 = 18%，net 4.888 = 82%）
+Logic Level 4（LUT4/LUT3/LUT2/DRAM 各 1）
+Skew 0.136   Max Fanout 35   Slack +0.326
+```
+
+**82% 是走线延迟，逻辑层级只有 4**——这条路径靠布局收紧，不靠改逻辑。
+后续若要拉大余量，方向是 `set_seed_param` 多种子布局择优，而不是重构 `pix_reader`。
+
+### 七、遗留
+
+1. **接口组仍报 −7.232 ns**，属于 TD 硬核模型口径问题。真实解法只有两条：
+   给 SiP 引脚补 `set_input_delay`/`set_output_delay` 配合器件 tAC 重新建模；
+   或对读路径用 `set_multicycle_path` 声明实际跨两拍。**两者都未做，需要器件手册的 tAC/tOH 数据。**
+2. 余量 +0.326 ns 只占 6.666 ns 周期的 4.9%，Skew 0.480 ns 偏大。若追求更大余量，
+   可跑多种子布局择优。
+3. `u_sdram_sip` 位置约束仍未被遵守（`PHY-7002` ×2，期望 (12,12) 与 (164,288)），
+   不影响时序，属整洁性问题。
+
+验证入口：`project/verify_timing_final.tcl`，产物在 `reports/timing_final_20261027/`。
+
 ## 问题记录
 
 | 日期 | 问题 | 影响 | 处理 | 状态 |
 |---|---|---|---|---|
+| 2026-10-27 | **`sdram_pll` 的 C1/C2 输出没有走全局时钟网**：只有 C0 经 `bufg_feedback` 进 BUFG，驱动 844 个负载的 C1 走普通布线（延迟 2.410 ns），C2 被判 local routing | `PHY-5079` + `USR-6135` 两条 CRITICAL-WARNING；`clkc[1]` 自身域余量仅 +0.240 ns | C1/C2 各补一级 `EG_LOGIC_BUFG`；`#gclk` 2→4、余量 +0.240→+0.326 ns、两条 CRITICAL-WARNING 归零 | ✅ 已修复 |
+| 2026-10-27 | **曾一度用"拆异步组"让 WNS 从 −7.232 变成 +0.275**，与仓库既有立场冲突 | 若不复验就会把假绿写进交付证据，重蹈"＋0.104 ns"的覆辙 | 补做第三组对照实验：加 BUFG 但保留 0°/180° 同组 → 接口余量一个数字都不变，证明 +0.275 全部来自拆组；SDC 回退为同组 | ✅ 已纠正 |
+| 2026-10-27 | **`phys_opt -post_route -effort high` 在 TD 6.2.168116 上崩溃**（`0xC0000005`） | 流程在 PASS-route 后中断，报告不生成 | 从 `verify_timing_fix2.tcl` 删除该步；`-post_place` 实测反而更差（0.275→0.178），两者均弃用 | ✅ 已规避 |
+| 2026-10-27 | **`project/flow_sdc.tcl` 用 `[file normalize [info script]]` 推导工程目录** | 命令行调用时 `info script` 返回空串，`open_project` 收到空路径报 `PRJ-8601`，exit 2 | 新建 `verify_timing_final.tcl`，绝对路径写死且用正斜杠（TD 会吞反斜杠）；`flow_sdc.tcl` 只在 TD GUI 里 `source` 才可用 | ✅ 已规避 |
+| 2026-10-27 | **`tb_image_player.v` 的 `if(FULL) $finish` 放在 CASE 1 之后** | 改造前「FULL 全尺寸通过」实际只覆盖 CASE 1；本次新加的双缓冲断言被整个静默跳过，日志仍打印 `ALL CHECKS PASSED` | 把 `$finish` 块移到 CASE 2 之后，FULL 档现在跑两个 CASE。**这类结构性漏测不报错、不告警，只是少跑** | ✅ 已修复 |
+| 2026-10-27 | **`pix_reader.rd_base` 由 `output` 改 `input` 后，3 个历史诊断工程失去驱动源** | `project/image_path_diag/`、`project/image_readback_diag/`、`project/image_dm_fix/` 的 `wire [20:0] rd_base;` 悬空；这些工程不走 `sync_src.ps1`，主 RTL 回归不会发现 | 三处各补一行 `assign rd_base = 21'd0;`（单帧诊断固定第 0 帧） | ✅ 已修复 |
+| 2026-10-27 | **`edit` 工具丢 UTF-8 BOM**：`run_image_regression.ps1` 编辑后 BOM 消失，文件含 28 个中文字符 | Windows PowerShell 5.1 在无 BOM 时按 GBK 解析，中文注释变乱码（与 2026-10-16 `run_sim.bat` 同一类坑，方向相反） | 用 `UTF8Encoding($true)` 重写补回 BOM，`Parser::ParseFile` 复验 0 错误 | ✅ 已修复 |
+| 2026-10-26 | **KEY7～KEY14 八个键从未分配**（`TASKS.md` A5 缺口） | 硬件焊着 16 键只有 8 个可用，交互维度受限；B1/B3/C1 三项任务零起点 | 新增 `key_action`（唯一译码点）+ `video_overlay`（纯组合后处理）；`player_ctrl` 加 `auto_sw_sel`、`gallery_probe` 加 `rescan` | ✅ 已修复（仿真档） |
+| 2026-10-26 | **`dmz_eg4s20_bringup_top` 长期带两条 ModelSim 警告**：`u_vtg` 漏接 `vblank`（TFMPC 9 vs 8）、`u_buzz` 的 `tone_sel` 用 2 位常量接 3 位端口（PCDPC） | 警告不影响功能但污染仿真输出，新警告容易被忽略；`tone_sel` 位宽错还可能因补齐逻辑被综合器优化出意外行为 | 补 `wire vblank` 并接线；`tone_sel` 改正为 `wire [2:0]`。重跑后两条警告消失 | ✅ 已修复 |
+| 2026-10-25 | **`project/hdmi_td.al` 缺 12 个模块源**（自 `e41315a` 起） | 正式顶层 elaborate 报 6 条 `HDL-7144` + 6 条 `HDL-8007`，exit 4，**根本无法构建** | 补全 13 个业务模块 + 4 个 `ip/local/sdram/` 文件，顶层 CompileOrder 改 200；elaborate exit 0、全流程 PASS | ✅ 已修复 |
+| 2026-10-25 | **图库张数是编译参数 `GALLERY_COUNT`** | 换卡必须改参数重综合；参数与实际张数不符必然出故障（多张但配 1 → 只看到首图；配多但只有 1 张 → 落空文件报错锁死） | 新增 `gallery_probe` 运行时扫描；删除 `GALLERY_COUNT` 参数 | ✅ 已修复 |
 | 2026-10-21 | **`sdram_ctrl_wrap` 行为模型四拍组内每拍都写同一地址** | 组内数据互相覆盖，只有最后一拍落地 | 组内按"组首锁存的 base + 拍序号"寻址，读写各自独立的组首寄存器与相位；不再用"地址变化"推断组首 | ✅ 已修复 |
 | 2026-10-21 | **`framebuf_arbiter` 断流补拍用 `DM=0`（真写零），旧 TB 还断言这一错误极性** | 补拍覆盖帧内容；旧 TB 通过只说明模型自洽 | 补拍统一 `DM=4'hF` 全屏蔽；TB 改为检查"补拍后原内容不变" | ✅ 已修复 |
 | 2026-10-21 | **`app_*` 注册后比 `wr_ack` 晚一拍** | `ref_vld` 上升后下一拍模型拒收，而 FIFO 已消费、拍已前进 → 刷新边界静默丢字，表现为整帧缓慢错位 | 命令、握手、拍计数、FIFO 出队改为同一边沿；组合接受路径不再打拍 | ✅ 已修复 |

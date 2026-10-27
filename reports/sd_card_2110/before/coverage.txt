@@ -1,0 +1,522 @@
+Table of Contents
+-----------------
+1. checking no clock(0) (HIGH)
+2. checking clock definition(0) (HIGH)
+3. checking dummy node(3) (HIGH)
+4. checking invalid constraint(0) (HIGH)
+5. checking pll/clock buffer clock constraints(2) (HIGH)
+6. checking combinational loops(0) (HIGH)
+7. checking soft fifo timing exception constraints(0) (HIGH)
+8. checking no path constraints(0) (MEDIUM)
+9. checking shadowed/ignored timing exception constraints(0) (MEDIUM)
+10. checking no input delay(7) (MEDIUM)
+11. checking no output delay(33) (MEDIUM)
+12. checking partial input delay(0) (MEDIUM)
+13. checking partial output delay(0) (MEDIUM)
+14. checking abnormal input delay(32) (MEDIUM)
+
+
+1. checking nets with no clock driven. (HIGH)
+---------------------------------------------
+2. checking clock definition problems. (HIGH)
+---------------------------------------------
+2.1 There are 0 leaf clock pins driven by multiple clocks. (HIGH)
+
+
+2.2 There are 0 clocks created on internal clock network. (HIGH)
+
+
+2.3 There are 0 unexpandable clock sets. (HIGH)
+
+
+2.4 There are 0 local clocks. (HIGH)
+
+
+2.5 There are 0 generated clocks that are not connected to their master clocks. (HIGH)
+
+
+3. checking dummy nodes. (HIGH)
+---------------------------------------------
+There are 3 nodes are dangling. (HIGH)
+
+DummyNode in Model: EG_PHY_LSLICE
+	u_player/path_sync_pix_reg[2]_syn_104.b[0]
+	u_player/path_sync_pix_reg[2]_syn_105.b[0]
+	u_player/path_sync_pix_reg[2]_syn_107.b[0]
+	rst_sync_pix_reg[2]_syn_65.mi[0]
+	u_ctrl/auto_play_en_reg_syn_13.mi[0]
+	u_sd/mux144_syn_393.mi[0]
+	u_sd/err_code_b_reg[1]_syn_87.mi[0]
+	u_player/path_sync_pix_reg[2]_syn_104.d[0]
+	u_player/path_sync_pix_reg[2]_syn_105.d[0]
+	u_player/path_sync_pix_reg[2]_syn_107.d[0]
+	u_player/path_sync_pix_reg[2]_syn_104.c[0]
+	u_player/path_sync_pix_reg[2]_syn_105.c[0]
+	u_player/path_sync_pix_reg[2]_syn_107.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_552.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_553.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_548.a[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_549.a[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_550.a[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_551.a[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_548.d[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_549.d[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_550.d[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_551.d[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_548.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_549.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_550.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_551.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_green/n0_q_m_b[3]_syn_36.mi[0]
+	u_player/state_reg[1]_syn_69.mi[0]
+	u_player/path_sync_pix_reg[2]_syn_70.mi[0]
+	u_player/path_sync_pix_reg[2]_syn_65.mi[0]
+	u_player/path_sync_pix_reg[2]_syn_65.mi[1]
+	u_player/path_sync_pix_reg[2]_syn_77.mi[1]
+	u_player/path_sync_pix_reg[2]_syn_77.mi[0]
+	u_player/state_reg[1]_syn_60.mi[0]
+	u_player/image_ready_reg_syn_11.mi[0]
+	u_player/path_sync_pix_reg[2]_syn_79.mi[0]
+	u_player/path_sync_pix_reg[2]_syn_111.mi[1]
+	u_player/path_sync_pix_reg[2]_syn_56.mi[0]
+	u_player/path_sync_pix_reg[2]_syn_61.mi[1]
+	u_player/path_sync_pix_reg[2]_syn_82.mi[0]
+	u_player/u_loader/u_fat/mux190_syn_36.mi[0]
+	u_player/path_sync_pix_reg[2]_syn_108.mi[1]
+	u_player/path_sync_pix_reg[2]_syn_109.mi[1]
+	u_player/path_sync_pix_reg[2]_syn_110.mi[1]
+	u_player/path_sync_sdr_reg[2]_syn_25.mi[0]
+	u_player/u_reader/u_pix_fifo/wr_en_syn_195.mi[0]
+	u_player/u_reader/u_pix_fifo/wr_en_syn_193.mi[0]
+	u_player/u_reader/u_pix_fifo/wr_en_syn_187.mi[0]
+	u_player/u_loader/u_fat/data_begin_b[31]_syn_24.c[1]
+	u_player/u_loader/u_fat/data_begin_b[31]_syn_24.d[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_94.a[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_95.a[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_96.a[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_97.a[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_98.a[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_94.b[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_95.b[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_96.b[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_97.b[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_98.b[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_84.b[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_85.b[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_86.b[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_84.c[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_85.c[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_86.c[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_84.a[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_85.a[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_86.a[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_84.b[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_85.b[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_86.b[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_84.a[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_85.a[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_86.a[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_84.d[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_85.d[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_86.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_548.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_549.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_550.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_551.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_548.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_549.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_550.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_551.d[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_94.d[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_95.d[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_96.d[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_97.d[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_98.d[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_84.d[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_84.e[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_85.d[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_85.e[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_86.d[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_86.e[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_548.c[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_549.c[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_550.c[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_551.c[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_94.c[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_95.c[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_96.c[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_97.c[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_98.c[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_84.c[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_85.c[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_86.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_552.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_552.d[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_553.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_553.d[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_98.b[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_97.b[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_94.b[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_95.b[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_96.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_552.a[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_553.a[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_98.a[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_94.a[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_95.a[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_96.a[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_97.a[1]
+	u_player/u_reader/rd_count_reg[0]_syn_79.mi[0]
+	u_player/u_reader/rd_count_reg[0]_syn_66.mi[1]
+	u_player/u_reader/rd_count_reg[0]_syn_69.mi[0]
+	u_player/u_reader/fifo_rd_data[24]_syn_67.mi[0]
+	u_player/u_reader/rd_count_reg[0]_syn_69.mi[1]
+	u_player/u_reader/fifo_rd_data[26]_syn_59.mi[0]
+	u_player/u_reader/rd_count_reg[0]_syn_66.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_358.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_364.mi[0]
+	u_player/u_reader/fifo_rd_data[25]_syn_58.mi[0]
+	u_player/u_reader/fifo_rd_data[26]_syn_61.mi[0]
+	u_player/u_reader/u_pix_fifo/wr_en_syn_179.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_green/n1_d_b[2]_syn_351.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_360.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_376.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_259.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_372.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_552.c[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_553.c[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_94.c[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_95.c[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_96.c[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_97.c[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_98.c[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_552.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_553.d[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_94.d[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_95.d[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_96.d[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_97.d[1]
+	u_player/u_reader/fifo_rd_data[24]_syn_98.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_552.a[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_553.a[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_552.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_553.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_548.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_549.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_550.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_551.b[1]
+	u_player/u_reader/u_pix_fifo/wr_en_syn_185.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_blue/n1_d_b[2]_syn_392.mi[0]
+
+DummyNode in Model: EG_PHY_MSLICE
+	u_sd/crc_bit_cnt_reg[4]_syn_14.mi[0]
+	u_player/path_sync_sdr_reg[2]_syn_30.mi[0]
+	u_player/path_sync_sdr_reg[2]_syn_53.mi[1]
+	u_player/path_sync_sdr_reg[2]_syn_54.mi[1]
+	u_player/path_sync_sdr_reg[2]_syn_52.mi[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_279.mi[0]
+	u_player/u_reader/u_pix_fifo/wr_en_syn_191.mi[0]
+	u_player/u_reader/u_pix_fifo/wr_en_syn_189.mi[0]
+	u_player/reader_sync_sdr_reg[2]_syn_31.mi[1]
+	u_player/reader_sync_sdr_reg[2]_syn_38.mi[0]
+	u_player/reader_sync_sdr_reg[2]_syn_28.mi[1]
+	u_player/reader_sync_sdr_reg[2]_syn_28.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_344.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_344.d[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_345.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_345.d[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_346.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_346.d[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_347.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_347.d[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_348.d[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_348.d[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_344.c[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_344.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_345.c[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_345.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_346.c[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_346.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_347.c[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_347.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_348.c[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_348.c[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_344.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_345.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_346.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_347.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_348.b[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_344.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_345.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_346.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_347.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_348.b[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_344.a[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_345.a[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_346.a[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_347.a[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_348.a[1]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_344.a[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_345.a[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_346.a[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_347.a[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_348.a[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_277.mi[0]
+	u_player/u_reader/fifo_rd_data[25]_syn_60.mi[0]
+	u_hdmi/Inst_DVITransmitter/Inst_TMDSEncoder_red/n1_d_b[2]_syn_275.mi[0]
+
+DummyNode in Model: EG_PHY_PAD
+	sd_cd_syn_2.ipad
+	seg_data[7]_syn_1.opad
+	u_sdram_sip_syn_5.opad
+	u_sdram_sip_syn_10.opad
+
+4. checking invalid constraints. (HIGH)
+---------------------------------------------
+There are 0 invalid constraints. (HIGH)
+
+
+5. checking PLL/buffer clocks. (HIGH)
+---------------------------------------------
+PLL/buffer inst: u_pll/pll_inst
+{
+	There are 0 clock pins that have no clock constraints. (HIGH)
+
+
+	There are 0 clocks whose clock frequency do not match the PLL setting. (HIGH)
+
+
+}
+
+PLL/buffer inst: u_sdram_pll/pll_inst
+{
+	There are 0 clock pins that have no clock constraints. (HIGH)
+
+
+	There are 0 clocks whose clock frequency do not match the PLL setting. (HIGH)
+
+
+}
+
+6. checking combinational loops. (HIGH)
+---------------------------------------------
+There are 0 combinational loops. (HIGH)
+
+
+7. checking soft fifo set_max_delay constraints. (HIGH)
+---------------------------------------------
+There are 0 max-delay datapath-only paths that are part of the provided async clock paths, whereas the timing between other registers is not relaxed or ignored. (HIGH)
+
+
+8. checking no path constraints. (MEDIUM)
+---------------------------------------------
+There are 0 constraints that have no timing paths. (MEDIUM)
+
+
+9. checking path exception constraints shadowed/ignored by other constraints. (MEDIUM)
+---------------------------------------------
+
+MCP/SMD Summary
+--------------------
+
+		Max Check
+		--------------------
+		     Total    Dominated     Shadowed      Ignored   Constraint
+
+		Min Check
+		--------------------
+		     Total    Dominated     Shadowed      Ignored   Constraint
+
+10. checking no input delay (MEDIUM)
+--------------------------
+There are 7 input ports that with no input delay specified. (MEDIUM)
+
+	key_col[3]
+	key_col[2]
+	key_col[1]
+	key_col[0]
+	rst_n_btn
+	sd_cd
+	sd_miso
+
+11. checking no output delay (MEDIUM)
+--------------------------
+There are 33 output ports that with no output delay specified. (MEDIUM)
+
+	HDMI_CLK_P
+	HDMI_D0_P
+	HDMI_D1_P
+	HDMI_D2_P
+	audio_pwm
+	buzzer
+	key_row[3]
+	key_row[2]
+	key_row[1]
+	key_row[0]
+	led[7]
+	led[6]
+	led[5]
+	led[4]
+	led[3]
+	led[2]
+	led[1]
+	led[0]
+	sd_cs_n
+	sd_mosi
+	sd_sck
+	seg_cs[3]
+	seg_cs[2]
+	seg_cs[1]
+	seg_cs[0]
+	seg_data[7]
+	seg_data[6]
+	seg_data[5]
+	seg_data[4]
+	seg_data[3]
+	seg_data[2]
+	seg_data[1]
+	seg_data[0]
+
+12. checking partial input delay (MEDIUM)
+--------------------------
+There are 0 input ports with partial input delay specified. (MEDIUM)
+
+
+13. checking partial output delay (MEDIUM)
+--------------------------
+There are 0 output ports with partial output delay specified. (MEDIUM)
+
+
+14. checking abnormal set_input_delay constraints. (MEDIUM)
+---------------------------------------------
+There are 32 abnormal set_input_delay constraints. (MEDIUM)
+
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[31]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[31]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[31]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[31]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[30]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[30]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[30]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[30]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[29]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[29]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[29]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[29]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[28]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[28]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[28]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[28]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[27]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[27]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[27]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[27]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[26]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[26]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[26]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[26]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[25]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[25]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[25]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[25]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[24]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[24]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[24]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[24]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[23]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[23]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[23]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[23]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[22]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[22]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[22]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[22]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[21]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[21]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[21]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[21]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[20]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[20]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[20]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[20]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[19]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[19]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[19]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[19]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[18]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[18]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[18]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[18]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[17]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[17]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[17]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[17]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[16]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[16]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[16]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[16]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[15]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[15]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[15]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[15]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[14]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[14]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[14]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[14]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[13]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[13]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[13]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[13]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[12]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[12]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[12]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[12]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[11]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[11]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[11]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[11]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[10]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[10]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[10]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[10]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[9]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[9]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[9]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[9]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[8]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[8]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[8]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[8]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[7]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[7]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[7]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[7]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[6]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[6]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[6]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[6]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[5]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[5]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[5]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[5]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[4]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[4]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[4]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[4]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[3]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[3]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[3]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[3]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[2]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[2]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[2]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[2]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[1]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[1]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[1]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[1]} ]
+	 set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -max 5.000 [ get_pins {u_sdram_sip.dq[0]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -fast -min 1.000 [ get_pins {u_sdram_sip.dq[0]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -max 5.000 [ get_pins {u_sdram_sip.dq[0]} ]
+ set_input_delay -clock [ get_clocks {u_sdram_pll/pll_inst.clkc[2]} ] -reference_pin [ get_pins {u_sdram_sip.clk} ] -slow -min 1.000 [ get_pins {u_sdram_sip.dq[0]} ]
+

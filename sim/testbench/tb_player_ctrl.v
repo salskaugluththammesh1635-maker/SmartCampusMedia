@@ -11,12 +11,12 @@
 //     · 计时类用例（U09）→ 必须用真实的 25MHz 参数跑满 25,000,000 拍，
 //       用来实证 AUTO_SW_S=1 恰好等于 1.0 秒（而不是 2.0 秒）
 //
-// 验证项（18 个用例 / 85 条断言）:
+// 验证项（20 个用例 / 96 条断言）:
 //   U01 复位恢复:        复位后 index=0 / auto=0 / mode=日常 / LED=0 / 无切图脉冲
 //   U02 手动下一张:      KEY1 使 index 0→1，切图脉冲恰好 1 次且为单拍
 //   U03 手动上一张回绕:  在 index 0 按 KEY0 → 回绕到末张（gallery_count-1）
 //   U04 末张下一张回绕:  在末张按 KEY1 → 回第 0 张
-//   U05 无效键号:        key_code=9 / 7（未分配）→ 索引、模式、脉冲全不变
+//   U05 非本模块键号:    key_code=9/7/14（已分配给 key_action）→ 索引/模式/脉冲全不变
 //   U06 模式循环:        KEY3: 日常→科普→应急→日常
 //   U07 应急禁切图:      应急模式下 KEY0/KEY1/KEY2 全部无效
 //   U08 应急直达:        KEY15 任意模式→应急，强制关轮播，LED bit1=1
@@ -31,6 +31,8 @@
 //   U17 参数对照:        同 tb 内并联一个 CLK_FREQ_HZ=50M 的实例，
 //                        实证"参数写错 → 间隔翻倍"，固化"例化必须显式传参"
 //   U18 切模式重置计时:  KEY3 切模式后 auto_cnt 归零（修复前漏发 auto_rst_req）
+//   U19 轮播倍率档:      auto_sw_sel 0→3 使间隔 ×1→×4，改档当场从新阈值起算
+//   U20 倍率档阈值算术:  真实 25MHz 实例下 auto_target = 25M/50M/75M/100M
 //
 // 用法（工作目录 sim/msim_work）:
 //   vlog -quiet ../../rtl/control/player_ctrl.v ../testbench/tb_player_ctrl.v
@@ -53,6 +55,9 @@ module tb_player_ctrl;
     reg  [3:0] key_code      = 4'd0;
     reg  [4:0] gallery_count = 5'd8;
     reg        gallery_valid = 1'b1;
+    // KEY9 轮播倍率档（0=×1 1=×2 2=×3 3=×4）。2026-10-26 起 player_ctrl 不再
+    // 自己认键号，改由 key_action 译码后送进来；默认 0 档，行为与改造前逐拍等价。
+    reg  [1:0] auto_sw_sel   = 2'd0;
 
     // ========== DUT ① : 被测主体（真实参数，用于计时验证）==========
     wire [4:0] img_index;
@@ -71,6 +76,7 @@ module tb_player_ctrl;
         .rst_n          (rst_n),
         .key_event      (key_event),
         .key_code       (key_code),
+        .auto_sw_sel    (auto_sw_sel),            // KEY9 轮播档位: 0=×1（本 TB 不测档位，锁默认值）
         .gallery_count  (gallery_count),
         .gallery_valid  (gallery_valid),
         .img_index      (img_index),
@@ -97,6 +103,7 @@ module tb_player_ctrl;
         .rst_n          (rst_n),
         .key_event      (key_event),
         .key_code       (key_code),
+        .auto_sw_sel    (auto_sw_sel),            // 同上: 锁 ×1 档，U10 只需验证索引推进
         .gallery_count  (gallery_count),
         .gallery_valid  (gallery_valid),
         .img_index      (f_index),
@@ -124,6 +131,7 @@ module tb_player_ctrl;
         .rst_n          (rst_n),
         .key_event      (key_event),
         .key_code       (key_code),
+        .auto_sw_sel    (auto_sw_sel),            // 同上: 对照实例也只关心 CLK_FREQ_HZ 参数
         .gallery_count  (gallery_count),
         .gallery_valid  (gallery_valid),
         .img_index      (x_index),
@@ -285,20 +293,25 @@ module tb_player_ctrl;
         press_key(4'd1);                                     // 7 → 0
         chk_eq32({4'd0, img_index}, 32'd0, "U04 KEY1 at last wraps to 0");
 
-        // ---------------- U05 无效键号 ----------------
+        // ---------------- U05 非本模块键号 ----------------
+        // 注意: 7/9 自 2026-10-26 起已被 KEY7(亮度)/KEY9(轮播倍率) 占用，
+        //   但它们由 rtl/control/key_action.v 译码，**不该**在本模块产生任何动作。
+        //   本用例验证的正是这条分工边界 —— 键被分配了，也不能漏进 player_ctrl。
         $display("");
-        $display("---- U05 invalid key code ----");
+        $display("---- U05 key codes outside this module ----");
         do_reset;
         gallery_count = 5'd8;
         press_key(4'd1);                                     // 先推到索引 1
         t0_idx      = img_index;
         n_sw_before = sw_pulses;
-        press_key(4'd9);                                     // 未分配的键号
+        press_key(4'd9);                                     // KEY9（轮播倍率，归 key_action）
         chk_eq32({4'd0, img_index}, t0_idx, "U05 key_code=9 does not move index");
         chk(mode == 2'd0,                   "U05 key_code=9 does not change mode");
         chk(sw_pulses == n_sw_before,       "U05 key_code=9 emits no switch pulse");
-        press_key(4'd7);                                     // 另一个未分配键号
+        press_key(4'd7);                                     // KEY7（亮度，归 key_action）
         chk_eq32({4'd0, img_index}, t0_idx, "U05 key_code=7 does not move index");
+        press_key(4'd14);                                    // KEY14（蜂鸣器静音，归 key_action）
+        chk_eq32({4'd0, img_index}, t0_idx, "U05 key_code=14 does not move index");
 
         // ---------------- U06 模式循环 ----------------
         $display("");
@@ -504,6 +517,66 @@ module tb_player_ctrl;
         $display("  U18: auto_cnt right after mode key = %0d", dut.auto_cnt);
         chk(dut.auto_cnt <= 32'd8,   "U18 mode switch resets countdown to ~0");
         chk(auto_play_en == 1'b1,    "U18 auto play survives NORMAL -> SCIENCE");
+
+        // ---------------- U19 轮播倍率档改阈值（KEY9 的等价效果）----------
+        // key_action 把 KEY9 译成 auto_sw_sel 0→1→2→3 循环，本模块据此把
+        // 间隔改为 ×1/×2/×3/×4。这里直接驱动 auto_sw_sel，验证的是 player_ctrl
+        // 一侧的算术，而不是按键译码（那部分在 tb_key_action 里测）。
+        // 为什么用 dut_fast: ×4 档在真实参数下要跑 1 亿拍，仿真不可接受。
+        $display("");
+        $display("---- U19 auto rotation speed selector ----");
+        do_reset;
+        auto_sw_sel   = 2'd0;
+        gallery_count = 5'd8;
+        press_key(4'd2);                                     // 开轮播（两个实例同时）
+        chk(f_auto == 1'b1, "U19 precondition: fast instance auto on");
+        // ×1 档（250 拍）先跑一张，确认基线
+        cyc = 0;
+        while ((f_switch !== 1'b1) && (cyc < 4000)) begin @(negedge clk); cyc = cyc + 1; end
+        $display("  U19 x1: switch after %0d cycles (expect ~250)", cyc);
+        chk(cyc >= 240 && cyc <= 260, "U19 x1 interval = 250 cycles");
+        @(negedge clk);
+        // 切到 ×4 档: 间隔应为 1000 拍
+        auto_sw_sel = 2'd3;
+        repeat (4) @(negedge clk);                           // 让档位同步并让计数器清零
+        cyc = 0;
+        while ((f_switch !== 1'b1) && (cyc < 4000)) begin @(negedge clk); cyc = cyc + 1; end
+        $display("  U19 x4: switch after %0d cycles (expect ~1000)", cyc);
+        chk(cyc >= 985 && cyc <= 1015, "U19 x4 interval = 1000 cycles");
+        @(negedge clk);
+        // 切回 ×1: 必须立刻从新阈值起算，不能沿用 ×4 的计数（否则要等半秒）
+        auto_sw_sel = 2'd0;
+        repeat (4) @(negedge clk);
+        cyc = 0;
+        while ((f_switch !== 1'b1) && (cyc < 4000)) begin @(negedge clk); cyc = cyc + 1; end
+        $display("  U19 x1 again: switch after %0d cycles (expect ~250)", cyc);
+        chk(cyc >= 240 && cyc <= 260, "U19 downshift restarts from the new threshold");
+        @(negedge clk);
+
+        // ---------------- U20 倍率档对真实实例算出的阈值 ----------------
+        // U19 已在 dut_fast 上验证"档位真的改变间隔"，这里补一条针对真实参数
+        // 实例的算术检查: 25MHz×1s×2 必须等于 50,000,000 拍。
+        // 为什么用层次引用而不是再跑 26M 拍: U09 已经跑过 25M 拍，再跑一遍会让
+        //   回归时长翻倍而信息量不增 —— 阈值对不对看一眼数字就知道，
+        //   而"阈值真的被用到"已由 U19 在快实例上实证。
+        $display("");
+        $display("---- U20 threshold arithmetic on the real 25MHz instance ----");
+        do_reset;
+        auto_sw_sel = 2'd1;                                  // ×2
+        repeat (2) @(negedge clk);
+        $display("  U20: auto_target @x2 = %0d (expect 50000000)", dut.auto_target);
+        chk(dut.auto_target == 32'd50_000_000, "U20 x2 threshold = 50,000,000 cycles");
+        auto_sw_sel = 2'd2;                                  // ×3
+        repeat (2) @(negedge clk);
+        $display("  U20: auto_target @x3 = %0d (expect 75000000)", dut.auto_target);
+        chk(dut.auto_target == 32'd75_000_000, "U20 x3 threshold = 75,000,000 cycles");
+        auto_sw_sel = 2'd3;                                  // ×4
+        repeat (2) @(negedge clk);
+        $display("  U20: auto_target @x4 = %0d (expect 100000000)", dut.auto_target);
+        chk(dut.auto_target == 32'd100_000_000, "U20 x4 threshold = 100,000,000 cycles");
+        auto_sw_sel = 2'd0;                                  // ×1
+        repeat (2) @(negedge clk);
+        chk(dut.auto_target == 32'd25_000_000, "U20 back to x1 threshold = 25,000,000");
 
         // ---------------- 收尾 ----------------
         $display("");

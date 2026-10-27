@@ -1,0 +1,35 @@
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module sdr_init_ref
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(33): (vlog-2163) Macro `BA_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(34): (vlog-2163) Macro `ROW_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(34): near ":": syntax error, unexpected ':'
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(49): (vlog-2163) Macro `ROW_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(101): (vlog-2163) Macro `SELF_REFRESH_INTERVAL is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_init_ref.enc.v(130): (vlog-2163) Macro `SELF_REFRESH_INTERVAL is undefined.
+
+-- Compiling module sdr_as_ram
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(25): (vlog-2163) Macro `ADDR_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(26): (vlog-2163) Macro `DM_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(27): (vlog-2163) Macro `DATA_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(30): (vlog-2163) Macro `ADDR_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(32): (vlog-2163) Macro `DATA_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(39): (vlog-2163) Macro `BA_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(40): (vlog-2163) Macro `ROW_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(41): (vlog-2163) Macro `DM_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(42): (vlog-2163) Macro `DATA_WIDTH is undefined.
+
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(109): in protected region.
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(109): in protected region.
+** Error: D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/sdr_as_ram.enc.v(109): syntax error in protected region.

@@ -29,8 +29,12 @@ try {
     }
     & "$ModelSimPath\vlog.exe" -quiet +define+SDRAM_SIM_MODEL @($sources | ForEach-Object { Join-Path $root $_ }) *> compile.txt
     if ($LASTEXITCODE -ne 0) { throw 'vlog failed; no stale simulation was run' }
-    $cases = @(@{name='image_player'; arguments=@()})
-    if ($FullVga) { $cases += @{name='image_player_full'; arguments=@('-gFULL=1')} }
+    # marker 是该用例在日志里必须出现的通过标记，允许同一 testbench 跑不同参数组合。
+    $cases = @(@{name='image_player'; arguments=@(); marker='image_player'})
+    if ($FullVga) {
+        $cases += @{name='image_player_full'; arguments=@('-gFULL=1'); marker='image_player_full'}
+        $cases += @{name='image_player_single'; arguments=@('-gSEAMLESS=0'); marker='image_player'}
+    }
     foreach ($case in $cases) {
         $log = $case.name + '.txt'
         $simArgs = @('-c', '-quiet', '-onfinish', 'stop') + $case.arguments + @(
@@ -41,7 +45,7 @@ try {
         $exit = $LASTEXITCODE
         $content = [IO.File]::ReadAllText((Join-Path $ReportDir $log))
         $summary = [regex]::Match($content, 'SUMMARY:.*?checks=(\d+)\s+errors=(\d+)')
-        $passed = $exit -eq 0 -and $content.Contains('ALL CHECKS PASSED: '+$case.name) -and
+        $passed = $exit -eq 0 -and $content.Contains('ALL CHECKS PASSED: '+$case.marker) -and
             $summary.Success -and [int]$summary.Groups[1].Value -gt 0 -and
             [int]$summary.Groups[2].Value -eq 0 -and
             $content -notmatch 'CHECKS FAILED|(?:^|\n)#\s*FAIL\b|\*\*\s+(?:Error|Fatal)\b'

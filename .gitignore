@@ -41,6 +41,7 @@ project/.stop.f
 
 # ModelSim libraries and waveforms.
 sim/msim_work/
+sim/work_audio/
 work/
 transcript
 *.wlf

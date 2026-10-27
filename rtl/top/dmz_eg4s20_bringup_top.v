@@ -28,8 +28,16 @@
 //     5. 蜂鸣器: 按键音 / 应急音
 //   键位分配（同一按键不得被两个功能复用 —— 修复前 KEY0/KEY1 曾同时驱动
 //             播放控制与图案切换，导致一次按键触发两种行为）:
-//     KEY0 = 上一张      KEY1 = 下一张      KEY2 = 播放/暂停    KEY3 = 模式循环
-//     KEY4 = 上一图案    KEY5 = 下一图案    KEY15 = 应急直达
+//     由 player_ctrl 消费: KEY0 = 上一张   KEY1 = 下一张   KEY2 = 播放/暂停
+//                          KEY3 = 模式循环 KEY15 = 应急直达
+//     由本层消费:          KEY4 = 上一图案 KEY5 = 下一图案
+//     由 key_action 消费（2026-10-26 新增）: KEY7 = 亮度  KEY8 = 反色
+//                          KEY9 = 轮播倍率 KEY10 = 重试图库扫描 KEY11 = 九宫格
+//                          KEY12 = 信息条 KEY13 = 电平条 KEY14 = 蜂鸣器静音
+//   说明: 本顶层是仿真预演平台（不进 TD 工程），只把与"播放控制 + 蜂鸣"相关的
+//         两个新信号接上；亮度/反色/九宫格/信息条/电平条属于画面后处理，
+//         在正式工程 dmz_eg4s20_hdmi_top 中由 video_overlay 消费。
+//         完整键位表见 docs/keymap_2026-10-26.md
 //
 // 【三、接口与内部结构】
 //   端口一览:
@@ -45,7 +53,7 @@
 //     输出  video_hs/vs/de  : 视频同步与数据有效
 //     输出  video_clk_out   : 像素时钟输出（VGA 模式需要）
 //
-//   内部逻辑块（共 9 块，按信号流顺序）:
+//   内部逻辑块（共 10 块，按信号流顺序）:
 //     [1] 像素时钟分频（内联）  always @(posedge clk50)
 //           功能: 50MHz ÷ 2 ≈ 25MHz 近似像素时钟（仿真与 RGB 目检用；
 //                 正式 HDMI 工程改用 PLL 精确产生）
@@ -55,8 +63,15 @@
 //           输入: clk50, rst_n, key_col     输出: key_event, key_code, key_state
 //     [3] player_ctrl          子模块例化
 //           功能: 播放控制状态机（切图 / 播放暂停 / 模式切换 / 自动轮播）
-//           输入: key_event, key_code, gallery_count/valid
-//           输出: img_index, img_switch_req, auto_play_en, mode, status_led
+//           输入: key_event, key_code, auto_sw_sel, gallery_count/valid
+//           输出: img_index, img_switch_req, loader_index, auto_play_en, mode, status_led
+//     [3b] key_action          子模块例化（2026-10-26 新增）
+//           功能: KEY7~KEY14 译码（亮度/反色/轮播倍率/重扫/九宫格/信息条/电平条/静音）
+//           输入: key_event, key_code
+//           输出: bright_sel, invert_en, auto_sw_sel, rescan_req, grid_en, info_en,
+//                 level_en, beep_muted
+//           说明: 本顶层只消费 auto_sw_sel 与 beep_muted，其余六路悬空
+//                 （画面后处理在正式工程里由 video_overlay 消费）
 //     [4] 图案选择器（内联）    always @(posedge clk50)
 //           功能: KEY4 上一个图案 / KEY5 下一个图案
 //           输入: key_event, key_code       输出: pattern_sel[2:0]
@@ -158,6 +173,39 @@ module dmz_eg4s20_bringup_top (
         .key_state (key_state)
     );
 
+    // ============================ 新增按键 KEY7~KEY14 ============================
+    // 为什么单独做一个模块: 八个新键都是"开/关某个开关"或"档位加一"这类小事，
+    //   若继续堆在顶层，顶层会出现八个 always 块，且每个新键都要改一次顶层 ——
+    //   而顶层是三个版本共用的装配图，改它等于同时改三份工程。
+    //   收拢到 key_action 后，键位表只存在于一处；顶层只连线、不含按键逻辑。
+    wire [2:0] bright_sel;         // 【亮度档位】0~4，0=原画面（见 video_overlay）
+    wire       invert_en;          // 【反色开关】1=RGB 三通道按位取反
+    wire [1:0] auto_sw_sel;        // 【轮播倍率】0=×1 1=×2 2=×3 3=×4（喂给 player_ctrl）
+    wire       rescan_req;         // 【重扫请求】单拍脉冲（正式工程进 gallery_probe）
+    wire       grid_en;            // 【九宫格开关】
+    wire       info_en;            // 【信息条开关】
+    wire       level_en;           // 【电平条开关】
+    wire       beep_muted;         // 【蜂鸣器静音】1=蜂鸣器不出声（不影响 HDMI/3.5mm 音频）
+
+    key_action u_kact (
+        .clk        (clk50),
+        .rst_n      (rst_n),
+        .key_event  (key_event),
+        .key_code   (key_code),
+        .bright_sel (bright_sel),
+        .invert_en  (invert_en),
+        .auto_sw_sel(auto_sw_sel),
+        .grid_en    (grid_en),
+        .info_en    (info_en),
+        .level_en   (level_en),
+        .beep_muted (beep_muted),
+        .rescan_req (rescan_req)
+    );
+
+    // 本顶层没有图库扫描链路与画面后处理，这六个输出在此悬空 ——
+    //   显式写成 wire + 不接线，是有意为之（综合会优化掉），
+    //   而不是漏接：它们的功能在正式工程 dmz_eg4s20_hdmi_top 中完整体现。
+
     // ============================ 播放控制 ============================
     wire [4:0]  img_index;         // 【当前图片索引】0~31，由 player_ctrl 状态机维护
                                    //   本顶层用它算出数码管要显示的"图号"
@@ -170,6 +218,8 @@ module dmz_eg4s20_bringup_top (
                                    //   作用: 驱动蜂鸣器音调切换与 LED 状态指示
     wire [3:0]  status_led;        // 【状态指示】bit0=轮播中, bit1=应急模式（来自 player_ctrl）
 
+    wire [8:0]  loader_index;      // 【1 基图号】= img_index + 1（本顶层不接存储链路，仅保留连接）
+
     player_ctrl #(
         .IMG_COUNT   (8),
         .AUTO_SW_S   (5),
@@ -179,10 +229,12 @@ module dmz_eg4s20_bringup_top (
         .rst_n          (rst_n),
         .key_event      (key_event),
         .key_code       (key_code),
+        .auto_sw_sel    (auto_sw_sel),   // KEY9 调轮播倍率（0 档 = 旧行为）
         .gallery_count  (5'd8),          // 最小系统: 假设 8 图（SD 链路接入后由扫描结果驱动）
         .gallery_valid  (1'b1),
         .img_index      (img_index),
         .img_switch_req (img_switch_req),
+        .loader_index   (loader_index),  // 早先此处漏接（隐式空接）；显式列出便于自查
         .auto_play_en   (auto_play_en),
         .mode           (mode),
         .status_led     (status_led)
@@ -207,6 +259,10 @@ module dmz_eg4s20_bringup_top (
     end
 
     wire        hs, vs, de, frame_start;
+    wire        vblank;            // 【垂直消隐标志】与 de 同拍，仅场消隐期为 1
+                                   //   本顶层未消费（图号/图案切换在正式工程里才用得上），
+                                   //   显式列出是为了让 video_timing_gen 的端口全部被连接
+                                   //   —— 之前漏接 vblank，ModelSim 每次仿真都报 TFMPC 警告
                                    // 【视频时序信号】来自 video_timing_gen:
                                    //   hs = 行同步, vs = 场同步, de = 数据有效
                                    //   frame_start = 帧起始单拍脉冲（预留: 阶段四双缓冲切换）
@@ -221,6 +277,7 @@ module dmz_eg4s20_bringup_top (
         .de          (de),
         .active_x    (active_x),
         .active_y    (active_y),
+        .vblank      (vblank),
         .frame_start (frame_start)
     );
 
@@ -325,9 +382,15 @@ module dmz_eg4s20_bringup_top (
     // 应急模式 → 急促音（250ms 响/停循环）; 其余时刻 → 按键音模式（trig 开启 100ms 窗口）
     wire beep_trig = key_event;   // 【蜂鸣器触发】任意按键都触发一声提示音
                                   //   直接接按键事件（单拍），响多久由 buzzer_tone 内部决定
-    wire [1:0] tone_sel = (mode == 2'd2) ? 2'd2 : 2'd1;
-                                  // 【音调选择】应急模式(2) 用应急音，其余模式用按键音
-                                  //   作用: 让"进入应急模式"在听觉上也有明确区分度
+    // 【音调选择】优先级: 静音(KEY14) > 应急音 > 按键音
+    //   为什么用 tone_sel 的 0 档做静音: buzzer_tone 的 0 档本来就是"不出声"
+    //   （sq_en 恒 0），为一个开关去改一个已验证模块的端口表，收益为零、回归风险非零
+    //   位宽说明: buzzer_tone 的 tone_sel 是 3 位（0=静音/1=按键音/2=应急音/3=故障告警），
+    //   早先这里写的是 2 位常量，ModelSim 每次仿真都报 PCDPC 位宽不匹配警告 —— 已改正
+    wire [2:0] tone_sel = beep_muted      ? 3'd0 :
+                          (mode == 2'd2)  ? 3'd2 : 3'd1;
+                                  //   作用: 让"进入应急模式"在听觉上也有明确区分度；
+                                  //         KEY14 静音只掐蜂鸣器，HDMI/3.5mm 音频不受影响
     buzzer_tone #(
         .CLK_FREQ_HZ (50_000_000)
     ) u_buzz (

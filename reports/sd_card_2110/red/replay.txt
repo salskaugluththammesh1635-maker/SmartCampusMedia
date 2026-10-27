@@ -1,0 +1,20 @@
+Reading D:/Quartus_APP/modelsim_ase/tcl/vsim/pref.tcl 
+
+# 10.1d
+
+# vsim +SECTOR_COUNT=1805 +LBA_FILE=D:/FPGA_Compelate/SmartCampusMedia/reports/sd_card_2110/lba.hex +DATA_FILE=D:/FPGA_Compelate/SmartCampusMedia/reports/sd_card_2110/data.hex -do {onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0} -c -onfinish stop -quiet work.tb_sd_card_replay 
+# onerror {quit -f -code 2} 
+#  Warning: onerror command for use within macro
+#  onbreak {quit -f -code 3} 
+#  Warning: onbreak command for use within macro
+#  run -all 
+# READ LBA=0 captured_slot=0
+# REPLAY_RESULT done=0 fail=1 err=1 pixels=0 words=0 requests=1 missing=0 errors=0
+# BOARD_DISPLAY=2110
+# ** Fatal: Captured SD card image did not load correctly
+#    Time: 328560 ns  Scope: tb_sd_card_replay File: D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_sd_card_replay.v Line: 141
+# ** Note: $finish    : D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_sd_card_replay.v(141)
+#    Time: 328560 ns  Iteration: 1  Instance: /tb_sd_card_replay
+# Break in Module tb_sd_card_replay at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_sd_card_replay.v line 141
+# Stopped at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_sd_card_replay.v line 141 
+#  quit -f -code 0 

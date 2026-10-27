@@ -1,5 +1,5 @@
 ﻿{
-    "startedAt":  "2026-10-20T01:55:26.2636347+08:00",
+    "startedAt":  "2026-10-27T00:55:37.2216355+08:00",
     "status":  "passed",
     "sources":  [
                     {
@@ -15,6 +15,10 @@
                         "path":  "rtl/storage/fat32_reader.v"
                     },
                     {
+                        "sha256":  "CB5B36A4A09BE1F722A75AEC0B6D90703A2E43704AD7CFFE2716476F5131B184",
+                        "path":  "rtl/storage/gallery_probe.v"
+                    },
+                    {
                         "sha256":  "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB",
                         "path":  "rtl/storage/bmp_parser.v"
                     },
@@ -23,8 +27,24 @@
                         "path":  "rtl/storage/img_loader.v"
                     },
                     {
-                        "sha256":  "783E6B02E6CF1DC9605158C5329E3F7220BC619A85B34C4BA8AB3E17A4961880",
+                        "sha256":  "EBA65C7CBCC10FA7E9CD99766B6753CD0AB4CD4D59C0E62E7F59BB6894668DC3",
                         "path":  "rtl/control/player_ctrl.v"
+                    },
+                    {
+                        "sha256":  "B6BC397D2E345D232E33A214F00AAE68D20D066A3EB77151E51D8B6059F31BE9",
+                        "path":  "rtl/control/err_prompt.v"
+                    },
+                    {
+                        "sha256":  "A46279B066EBDF6D84AE607A5152CB49AE18A85E8B8AF5D2BA8571C5B75D8198",
+                        "path":  "rtl/audio/buzzer_tone.v"
+                    },
+                    {
+                        "sha256":  "FCE38594D13FD41D4EE8F94FF27509CC09C53BCB5434F9E9CFB35EC35D456C97",
+                        "path":  "rtl/control/key_action.v"
+                    },
+                    {
+                        "sha256":  "71C752B705C6B4CAF2B152B8613A82ACE68D2E844205D646DC235B4E6C89C754",
+                        "path":  "rtl/video/video_overlay.v"
                     },
                     {
                         "sha256":  "6B801C90B702E8EF4603B65AB96B51EB52585DB705AD44302CA9FC37EFA6E80F",
@@ -43,6 +63,10 @@
                         "path":  "sim/testbench/tb_fat32_reader.v"
                     },
                     {
+                        "sha256":  "BEC17623E083BD25A85A6F8AE0AB3D9CD31423F04CF708615841F580AE1EA104",
+                        "path":  "sim/testbench/tb_gallery_probe.v"
+                    },
+                    {
                         "sha256":  "9A0E42EC3EC77342B2D05C790A6C01221BA36ADA8913300A73F9DF4E1661938B",
                         "path":  "sim/testbench/tb_bmp_parser.v"
                     },
@@ -51,8 +75,24 @@
                         "path":  "sim/testbench/tb_img_loader.v"
                     },
                     {
-                        "sha256":  "0745FDD655B1A25245B4A6322B9CEDDEC6D4A48B183799996189E8C7996D370E",
+                        "sha256":  "639736F8099C659A79640F66B6B4378CD2BF7C3E8D3606CE862B079529FEF02C",
                         "path":  "sim/testbench/tb_player_ctrl.v"
+                    },
+                    {
+                        "sha256":  "FEB1D7583733DD9E5CE38DF2DDFEEDF5EF02BAA50F03E6FEAF126456B95FE221",
+                        "path":  "sim/testbench/tb_err_prompt.v"
+                    },
+                    {
+                        "sha256":  "A19F9B182E805B556D0AA36B962C7D22D8100D43AC4787B76C291C76703421F5",
+                        "path":  "sim/testbench/tb_buzzer_tone.v"
+                    },
+                    {
+                        "sha256":  "D1B4BC76296C5A2C82E860695F5A9049322FDF19E6ED3BD16597F0ACD3A37EF6",
+                        "path":  "sim/testbench/tb_key_action.v"
+                    },
+                    {
+                        "sha256":  "66829000DADAA790A1BEB735921D701C6246085DE59DE8EC737AC12A0024A8C5",
+                        "path":  "sim/testbench/tb_video_overlay.v"
                     }
                 ],
     "tests":  [
@@ -142,6 +182,22 @@
                   },
                   {
                       "passed":  true,
+                      "name":  "gallery_probe",
+                      "exitCode":  0,
+                      "passLines":  37,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_gallery_probe"
+                                    ],
+                      "log":  "gallery_probe.txt"
+                  },
+                  {
+                      "passed":  true,
                       "name":  "bmp_parser",
                       "exitCode":  0,
                       "passLines":  37,
@@ -176,7 +232,7 @@
                       "passed":  true,
                       "name":  "player_ctrl",
                       "exitCode":  0,
-                      "passLines":  85,
+                      "passLines":  94,
                       "arguments":  [
                                         "-c",
                                         "-quiet",
@@ -187,7 +243,71 @@
                                         "work.tb_player_ctrl"
                                     ],
                       "log":  "player_ctrl.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "err_prompt",
+                      "exitCode":  0,
+                      "passLines":  43,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_err_prompt"
+                                    ],
+                      "log":  "err_prompt.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "buzzer_tone",
+                      "exitCode":  0,
+                      "passLines":  23,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_buzzer_tone"
+                                    ],
+                      "log":  "buzzer_tone.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "key_action",
+                      "exitCode":  0,
+                      "passLines":  40,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_key_action"
+                                    ],
+                      "log":  "key_action.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "video_overlay",
+                      "exitCode":  0,
+                      "passLines":  64,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_video_overlay"
+                                    ],
+                      "log":  "video_overlay.txt"
                   }
               ],
-    "finishedAt":  "2026-10-20T01:56:48.3318609+08:00"
+    "finishedAt":  "2026-10-27T00:58:44.8891689+08:00"
 }

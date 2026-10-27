@@ -1,0 +1,72 @@
+Reading D:/Quartus_APP/modelsim_ase/tcl/vsim/pref.tcl 
+
+# 10.1d
+
+# vsim -do {run -all; quit -f -code 0} -c -onfinish stop -quiet work.tb_fat32_reader 
+# run -all 
+# === tb_fat32_reader start ===
+#   T01: found=1 fail=0 err=0 clu=5 size=921654
+# PASS: T01 found IMG001.BMP
+# PASS: T01 no failure flag
+# PASS: T01 first cluster = 5
+# PASS: T01 file size = 921654 (921,654 B)
+# PASS: T01 out_fat_begin  = 5  (part 4 + reserved 1)
+# PASS: T01 out_data_begin = 7  (fat 5 + 2 x 1)
+# PASS: T01 out_spc        = 1
+#   T02: found=1 err=0 clu=6 size=230454
+# PASS: T02 lowercase short name matched
+# PASS: T02 first cluster = 6
+# PASS: T02 file size = 230454
+#   T03: fail=1 err=4
+# PASS: T03 directory entry is not a file
+# PASS: T03 err = 4 (not found)
+#   T04: fail=1 err=4
+# PASS: T04 IMG009 absent -> err = 4
+#   T05: found=1 err=0 clu=6 size=921654
+# PASS: T05 root dir walked across cluster chain
+# PASS: T05 IMG010 first cluster = 6
+# PASS: T05 IMG010 size correct
+# PASS: T06 LFN and volume label skipped correctly
+#   T07: fail=1 err=1
+# PASS: T07 bad MBR signature -> err = 1
+#   T08: fail=1 err=2
+# PASS: T08 bad VBR signature -> err = 2
+#   T09: fail=1 err=2
+# PASS: T09 spc = 0 -> err = 2
+#   T10: fail=1 err=2
+# PASS: T10 spc = 3 (not power of 2) -> err = 2
+#   T11: fail=1 err=4
+# PASS: T11 chain end before match -> not found
+# PASS: T11 err = 4
+#   T12: fail=1 err=3
+# PASS: T12 FAT[2]=0 invalid cluster -> err = 3
+#   T13: fail=1 err=5
+# PASS: T13 block read error -> err = 5
+#   T14: fail=1 err=6
+# PASS: T14 img_index = 0 -> err = 6
+#   T15: fail=1 err=2
+# PASS: T15 partition LBA = 0 -> err = 2
+#   T16: found=1 err=0 clu=16842757(0x01010005) size=921654
+# PASS: T16 large cluster number found
+# PASS: T16 first cluster = 0x01010005 (16842757)
+# PASS: T16 file size correct
+#   T17: fail=1 err=3
+# PASS: T17 reserved-range FAT entry rejected
+# PASS: T17 err = 3 (chain error)
+# FAIL: T18 unpartitioned FAT32 volume finds IMG001.BMP
+# FAIL: T18 file metadata preserved
+# FAIL: T18 unpartitioned FAT/data addresses use volume base zero
+# FAIL: out-of-range LBA access: addr=305419896 (image has 16 sectors)
+# FAIL: T19 VBR boot code at MBR offsets does not redirect reads
+# FAIL: T19 boot code does not become the volume base
+# PASS: T20 non-512-byte direct volume rejected
+# PASS: T21 FAT16-style root directory is not FAT32
+# 
+# FAIL: no out-of-range LBA access during whole test
+# CHECKS FAILED: 6 error(s)
+# === tb_fat32_reader done, errors = 6 ===
+# ** Note: $finish    : D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_fat32_reader.v(676)
+#    Time: 1041520 ns  Iteration: 1  Instance: /tb_fat32_reader
+# Break in Module tb_fat32_reader at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_fat32_reader.v line 676
+# Stopped at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_fat32_reader.v line 676 
+#  quit -f -code 0 
