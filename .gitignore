@@ -53,6 +53,11 @@ sim/*.py
 sim/run_pix_reader.ps1
 sim/testbench/tb_probe_*.v
 
+# Board-verification SD assets are generated on demand (8+ MB of BMPs):
+#   powershell -ExecutionPolicy Bypass -File scripts\prepare_board_verify_assets.ps1
+# Only the generator script and its documentation are tracked.
+assets/sd_verify/
+
 # Temporary files and editor settings.
 reports/_*.png
 reports/local_check/

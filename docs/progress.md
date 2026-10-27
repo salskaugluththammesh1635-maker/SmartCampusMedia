@@ -2008,6 +2008,17 @@ set_clock_groups -asynchronous \
 验证入口：`project/verify_timing_40mhz.tcl`，产物在 `reports/timing_40mhz_20261027/`，
 分析见 `reports/timing_40mhz_20261027/README.md`。
 
+**上板验证入口：`docs/board_verification_2026-10-27.md`**
+
+该文档把本文档中所有 🔶/⬜ 条目编排成一份可一次跑完的分阶段手册：时钟 → HDMI 显示 →
+SD 与图库 → 应急与静音 → SDRAM 稳定性 → 音频，另加键盘行序与 SD MOSI/MISO 两项核定。
+全部判据只落在板子上真实可观测的五个通道（HDMI 屏、8 个 LED、4 位数码管、蜂鸣器、
+3.5 mm 音频），因为顶层 17 个端口没有 UART、也没有 JTAG 观测口。
+
+SD 卡素材由 `scripts/prepare_board_verify_assets.ps1` 一键生成四套
+（`good` / `bad_size` / `bad_bmp` / `empty`），分别对应「正常图库」「宽高不符」
+「签名损坏」「零张图」四种期望结果。
+
 ---
 
 ## 问题记录
@@ -2018,6 +2029,7 @@ set_clock_groups -asynchronous \
 | 2026-10-27 | **曾一度用"拆异步组"让 WNS 从 −7.232 变成 +0.275**，与仓库既有立场冲突 | 若不复验就会把假绿写进交付证据，重蹈"＋0.104 ns"的覆辙 | 补做第三组对照实验：加 BUFG 但保留 0°/180° 同组 → 接口余量一个数字都不变，证明 +0.275 全部来自拆组；SDC 回退为同组 | ✅ 已纠正 |
 | 2026-10-27 | **`phys_opt -post_route -effort high` 在 TD 6.2.168116 上崩溃**（`0xC0000005`） | 流程在 PASS-route 后中断，报告不生成 | 从 `verify_timing_fix2.tcl` 删除该步；`-post_place` 实测反而更差（0.275→0.178），两者均弃用 | ✅ 已规避 |
 | 2026-10-27 | **`project/flow_sdc.tcl` 用 `[file normalize [info script]]` 推导工程目录** | 命令行调用时 `info script` 返回空串，`open_project` 收到空路径报 `PRJ-8601`，exit 2 | 新建 `verify_timing_final.tcl`，绝对路径写死且用正斜杠（TD 会吞反斜杠）；`flow_sdc.tcl` 只在 TD GUI 里 `source` 才可用 | ✅ 已规避 |
+| 2026-10-27 | **`img_loader` 把 `bmp_parser` 的细分错误码全合并为 `E_BMPHDR`**：`img_loader.v:76` 只接一根 `bmp_hdr_fail` 单拍，`img_loader.v:395-397` 一律置 `err_code <= 4'd2`；`image_player.v:227` 的 `.err_code()` 还是空连接 | 现场无法区分「非 BM 签名」「非 24 bit」「宽高不符」等具体原因——`bad_size` 与 `bad_bmp` 两张异常卡在数码管上都显示 `b1` | 上板诊断按「BMP 头或尺寸不合规」统一理解，不要指望靠数码管分辨子类；若要区分得把 `bmp_parser.err_code` 单独引到顶层，属增强而非当前缺陷。已写入 `docs/board_verification_2026-10-27.md` §2.5 | 🔶 已知简化 |
 | 2026-10-27 | **`tb_image_player.v` 的 `if(FULL) $finish` 放在 CASE 1 之后** | 改造前「FULL 全尺寸通过」实际只覆盖 CASE 1；本次新加的双缓冲断言被整个静默跳过，日志仍打印 `ALL CHECKS PASSED` | 把 `$finish` 块移到 CASE 2 之后，FULL 档现在跑两个 CASE。**这类结构性漏测不报错、不告警，只是少跑** | ✅ 已修复 |
 | 2026-10-27 | **`pix_reader.rd_base` 由 `output` 改 `input` 后，3 个历史诊断工程失去驱动源** | `project/image_path_diag/`、`project/image_readback_diag/`、`project/image_dm_fix/` 的 `wire [20:0] rd_base;` 悬空；这些工程不走 `sync_src.ps1`，主 RTL 回归不会发现 | 三处各补一行 `assign rd_base = 21'd0;`（单帧诊断固定第 0 帧） | ✅ 已修复 |
 | 2026-10-27 | **`edit` 工具丢 UTF-8 BOM**：`run_image_regression.ps1` 编辑后 BOM 消失，文件含 28 个中文字符 | Windows PowerShell 5.1 在无 BOM 时按 GBK 解析，中文注释变乱码（与 2026-10-16 `run_sim.bat` 同一类坑，方向相反） | 用 `UTF8Encoding($true)` 重写补回 BOM，`Parser::ParseFile` 复验 0 错误 | ✅ 已修复 |
