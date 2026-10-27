@@ -304,5 +304,10 @@ foreach ($k in @('good', 'bad_size', 'bad_bmp', 'empty')) {
 Write-Host ("  合计      {0,10:N0} B  ({1:N1} MB)" -f $total, ($total / 1MB))
 Write-Host ''
 Write-Host '下一步：按 docs/board_verification_2026-10-27.md 的阶段顺序使用这些目录。'
-Write-Host '  阶段 D~H 用 good\，阶段 I 依次换成 bad_size\、bad_bmp\、empty\。'
+Write-Host '  good\      拷到卡根目录  -> 阶段 2.1~2.4（正常图库、切图、轮播、重扫）'
+Write-Host '  bad_size\  拷到卡根目录  -> 阶段 2.5（第 2 张宽高不符，期望数码管 b1）'
+Write-Host '  bad_bmp\   拷到卡根目录  -> 阶段 2.5（第 2 张签名损坏，期望数码管 b1）'
+Write-Host '  empty\     拷到卡根目录  -> 阶段 2.5（零张图，期望数码管 00）'
+Write-Host ''
+Write-Host '注意：bad_size\ 与 bad_bmp\ 上电后第 1 张正常显示，必须按一次 KEY1 切到第 2 张才触发错误。'
 Write-Host ''
