@@ -95,13 +95,14 @@ module dmz_eg4s20_hdmi_top (
     wire       rescan_req;      // KEY10 图库重扫（单拍）
     wire       grid_en;         // KEY11 九宫格
     wire       info_en;         // KEY12 信息条
-    wire       level_en;        // KEY13 音频电平条
+    wire       level_en;        // KEY13 音频电平条（4 态循环）
+    wire       wave_en;         // KEY13 音频波形（4 态循环）
     wire       beep_muted;      // KEY14 蜂鸣器静音
     key_action u_kact (
         .clk(clk_pixel), .rst_n(rst_n), .key_event(key_event), .key_code(key_code),
         .bright_sel(bright_sel), .invert_en(invert_en), .auto_sw_sel(auto_sw_sel),
         .rescan_req(rescan_req), .grid_en(grid_en), .info_en(info_en),
-        .level_en(level_en), .beep_muted(beep_muted));
+        .level_en(level_en), .wave_en(wave_en), .beep_muted(beep_muted));
     wire sd_ok, sd_fail;
     wire [3:0] probe_err;
     wire [4:0] img_index;
@@ -344,9 +345,10 @@ module dmz_eg4s20_hdmi_top (
         .pixel_clk(clk_pixel), .rst_n(rst_n),
         .de(de), .active_x(active_x), .active_y(active_y), .rgb_in(video_base),
         .bright_sel(bright_sel), .invert_en(invert_en),
-        .grid_en(grid_en), .info_en(info_en), .level_en(level_en),
+        .grid_en(grid_en), .info_en(info_en),
+        .level_en(level_en), .wave_en(wave_en),
         .info_index(img_index), .info_mode(mode), .info_auto(auto_sw_sel),
-        .audio_sample(audio_left),
+        .audio_sample(audio_left), .audio_valid(audio_valid),
         .rgb_out(video_rgb));
 
     // ---- ACR（音频时钟再生）：告诉接收端"多少像素时钟对应一个音频采样" -----
