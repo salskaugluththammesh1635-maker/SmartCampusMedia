@@ -109,10 +109,11 @@ B 级是评分导向的主攻扩展（目标 **B1+B2 稳定、B3 力争**），C
 | 完整图片通路仿真 | 三档全绿：6,205 / **1,228,812**（真实 640×480）/ 6,203（单缓冲对照） | [result.json](reports/s6_integration/simulation/result.json)（2026-10-27 01:09） |
 | HDMI 音频通路 | 2 套 TB 全绿，累计 24 条 PASS | [result.json](reports/s6_integration/audio/result.json)（2026-10-26 22:23） |
 | 静态检查 | `lint_verilog.py` 77 个文件 E0/E1/E2 全 0 | `scripts/lint_verilog.py` |
-| 正式顶层构建 | elaborate exit 0；综合/布局/布线/bitgen 全 PASS；**时序自检通过，脚本返回 EXIT 0（`S6_TIMING_PASSED`）**，2026-10-27 21:12 出 bit（`#gclk 4/16` 印证） | [timing.txt](reports/s6_integration/timing.txt) / `project/flow_s6_bit.tcl` |
-| 资源占用 | LUT 10009/19600 = 51.07%；寄存器 5326 = 27.17%；LE 10849；BRAM9K 17/64；DSP 13/29；PLL 2/4；GCLK 4/16；IO 41/188 | [40MHz 面积报告](reports/timing_40mhz_20261027/area.txt) |
+| 正式顶层构建 | elaborate exit 0；综合/布局/布线/bitgen 全 PASS；**时序自检通过，脚本返回 EXIT 0（`S6_TIMING_PASSED`）**，2026-10-28 17:41 出 bit（含 SD 总线交接修复 + 超时保护） | [timing.txt](reports/s6_integration/timing.txt) / `project/flow_s6_bit.tcl` |
+| 资源占用 | LUT 10224/19600 = 52.16%；寄存器 5439 = 27.75%；LE 11051；BRAM9K 17/64；DSP 13/29；PLL 2/4；GCLK 4/16；IO 41/188 | [面积报告](reports/s6_integration/area.txt) |
 | 上板（诊断工程） | 数码管 7777、LED0～5 亮、中央红块出现 | [上板记录](reports/image_dm_fix/board_feedback.json) |
-| **静态时序（全设计）** | **已收敛**：SWNS **+1.935 ns**、STNS **0.000 ns**、HWNS +0.011 ns；**7 个 path group 全部 0 违例** | [40MHz 时序报告](reports/timing_40mhz_20261027/timing.txt) / [分析](reports/timing_40mhz_20261027/README.md) |
+| **上板（正式顶层·首测）** | **失败并已定位根因**：数码管稳定 `d810`（`image_err=9` 装载超时），LED 仅 D4/D5/D7 亮、D6 灭。根因 = 顶层 `.sd_ready` 误接 `sd_ok`，图库扫描期间播放器 `blk_start` 被仲裁器丢弃 → `img_loader` 无超时永久挂死。已修复并新增 `BLK_TIMEOUT` 看门狗（`E_BLKTMO=4'd10` → 显示 `dA`） | [问题记录](docs/progress.md) §问题记录 2026-10-28 |
+| **静态时序（全设计）** | **已收敛**：SWNS **+1.935 ns**、STNS **0.000 ns**、HWNS +0.003 ns；**7 个 path group 全部 0 违例** | [时序报告](reports/s6_integration/timing.txt) / [40MHz 分析](reports/timing_40mhz_20261027/README.md) |
 | **静态时序（SiP 接口，曾必负）** | **已收敛**：`clkc[2]→clkc[1]` 读 DQ **+1.935 ns**（0 违例/32 端点）、`clkc[1]→clkc[2]` 写 DQ **+5.630 ns**（0 违例/48 端点） | [40MHz 时序报告](reports/timing_40mhz_20261027/timing.txt) |
 | **降频路线对照** | 150 MHz → −7.232 ns；100 MHz → −5.565 ns；**40 MHz → +1.935 ns**。反推出常数开销：读 `T/2−10.565`、写 `T/2−7.001`，临界频率读 47.33 MHz / 写 71.42 MHz | [40MHz 分析](reports/timing_40mhz_20261027/README.md) |
 

@@ -298,6 +298,13 @@ module err_prompt #(
                     prompt_hi = CH_DATA;
                     prompt_lo = 4'd8;
                 end
+                4'd10: begin
+                    // 【2026-10-28 新增】img_loader 码 10: 等 blk_done 握手超时
+                    //   请求已发出但 sd_spi_ctrl 从未回应，也不是 blk_err。
+                    //   显示 dA，与 d4(读块失败)/d5(簇链异常) 区分开。
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd10;
+                end
                 default: begin
                     // 含 6（SD 失败透传，正常会被 sd_fail 分支先接住）
                     prompt_hi = CH_BMP;

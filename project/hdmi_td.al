@@ -44,6 +44,7 @@
             </File>
             <File Path="hdmi/pwm_audio_out.v">
                 <FileInfo>
+                    <Attr Name="AutoExcluded" Val="true"/>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
@@ -71,7 +72,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="9"/>
+                    <Attr Name="CompileOrder" Val="8"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/lane_lvds_10_1.v">
@@ -79,7 +80,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="14"/>
+                    <Attr Name="CompileOrder" Val="9"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/hdmi_phy.v">
@@ -87,7 +88,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="15"/>
+                    <Attr Name="CompileOrder" Val="10"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/video_rgb_to_axis.v">
@@ -95,7 +96,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="16"/>
+                    <Attr Name="CompileOrder" Val="11"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/audio_arc.v">
@@ -103,7 +104,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="17"/>
+                    <Attr Name="CompileOrder" Val="12"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/audio_tone_gen.v">
@@ -111,7 +112,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="18"/>
+                    <Attr Name="CompileOrder" Val="13"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/pcm_to_pwm.v">
@@ -119,7 +120,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="19"/>
+                    <Attr Name="CompileOrder" Val="14"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/sdram_pll.v">
@@ -127,7 +128,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="100"/>
+                    <Attr Name="CompileOrder" Val="15"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/sdram_ctrl_wrap.v">
@@ -135,7 +136,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="101"/>
+                    <Attr Name="CompileOrder" Val="16"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/async_fifo.v">
@@ -143,7 +144,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="102"/>
+                    <Attr Name="CompileOrder" Val="17"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/fat32_reader.v">
@@ -151,7 +152,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="103"/>
+                    <Attr Name="CompileOrder" Val="18"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/bmp_parser.v">
@@ -159,7 +160,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="104"/>
+                    <Attr Name="CompileOrder" Val="19"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/img_loader.v">
@@ -167,7 +168,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="105"/>
+                    <Attr Name="CompileOrder" Val="20"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/framebuf_arbiter.v">
@@ -175,7 +176,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="106"/>
+                    <Attr Name="CompileOrder" Val="21"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/pix_reader.v">
@@ -183,7 +184,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="107"/>
+                    <Attr Name="CompileOrder" Val="22"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/player_ctrl.v">
@@ -191,7 +192,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="108"/>
+                    <Attr Name="CompileOrder" Val="23"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/sd_spi_ctrl.v">
@@ -199,7 +200,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="109"/>
+                    <Attr Name="CompileOrder" Val="24"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/sd_probe.v">
@@ -207,7 +208,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="110"/>
+                    <Attr Name="CompileOrder" Val="25"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/image_player.v">
@@ -215,7 +216,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="111"/>
+                    <Attr Name="CompileOrder" Val="26"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/gallery_probe.v">
@@ -223,7 +224,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="112"/>
+                    <Attr Name="CompileOrder" Val="27"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/err_prompt.v">
@@ -231,7 +232,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="113"/>
+                    <Attr Name="CompileOrder" Val="28"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/key_action.v">
@@ -239,7 +240,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="114"/>
+                    <Attr Name="CompileOrder" Val="29"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/video_overlay.v">
@@ -247,15 +248,16 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="115"/>
+                    <Attr Name="CompileOrder" Val="30"/>
                 </FileInfo>
             </File>
             <File Path="../ip/local/sdram/global_def.v">
                 <FileInfo>
+                    <Attr Name="AutoExcluded" Val="true"/>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="300"/>
+                    <Attr Name="CompileOrder" Val="32"/>
                 </FileInfo>
             </File>
             <File Path="../ip/local/sdram/sdr_wrrd.enc.v">
@@ -263,7 +265,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="301"/>
+                    <Attr Name="CompileOrder" Val="33"/>
                 </FileInfo>
             </File>
             <File Path="../ip/local/sdram/sdr_init_ref.enc.v">
@@ -271,7 +273,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="302"/>
+                    <Attr Name="CompileOrder" Val="34"/>
                 </FileInfo>
             </File>
             <File Path="../ip/local/sdram/sdr_as_ram.enc.v">
@@ -279,7 +281,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="303"/>
+                    <Attr Name="CompileOrder" Val="35"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/enc/hdmi_1_4b_transmitter_core_wrapper.enc.v">
@@ -287,7 +289,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="304"/>
+                    <Attr Name="CompileOrder" Val="36"/>
                 </FileInfo>
             </File>
             <File Path="hdmi/dmz_eg4s20_hdmi_top.v">
@@ -295,12 +297,10 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="200"/>
+                    <Attr Name="CompileOrder" Val="31"/>
                 </FileInfo>
             </File>
         </Verilog>
-        <VHDL>
-        </VHDL>
         <ADC_FILE>
             <File Path="hdmi/dmz_eg4s20_hdmi.adc">
                 <FileInfo>

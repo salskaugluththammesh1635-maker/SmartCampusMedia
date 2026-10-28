@@ -188,9 +188,34 @@ module dmz_eg4s20_hdmi_top (
     // 用它接 load_req 比另做上电脉冲发生器更准 —— 它保证请求发出时卡里确实有图，
     // 且扫描用的 SD 事务已经全部结束（不会与装载抢总线）。
     wire player_load_req = switch_req || gallery_first_req;
+    // ------------------------------------------------------------------
+    //  【2026-10-28 修复】sd_ready 必须接 sd_owner_player，不能接 sd_ok
+    // ------------------------------------------------------------------
+    //  故障现象: 上板后数码管稳定显示 d810（image_err=9 装载超时），
+    //            LED D4/D5/D7 亮、D6(装载中) 灭。
+    //
+    //  根因链条：
+    //    ① image_player 的 C_WAIT 只看 sd_ready && !blk_busy，**不看 load_req**
+    //       （image_player.v:159，历史 image_dm_fix 版本同样如此）。
+    //    ② 顶层原来把 .sd_ready 接成 sd_ok。sd_ok 在探针成功那一刻就拉高，
+    //       但此时 gallery_probe 才刚开始扫描，sd_owner_gallery = 1。
+    //    ③ 于是 image_player 在 sd_ok 后约 20 拍就冲进 C_LOAD，img_loader
+    //       发出单拍 blk_start；而仲裁器 sd_arb_start 此刻选的是
+    //       gallery_start —— 播放器的请求被**直接丢弃**，从未到达 sd_spi_ctrl。
+    //    ④ img_loader 在 T_FATRD/T_DATRD 只等 blk_done，没有任何超时，
+    //       且不会重发请求 → 永久挂死。
+    //    ⑤ 4 秒后 image_player 的 LOAD_TIMEOUT 兜底，报 error_code=9 → 显示 d8。
+    //
+    //  为什么 image_dm_fix 诊断工程能出图: 它没有 gallery_probe，
+    //  sd_owner_gallery 恒为 0，播放器从一上电就独占总线，竞态不存在。
+    //
+    //  sd_owner_player = sd_ok && (gallery_done || gallery_fail)，
+    //  正好表达「图库扫描已完结、总线已归播放器」。用它做 sd_ready，
+    //  播放器就会一直停在 C_WAIT 直到真正拿到总线，请求不会再被吞。
+    // ------------------------------------------------------------------
     image_player u_player (
         .pix_clk(clk_pixel), .rst_n_pix(rst_n), .sdr_clk(clk_sdr), .sdr_clk_sft(clk_sdr_sft),
-        .rst_n_sdr(rst_sync_sdr[2]), .sd_ready(sd_ok), .sd_failed(sd_fail), .blk_busy(sd_busy),
+        .rst_n_sdr(rst_sync_sdr[2]), .sd_ready(sd_owner_player), .sd_failed(sd_fail), .blk_busy(sd_busy),
         .load_req(player_load_req), .image_index(loader_index), .blk_start(player_start), .blk_addr(player_addr),
         .blk_done(sd_blk_done), .blk_err(sd_blk_err), .data_byte(sd_dbyte), .data_valid(sd_dvalid),
         .de(de), .scan_y(vblank ? 10'd480 : active_y), .rgb565(image565), .pixel_valid(image_pixel_valid),

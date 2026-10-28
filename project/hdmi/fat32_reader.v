@@ -81,7 +81,12 @@
 // ============================================================================
 module fat32_reader #(
     parameter CLK_FREQ_HZ   = 25_000_000, // 主时钟频率（Hz），全系统统一 25MHz
-    parameter FAT_CHAIN_MAX = 64          // 根目录簇链遍历深度上限（防死循环，≤255）
+    parameter FAT_CHAIN_MAX = 64,         // 根目录簇链遍历深度上限（防死循环，≤255）
+    // 【2026-10-28 新增】等 blk_done 握手的最长拍数（约 84ms @25MHz）。
+    //   必须大于 sd_spi_ctrl 内部的 TOKEN_TIMEOUT(1_048_576 ≈ 42ms)，
+    //   保证"控制器自己超时报 blk_err"先发生；本超时只捕获
+    //   "请求根本没被控制器接收"的静默挂死（上下文见 img_loader 文件头）。
+    parameter BLK_TIMEOUT   = 2_097_152
 )(
     input  wire        clk,            // 主时钟 25MHz
     input  wire        rst_n,          // 异步复位，低有效
@@ -139,6 +144,9 @@ module fat32_reader #(
     reg  [8:0]  fat_off;      // 【FAT 项内偏移】目标 FAT 项在 FAT 扇区内的字节偏移
     reg  [31:0] next_lba;     // 【下一扇区（组合）】S_EVAL 里算好，S_REQ 装载
     reg         cap_clr;      // 【捕获清零请求】1 拍脉冲，块[2] 据此清空捕获寄存器
+    // 【2026-10-28 新增】等 blk_done 的看门狗：S_RX 只等握手，旧版无超时。
+    //   若 blk_start 因顶层 SD 总线归属切换被丢弃，会永久挂死。
+    reg  [31:0] blk_wait_cnt;
 
     // —— [2] 字节捕获寄存器（全部只由块[2]驱动）——
     reg  [9:0]  byte_cnt;     // 【块内字节计数】0~512，512 = 块收完
@@ -219,6 +227,7 @@ module fat32_reader #(
             err_code      <= 4'd0;
             file_size     <= 32'd0;
             first_cluster <= 32'd0;
+            blk_wait_cnt  <= 32'd0;
         end else begin
             // 两个脉冲信号默认 0：需要时在各分支拉高 1 拍
             blk_start <= 1'b0;
@@ -246,10 +255,11 @@ module fat32_reader #(
                 // 发起读块: blk_addr 与 blk_start 同拍更新，
                 // 下一拍 sd_spi_ctrl 看到的已是稳定地址 + 1 拍脉冲
                 S_REQ: begin
-                    cur_lba   <= next_lba;
-                    blk_addr  <= next_lba;
-                    blk_start <= 1'b1;
-                    st        <= S_RX;
+                    cur_lba      <= next_lba;
+                    blk_addr     <= next_lba;
+                    blk_start    <= 1'b1;
+                    blk_wait_cnt <= 32'd0;
+                    st           <= S_RX;
                 end
                 // 等待块结束: 字节由块[2] 同步接收，本态只等握手
                 S_RX: begin
@@ -258,6 +268,14 @@ module fat32_reader #(
                         st       <= S_FAIL;
                     end else if (blk_done) begin
                         st <= S_EVAL;                   // 隔一拍再判定，见文件头
+                    end else if (blk_wait_cnt >= BLK_TIMEOUT[31:0]) begin
+                        // 【2026-10-28 新增】握手超时：blk_start 已被丢弃，永无回应。
+                        //   仍报 4'd5（底层读块失败），因为上层 err_prompt 的
+                        //   image_err 映射表只区分 1~5/7/8/9/10，多一个码意义不大。
+                        err_code <= 4'd5;
+                        st       <= S_FAIL;
+                    end else begin
+                        blk_wait_cnt <= blk_wait_cnt + 32'd1;
                     end
                 end
                 // 评估: 依据 stage 解释刚读完的块，并算好下一个扇区

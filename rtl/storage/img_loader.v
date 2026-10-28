@@ -32,9 +32,19 @@
 //    代价是 FIFO 偶尔短暂空转，换来 bmp_parser 无需改造。
 //
 //  错误码:
-//     1 = FAT32 定位失败        2 = BMP 头解析失败
-//     3 = 底层读块失败          4 = FAT 簇链异常
-//     5 = FIFO 长时间无空间（下游卡死）
+//     1  = FAT32 定位失败        2  = BMP 头解析失败
+//     3  = 底层读块失败          4  = FAT 簇链异常
+//     5  = FIFO 长时间无空间（下游卡死）
+//     10 = 等 blk_done 握手超时（请求发出但控制器从未回应，见 2026-10-28 记录）
+//
+//  【2026-10-28 补记】新增码 10（E_BLKTMO）的由来
+//    上板实测：数码管稳定显示 d810（image_player 报 err=9 装载超时）。
+//    根因是顶层 SD 三段仲裁在扫描期间只路由 gallery_start，播放器发出的
+//    单拍 blk_start 被丢弃；而本模块在 T_FATRD / T_DATRD 只等 blk_done、
+//    没有超时也不重发，于是一路静默挂死，最后靠上层 4 秒超时兜底。
+//    现在本模块自己就能在 BLK_TIMEOUT(≈84ms) 后报出码 10 →
+//    数码管显示 dA，与"读块失败(d4)""簇链异常(d5)"明确区分开。
+//    取码 10 而非 6：6 已被 image_player 占用为"SD 失败"，语义不同。
 //
 //  时钟域: 全程 25MHz（与 sd_spi_ctrl / fat32_reader / bmp_parser 同域）。
 //          跨到 150MHz 的 SDRAM 侧由 async_fifo 承担，本模块不碰跨时钟域。
@@ -42,7 +52,12 @@
 module img_loader #(
     parameter CLK_FREQ_HZ = 25_000_000, // 主时钟频率
     parameter CHAIN_MAX   = 255,        // 单文件簇数上限（防死循环）
-    parameter WR_TIMEOUT  = 1_048_576   // 等 FIFO 空间的最长拍数（约 42ms @25MHz）
+    parameter WR_TIMEOUT  = 1_048_576,  // 等 FIFO 空间的最长拍数（约 42ms @25MHz）
+    // 【2026-10-28 新增】等 blk_done 握手的最长拍数（约 84ms @25MHz）。
+    //   必须大于 sd_spi_ctrl 内部的 TOKEN_TIMEOUT(1_048_576 ≈ 42ms)，
+    //   这样"控制器自己超时报 blk_err"永远先于本超时发生，本超时只负责
+    //   捕获"请求根本没被控制器接收"这种静默挂死（见下方 T_FATRD/T_DATRD）。
+    parameter BLK_TIMEOUT = 2_097_152
 )(
     input  wire        clk,             // 25MHz
     input  wire        rst_n,           // 异步复位，低有效
@@ -91,7 +106,13 @@ module img_loader #(
                      E_BMPHDR  = 4'd2,
                      E_BLKIO   = 4'd3,
                      E_CHAIN   = 4'd4,
-                     E_WRSTALL = 4'd5;
+                     E_WRSTALL = 4'd5,
+                     // 【2026-10-28 新增】等 blk_done 握手超时：
+                     //   请求已发出，但 sd_spi_ctrl 从未回应（也没报 blk_err）。
+                     //   典型成因是顶层 SD 总线归属切换时单拍 blk_start 被丢弃。
+                     //   取 10 而非 6：6 已被 image_player 占用为"SD 失败"，
+                     //   两者语义完全不同，不能混用同一个码。
+                     E_BLKTMO  = 4'd10;
 
     // ------------------------------------------------------------------------
     //  状态机
@@ -205,6 +226,13 @@ module img_loader #(
     //  [1] 主序列机
     // ------------------------------------------------------------------------
     reg [31:0] stall_cnt;
+    // 【2026-10-28 新增】等 blk_done 的看门狗计数：
+    //   T_FATRD / T_DATRD 发出 blk_start 后，若 sd_spi_ctrl 因为顶层总线
+    //   归属切换而根本没接收这个单拍脉冲，blk_done 永不到来、blk_err 也不报，
+    //   状态机会永久挂死（旧版正是如此，最后由 image_player 的 4 秒超时兜底，
+    //   报出笼统的 err=9）。这里补一个独立的超时出口，把这种"静默挂死"
+    //   变成可观测的 E_BLKTMO。
+    reg [31:0] blk_wait_cnt;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             st           <= T_IDLE;
@@ -233,6 +261,7 @@ module img_loader #(
             byte_data_r  <= 8'd0;
             byte_sof_r   <= 1'b0;
             stall_cnt    <= 32'd0;
+            blk_wait_cnt <= 32'd0;
         end else begin
             // 默认单拍信号归零
             fat_start   <= 1'b0;
@@ -299,12 +328,14 @@ module img_loader #(
                     byte_cnt    <= 10'd0;
                     blk_addr_i  <= fat_sec_add;
                     blk_start_i <= 1'b1;
+                    blk_wait_cnt <= 32'd0;
                     st          <= T_FATRD;
                 end else begin
                     stall_cnt   <= 32'd0;
                     byte_cnt    <= 10'd0;
                     blk_addr_i  <= dat_clu_sec + {24'd0, sec_in_clu};
                     blk_start_i <= 1'b1;
+                    blk_wait_cnt <= 32'd0;
                     st          <= T_DATRD;
                 end
             end
@@ -316,6 +347,7 @@ module img_loader #(
                     err_code <= E_BLKIO;
                     st       <= T_FAIL;
                 end else if (data_valid) begin
+                    blk_wait_cnt <= 32'd0;
                     if (byte_cnt >= fat_off && byte_cnt < (fat_off + 9'd4)) begin
                         case (fat_byte_i)
                             4'd0:    fat_val[7:0]   <= data_byte;
@@ -348,6 +380,12 @@ module img_loader #(
                         chain_cnt   <= chain_cnt + 16'd1;
                         st          <= T_CHKSPC;
                     end
+                end else if (blk_wait_cnt >= BLK_TIMEOUT[31:0]) begin
+                    // 【2026-10-28 新增】等 blk_done 超时：请求已发出但控制器毫无回应
+                    err_code <= E_BLKTMO;
+                    st       <= T_FAIL;
+                end else begin
+                    blk_wait_cnt <= blk_wait_cnt + 32'd1;
                 end
             end
             // ------------------------------------------------------------
@@ -399,6 +437,12 @@ module img_loader #(
                         sec_in_clu <= sec_in_clu + 8'd1;
                         stall_cnt  <= 32'd0;
                         st         <= T_CHKSPC;
+                    end else if (blk_wait_cnt >= BLK_TIMEOUT[31:0]) begin
+                        // 【2026-10-28 新增】等 blk_done 超时：请求被丢弃，永不回应
+                        err_code <= E_BLKTMO;
+                        st       <= T_FAIL;
+                    end else begin
+                        blk_wait_cnt <= blk_wait_cnt + 32'd1;
                     end
                 end
             end
