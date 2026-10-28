@@ -20,7 +20,7 @@
 //   KEY10  图库重扫         rescan_req      单拍脉冲    现场换卡后不重启重新枚举
 //   KEY11  九宫格参考线     grid_en         电平        叠加 2x2 分割线 + 中心块
 //   KEY12  信息条 OSD       info_en         电平        底部显示图号/模式/轮播/亮度
-//   KEY13  音频电平条       level_en        电平        右侧竖条随音频幅度跳动
+//   KEY13  音频图层循环     level_en/wave_en 电平(2b)   关→电平条→波形→电平+波形→关
 //   KEY14  蜂鸣器静音       beep_muted      电平        提示音与应急音全静（音频不受影响）
 //   -------------------------------------------------------------------------
 //   **为什么这八个键放在本模块而不是 player_ctrl 里**：
@@ -71,7 +71,8 @@ module key_action (
     output reg  [1:0] auto_sw_sel,  // KEY9: 轮播倍率档 0..3（×1/×2/×3/×4）
     output reg        grid_en,      // KEY11: 九宫格参考线
     output reg        info_en,      // KEY12: 底部信息条
-    output reg        level_en,     // KEY13: 音频电平条
+    output reg        level_en,     // KEY13: 音频电平条（4 态循环的第 1/3 态）
+    output reg        wave_en,      // KEY13: 音频波形（4 态循环的第 2/3 态）
     output reg        beep_muted,   // KEY14: 蜂鸣器静音
     // —— 单拍脉冲 ——
     output reg        rescan_req    // KEY10: 请求重扫图库（1 拍）
@@ -98,7 +99,7 @@ module key_action (
     //   功能: 把 KEY7~KEY14 的单拍按键事件翻译成"电平参数"或"单拍请求"
     //   输入: key_event, key_code
     //   输出: bright_sel / invert_en / auto_sw_sel / rescan_req /
-    //         grid_en / info_en / level_en / beep_muted
+    //         grid_en / info_en / level_en / wave_en / beep_muted
     //   说明: 其余键号（0~6、15）在这里**什么也不做** —— 它们各有归属
     //         （player_ctrl 五个键、顶层 pattern_sel 两个键、顶层音频一个键）。
     //         兜底 else 不做赋值，即"未分配的键按下时全部输出保持不变"。
@@ -111,6 +112,7 @@ module key_action (
             grid_en     <= 1'b0;        // 不叠加网格
             info_en     <= 1'b0;        // 不显示信息条
             level_en    <= 1'b0;        // 不显示电平条
+            wave_en     <= 1'b0;        // 不显示波形
             beep_muted  <= 1'b0;        // 蜂鸣器可发声
             rescan_req  <= 1'b0;
         end else begin
@@ -130,7 +132,25 @@ module key_action (
                     // 三个"图层开关"与蜂鸣器静音: 均为纯翻转
                     K_GRID  : grid_en     <= ~grid_en;
                     K_INFO  : info_en     <= ~info_en;
-                    K_LEVEL : level_en    <= ~level_en;
+                    // KEY13: 4 态循环 关 -> 电平条 -> 波形 -> 电平+波形 -> 关
+                    K_LEVEL : begin
+                        if (!level_en && !wave_en) begin
+                            level_en <= 1'b1;   // 关 -> 电平条
+                            wave_en  <= 1'b0;
+                        end
+                        else if (level_en && !wave_en) begin
+                            level_en <= 1'b0;   // 电平条 -> 波形
+                            wave_en  <= 1'b1;
+                        end
+                        else if (!level_en && wave_en) begin
+                            level_en <= 1'b1;   // 波形 -> 电平+波形
+                            wave_en  <= 1'b1;
+                        end
+                        else begin
+                            level_en <= 1'b0;   // 电平+波形 -> 关
+                            wave_en  <= 1'b0;
+                        end
+                    end
                     K_BEEP  : beep_muted  <= ~beep_muted;
                     // 未分配键号: 明确不做任何事（保持电平参数不变）
                     default : ;

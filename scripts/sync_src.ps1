@@ -53,8 +53,10 @@ $map = [ordered]@{
     'rtl\control\err_prompt.v'                         = @('project\hdmi\err_prompt.v')
     # ===== 仅 hdmi_td：扩展键译码与像素后处理（KEY7~KEY14）=====
     # key_action 是 KEY7~KEY14 的唯一译码点（顶层不再单独消费这 8 个键号）；
-    # video_overlay 做亮度/反色/九宫格/信息条/音频电平条，纯组合、无状态。
+    # video_overlay 做亮度/反色/九宫格/信息条/电平条/波形，
+    # 波形历史在 audio_waveform 子模块内寄存，像素输出仍同拍。
     'rtl\control\key_action.v'                         = @('project\hdmi\key_action.v')
+    'rtl\video\audio_waveform.v'                       = @('project\hdmi\audio_waveform.v')
     'rtl\video\video_overlay.v'                        = @('project\hdmi\video_overlay.v')
     # ===== 仅 hdmi_td =====
     'rtl\top\dmz_eg4s20_hdmi_top.v'                    = @('project\hdmi\dmz_eg4s20_hdmi_top.v')

@@ -1,7 +1,7 @@
 // ============================================================================
 // tb_video_overlay —— video_overlay（像素后处理与 OSD 叠加）独立仿真
 // ============================================================================
-// 被测: rtl/video/video_overlay.v（纯组合，无寄存器）
+// 被测: rtl/video/video_overlay.v（主体组合；波形历史在 audio_waveform 子模块）
 // 目的: OSD 是"看得见的东西"，上板只能靠眼睛判断对错；把每一处像素颜色
 //       变成可重跑的断言，才能在改动 KEY7/8/11/12/13 之后确认画面没走样。
 //
@@ -47,6 +47,8 @@ module tb_video_overlay;
     reg [1:0]  info_mode   = 2'd0;
     reg [1:0]  info_auto   = 2'd0;
     reg signed [23:0] audio_sample = 24'sd0;
+    reg        audio_valid = 1'b0;
+    reg        wave_en     = 1'b0;
 
     // ---- 输出 ----
     wire [23:0] rgb_out;
@@ -67,6 +69,8 @@ module tb_video_overlay;
         .info_mode    (info_mode),
         .info_auto    (info_auto),
         .audio_sample (audio_sample),
+        .audio_valid  (audio_valid),
+        .wave_en      (wave_en),
         .rgb_out      (rgb_out)
     );
 
@@ -75,6 +79,7 @@ module tb_video_overlay;
     // ========================================================================
     integer errors = 0;
     integer checks = 0;
+    integer w;                      // 波形历史填充计数
 
     task chk;
         input         cond;
@@ -116,6 +121,8 @@ module tb_video_overlay;
             info_mode  = 2'd0;
             info_auto  = 2'd0;
             audio_sample = 24'sd0;
+            audio_valid  = 1'b0;
+            wave_en      = 1'b0;
         end
     endtask
 
@@ -134,6 +141,18 @@ module tb_video_overlay;
             active_x = x_i;
             active_y = y_i;
             #1;
+        end
+    endtask
+
+    // 推入一个 48 kHz 音频样本：audio_valid 保持 1 拍，等待波形历史移位
+    task push_sample;
+        input signed [23:0] s;
+        begin
+            @(negedge clk);
+            audio_valid  = 1'b1;
+            audio_sample = s;
+            @(negedge clk);
+            audio_valid  = 1'b0;
         end
     endtask
 
@@ -413,6 +432,60 @@ module tb_video_overlay;
         rgb_in = 24'hFF_FF_FF;
         at(11'd320, 10'd240);
         chk_eq24(rgb_out, 24'h80_80_80, "V10 image layer is dimmed then inverted");
+
+        // ---------------- V11 KEY13 音频波形层 ----------------
+        // 窗口 x ∈ [64,575]，每 8 像素一个样本，中心线 y=200。
+        // 先填 64 个 0，验证安静时是一条 y=200 的直线；再推入 2^21 的正样本，
+        // 验证右端最新样本抬高，并与旧样本连线。
+        $display("");
+        $display("--- V11 KEY13 audio waveform ---");
+        defaults;
+        wave_en = 1'b1;
+        rgb_in  = 24'h40_40_40;
+        for (w = 0; w < 64; w = w + 1) push_sample(24'sd0);
+        at(11'd320, 10'd200);
+        chk_eq24(rgb_out, 24'hFF_FF_40, "V11 silent history draws baseline at y=200");
+        at(11'd320, 10'd199);
+        chk_eq24(rgb_out, 24'h40_40_40, "V11 one row above baseline is background");
+        at(11'd63, 10'd200);
+        chk_eq24(rgb_out, 24'h40_40_40, "V11 x=63 is left of the waveform window");
+        at(11'd576, 10'd200);
+        chk_eq24(rgb_out, 24'h40_40_40, "V11 x=576 is right of the waveform window");
+
+        // 2^21 = 0x20_0000 → sample[23:8] = 0x2000 = 8192 → >>>9 = +16 像素
+        push_sample(24'sd2097152);
+        at(11'd574, 10'd216);
+        chk_eq24(rgb_out, 24'hFF_FF_40, "V11 newest sample raises the right edge");
+        at(11'd574, 10'd208);
+        chk_eq24(rgb_out, 24'hFF_FF_40, "V11 line connects newest to previous sample");
+        at(11'd574, 10'd199);
+        chk_eq24(rgb_out, 24'h40_40_40, "V11 left of the line stays background");
+        at(11'd320, 10'd200);
+        chk_eq24(rgb_out, 24'hFF_FF_40, "V11 older samples remain on the baseline");
+        at(11'd320, 10'd216);
+        chk_eq24(rgb_out, 24'h40_40_40, "V11 older samples are not raised");
+
+        wave_en = 1'b0;
+        at(11'd320, 10'd200);
+        chk_eq24(rgb_out, 24'h40_40_40, "V11 wave off draws nothing");
+
+        // 电平条与波形共存：右侧电平条、中间波形，互不覆盖
+        level_en     = 1'b1;
+        wave_en      = 1'b1;
+        audio_sample = 24'sd2097151;
+        at(11'd620, 10'd300);
+        chk_eq24(rgb_out, 24'h20_FF_20, "V11 level bar still works with waveform on");
+        at(11'd320, 10'd200);
+        chk_eq24(rgb_out, 24'hFF_FF_40, "V11 waveform still works with level bar on");
+
+        // OSD 不受亮度/反色影响
+        bright_sel = 3'd4;
+        invert_en  = 1'b1;
+        at(11'd320, 10'd200);
+        chk_eq24(rgb_out, 24'hFF_FF_40, "V11 waveform colour unchanged at darkest+invert");
+        de = 1'b0;
+        at(11'd320, 10'd200);
+        chk_eq24(rgb_out, 24'd0, "V11 blanking forces waveform output to 0");
 
         // ---------------- 收尾 ----------------
         $display("");
