@@ -35,7 +35,7 @@
 //
 // 【三】接口与内部结构
 //    输入: clk / rst_n / key_event / key_code[3:0]（均来自 key_matrix_4x4）
-//    输出: 6 个电平参数 + 1 个单拍脉冲（rescan_req）
+//    输出: 各电平参数（含 level_en/wave_en） + 1 个单拍脉冲（rescan_req）
 //    内部: **唯一**一个时序 always 块 —— 所有输出寄存器只在此块赋值，
 //          不存在多驱动，也不需要第二个时钟域（全模块跑 25 MHz clk_pixel）。
 //

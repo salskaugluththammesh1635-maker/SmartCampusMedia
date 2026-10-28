@@ -28,7 +28,7 @@
 //   如果反过来先叠加再反色，KEY8 一开信息条就整个变红底黑字，现场无法读数。
 //
 // 【三】接口与内部结构
-//    输入: pixel_clk / rst_n / de / active_x / active_y / rgb_in / 6 个控制量
+//    输入: pixel_clk / rst_n / de / active_x / active_y / rgb_in / 各控制量
 //    输出: rgb_out[23:0]（同拍，无延迟）
 //    内部: 主体是组合逻辑（wire + assign + 一个 always @(*)）；
 //          波形历史寄存在子模块 audio_waveform 内，但其像素输出仍是组合的，
