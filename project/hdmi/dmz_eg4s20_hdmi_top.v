@@ -130,6 +130,9 @@ module dmz_eg4s20_hdmi_top (
     test_pattern_gen u_pat (.pixel_clk(clk_pixel), .rst_n(rst_n), .de(de),
         .active_x(active_x), .active_y(active_y), .pattern_sel(pattern_sel), .user_color(24'd0),
         .rgb_r(pr), .rgb_g(pg), .rgb_b(pb));
+    wire [23:0] science_rgb;
+    science_page u_science_page (
+        .de(de), .active_x(active_x), .active_y(active_y), .rgb_out(science_rgb));
 
     // 启动阶段沿用已验证的 SD 探针；探针通过后先由 gallery_probe 枚举图库，
     // 枚举结束再把扇区服务独占交给图片链路 —— 三段严格串行。
@@ -180,6 +183,19 @@ module dmz_eg4s20_hdmi_top (
     wire image_pixel_valid, image_ready, image_loading, image_failed;
     wire [3:0] image_error;
     wire [2:0] reader_status;
+    // "曾经有过一帧有效图片"的粘滞标志（复位后一直保持 1）。
+    // 用途：区分"上电还没出过图"（可以显示测试彩条）与"显示过图后 image_ready
+    // 掉下来"（存储故障退帧/重装载窗口，必须出黑）。image_ready 一旦被故障
+    // 清零，mux 若回落测试彩条，pattern_sel=0 的八色彩条第 0 条正是纯白
+    // 24'hFF_FFFF（占 x∈[0,79]），上屏就是一条 80 像素宽的竖向白条。
+    reg image_ever_ready;
+    always @(posedge clk_pixel or negedge rst_n) begin
+        if (!rst_n) image_ever_ready <= 1'b0;
+        else if (image_ready) image_ever_ready <= 1'b1;
+    end
+    // 缩放后的有效显示窗口。image_player 只写窗口内的像素，窗口外的帧缓存
+    // 内容仍是上一张图/未初始化数据，必须在送显前屏蔽成黑，否则会出现残影。
+    wire [15:0] image_out_w, image_out_h, image_out_off_x, image_out_off_y;
     wire sdram_clk_w, sdram_cke_w, sdram_cs_n_w, sdram_ras_n_w, sdram_cas_n_w, sdram_we_n_w;
     wire [1:0] sdram_ba_w; wire [10:0] sdram_addr_w;
     wire [3:0] sdram_dm_w; wire [31:0] sdram_dq_w;
@@ -220,6 +236,7 @@ module dmz_eg4s20_hdmi_top (
         .load_req(player_load_req), .image_index(loader_index), .blk_start(player_start), .blk_addr(player_addr),
         .blk_done(sd_blk_done), .blk_err(sd_blk_err), .data_byte(sd_dbyte), .data_valid(sd_dvalid),
         .de(de), .scan_y(vblank ? 10'd480 : active_y), .rgb565(image565), .pixel_valid(image_pixel_valid),
+        .out_w(image_out_w), .out_h(image_out_h), .out_off_x(image_out_off_x), .out_off_y(image_out_off_y),
         .image_ready(image_ready), .loading(image_loading), .failed(image_failed), .error_code(image_error),
         .reader_status(reader_status), .sdram_clk(sdram_clk_w), .sdram_cke(sdram_cke_w),
         .sdram_cs_n(sdram_cs_n_w), .sdram_ras_n(sdram_ras_n_w), .sdram_cas_n(sdram_cas_n_w),
@@ -230,14 +247,36 @@ module dmz_eg4s20_hdmi_top (
         .clk(sdram_clk_w), .ras_n(sdram_ras_n_w), .cas_n(sdram_cas_n_w), .we_n(sdram_we_n_w),
         .addr(sdram_addr_w), .ba(sdram_ba_w), .dq(sdram_dq_w), .cs_n(sdram_cs_n_w),
         .dm0(sdram_dm_w[0]), .dm1(sdram_dm_w[1]), .dm2(sdram_dm_w[2]), .dm3(sdram_dm_w[3]), .cke(sdram_cke_w));
-    // RGB565 位复制扩展回 RGB888，与 de 同拍。应急模式优先显示红屏并鸣叫。
+    // RGB565 位复制扩展回 RGB888，与 de 同拍。
     wire [23:0] image888 = {image565[15:11],image565[15:13],image565[10:5],image565[10:9],
                            image565[4:0],image565[4:2]};
-    // video_base = 叠加前的最终画面（应急红屏 / 图片 / 测试图三选一）
-    wire [23:0] video_base = !de ? 24'd0 : ((mode==2) ? 24'hFF0000 :
-        ((image_ready && image_pixel_valid) ? image888 : {pr,pg,pb}));
-    // video_rgb = 经 video_overlay 做亮度/反色/OSD 叠加后的实际上屏像素。
-    // 先声明、后由下方 video_overlay 例化驱动（Verilog 的连线赋值与书写顺序无关）。
+    // ------------------------------------------------------------------
+    //  letterbox 屏蔽：把缩放窗口外的像素强制为黑
+    // ------------------------------------------------------------------
+    //  img_scaler 只输出目标窗口（out_w×out_h，左上角在 out_off_x/out_off_y）
+    //  内的像素，帧缓存其余区域保持上一帧的旧内容。若不在这里屏蔽，缩小后的
+    //  图片四周会漏出前一张图的黑边/残影。
+    //  active_x/active_y 是像素时序发生器的行内/行间计数，与 de 同拍有效，
+    //  正好是当前像素的绝对坐标；vblank 期 scan_y 已被顶层钳到 480，
+    //  image_pixel_valid 此时必为 0，无需额外处理。
+    //  屏蔽逻辑单独成模块，便于在 tb_image_window_mask 里逐点验证边界。
+    wire image_pixel_shown;
+    image_window_mask u_image_mask (
+        .de(de), .active_x(active_x), .active_y(active_y),
+        .win_w(image_out_w), .win_h(image_out_h),
+        .win_off_x(image_out_off_x), .win_off_y(image_out_off_y),
+        .pixel_valid(image_pixel_valid), .pixel_valid_out(image_pixel_shown));
+    wire [23:0] video_base;
+    video_content_mux u_content_mux (
+        .de(de), .mode(mode), .image_ready(image_ready),
+        .image_ever_ready(image_ever_ready),
+        .image_pixel_valid(image_pixel_shown), .image_rgb(image888),
+        .pattern_rgb({pr,pg,pb}), .science_rgb(science_rgb), .rgb_out(video_base));
+    // video_rgb_ovl = 经 video_overlay 做亮度/反色/OSD 叠加后的像素。
+    // video_rgb     = 再经 osd_panel 叠加"参数面板"后的最终上屏像素。
+    // 两级分开命名，是为了让"面板覆盖一切已有图层"这件事在连线上一目了然：
+    // osd_panel 吃 video_rgb_ovl、吐 video_rgb，中间的优先级不需要读注释。
+    wire [23:0] video_rgb_ovl;
     wire [23:0] video_rgb;
     // "资源不可用"的合并语义提前到这里：音频的播放状态与 LED 都要用它。
     wire sd_or_gallery_fail = sd_fail || gallery_fail;
@@ -356,6 +395,10 @@ module dmz_eg4s20_hdmi_top (
 
     wire               audio_valid;
     wire signed [23:0] audio_left, audio_right;
+    // HDMI 试听音量：有符号 PCM 再衰减 6 bit，幅度为原来的 1/64（约 -36 dB）。
+    localparam HDMI_AUDIO_ATTEN_SHIFT = 6;
+    wire signed [23:0] hdmi_audio_left  = audio_left  >>> HDMI_AUDIO_ATTEN_SHIFT;
+    wire signed [23:0] hdmi_audio_right = audio_right >>> HDMI_AUDIO_ATTEN_SHIFT;
     audio_tone_gen #(
         .CLK_FREQ_HZ(25_000_000), .SAMPLE_RATE_HZ(48_000), .NOTE_HOLD_SAMPLES(24_000)
     ) u_tone (
@@ -366,14 +409,54 @@ module dmz_eg4s20_hdmi_top (
     // 放在音频之后例化，是因为电平条要拿 audio_left 的真实幅度画，而不是
     // 另外编一个动画 —— "看到的跳动"必须就是"听到的声音"。
     // 处理顺序: 亮度 → 反色 → OSD，OSD 不受前两级影响（详见 video_overlay 头）。
+    //
+    // 【B1 字幕层的开关为什么常接 1'b1】
+    //   标题 / 页面序号 / 播放状态 / 滚动标语是"设备现在是什么状态"的常驻信息，
+    //   和九宫格、电平条这类"临时打开的调试叠加"性质不同 —— 调试叠加关掉是为了
+    //   看清画面，状态信息关掉了用户就不知道自己在看第几张、播没在播。
+    //   另一个现实约束：16 个键已全部占满（见上面键位分配总表与 docs/progress.md
+    //   的按键冲突事故记录），字幕若要独立开关就得再抢一个键号，代价大于收益。
+    //   需要对比"有/无字幕"时，模块级 tb_osd_caption 的 C08 用例覆盖了关断路径。
     video_overlay u_overlay (
         .pixel_clk(clk_pixel), .rst_n(rst_n),
         .de(de), .active_x(active_x), .active_y(active_y), .rgb_in(video_base),
         .bright_sel(bright_sel), .invert_en(invert_en),
         .grid_en(grid_en), .info_en(info_en),
         .level_en(level_en), .wave_en(wave_en),
+        .caption_en(1'b1), .play_state(playback_state), .auto_play(auto_play),
         .info_index(img_index), .info_mode(mode), .info_auto(auto_sw_sel),
         .audio_sample(audio_left), .audio_valid(audio_valid),
+        .rgb_out(video_rgb_ovl));
+
+    // ---- 参数面板（B3：按键调参数，画面同步显示参数）------------------------
+    // 【为什么要新增这一级，而不是塞进 video_overlay】
+    //   video_overlay 是纯组合的"图层叠加器"，输入全是 1 位开关 + 几个小向量，
+    //   它不认识字符、不认识字模、也不该认识 —— 那是 OSD 层的职责。
+    //   把文字通路（字表 + 字模 + 取模）独立成 rtl/osd/ 三个模块，好处是
+    //   video_overlay 的 90 条仿真断言全部保持有效，回归面不扩大。
+    //
+    // 【为什么插在 video_overlay 之后】
+    //   面板是用户按键主动召唤的 UI，被九宫格线或电平条盖住一角都是 bug 观感。
+    //   放在最后一级 = 面板覆盖一切；面板关掉时逐像素不影响任何既有图层。
+    //
+    // 【谁触发面板】
+    //   16 个键已全部占满，不能再抢键号（历史事故见 docs/progress.md）。
+    //   所以用 osd_autopop 监视 4 个用户可调参数，任一变就弹 2.5 秒 ——
+    //   "按 KEY7 调亮度"这个动作本身就同时完成了调参数 + 文字确认。
+    wire panel_on;
+    osd_autopop #(.CLK_FREQ_HZ(25_000_000), .HOLD_MS(2500)) u_osd_pop (
+        .clk(clk_pixel), .rst_n(rst_n),
+        .bright_sel(bright_sel), .invert_en(invert_en),
+        .auto_sw_sel(auto_sw_sel), .info_mode(mode),
+        .panel_on(panel_on));
+
+    osd_panel u_osd_panel (
+        .pixel_clk(clk_pixel), .rst_n(rst_n),
+        .de(de), .active_x(active_x), .active_y(active_y), .rgb_in(video_rgb_ovl),
+        .panel_on(panel_on),
+        .bright_sel(bright_sel), .invert_en(invert_en),
+        .auto_sw_sel(auto_sw_sel), .info_mode(mode),
+        .img_index(img_index), .gallery_count(gallery_count),
         .rgb_out(video_rgb));
 
     // ---- ACR（音频时钟再生）：告诉接收端"多少像素时钟对应一个音频采样" -----
@@ -409,8 +492,8 @@ module dmz_eg4s20_hdmi_top (
         .I_axis_s_data(video_data),
         .O_axis_s_ready(),                // 文档：只在 last 之后拉低，行内恒可用
         .I_audio_valid(audio_valid),
-        .I_audio_left_data(audio_left),
-        .I_audio_right_data(audio_right),
+        .I_audio_left_data(hdmi_audio_left),
+        .I_audio_right_data(hdmi_audio_right),
         .I_acr_valid(acr_valid),
         .I_acr_cts(acr_cts),
         .I_acr_n(acr_n),

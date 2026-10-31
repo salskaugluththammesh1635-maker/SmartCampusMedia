@@ -10,7 +10,7 @@
     </HardWare>
     <Source_Files>
         <Verilog>
-            <File Path="D:/FPGA_Compelate/SmartCampusMedia/ip/local/sdram/global_def.v">
+            <File Path="../ip/config/sdram/global_def.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true" />
                     <Attr Name="UsedInP&amp;R" Val="true" />

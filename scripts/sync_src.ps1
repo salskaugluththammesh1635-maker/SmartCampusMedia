@@ -19,6 +19,8 @@ Set-Location $base
 
 # ---- 主源 -> 目标列表（一个源可同步到多个 TD 工程；哈希表键必须唯一）----
 $map = [ordered]@{
+    # Project-owned SDRAM config; local is a compatibility copy for vendor tools.
+    'ip\config\sdram\global_def.v' = @('ip\local\sdram\global_def.v')
     # ===== 两工程共用（同一源同步到两份副本）=====
     'rtl\common\seg_decoder.v'                         = @('project\src\seg_decoder.v',      'project\hdmi\seg_decoder.v')
     'rtl\display\seg_scan4.v'                          = @('project\src\seg_scan4.v',        'project\hdmi\seg_scan4.v')
@@ -49,6 +51,10 @@ $map = [ordered]@{
     'rtl\storage\img_loader.v'                         = @('project\hdmi\img_loader.v')
     'rtl\storage\image_player.v'                       = @('project\hdmi\image_player.v')
     'rtl\storage\pix_reader.v'                         = @('project\hdmi\pix_reader.v')
+    # B2 换帧转场：淡出到黑再淡入的纯组合像素缩放器（image_player 内例化）
+    'rtl\storage\fade_mixer.v'                         = @('project\hdmi\fade_mixer.v')
+    # C2 自适应缩放：bmp_parser -> img_scaler -> img_loader，保持宽高比居中抽稀
+    'rtl\storage\img_scaler.v'                         = @('project\hdmi\img_scaler.v')
     'rtl\control\player_ctrl.v'                        = @('project\hdmi\player_ctrl.v')
     'rtl\control\err_prompt.v'                         = @('project\hdmi\err_prompt.v')
     # ===== 仅 hdmi_td：扩展键译码与像素后处理（KEY7~KEY14）=====
@@ -58,6 +64,27 @@ $map = [ordered]@{
     'rtl\control\key_action.v'                         = @('project\hdmi\key_action.v')
     'rtl\video\audio_waveform.v'                       = @('project\hdmi\audio_waveform.v')
     'rtl\video\video_overlay.v'                        = @('project\hdmi\video_overlay.v')
+    'rtl\video\science_font16.v'                       = @('project\hdmi\science_font16.v')
+    'rtl\video\science_page.v'                         = @('project\hdmi\science_page.v')
+    'rtl\video\video_content_mux.v'                    = @('project\hdmi\video_content_mux.v')
+    # letterbox 窗口屏蔽：把缩放窗口外的帧缓存旧内容强制成黑
+    'rtl\video\image_window_mask.v'                    = @('project\hdmi\image_window_mask.v')
+    # ===== 仅 hdmi_td：B3 实时参数 OSD 面板（rtl/osd/ 首次落地）=====
+    # osd_param_text 决定"显示哪些字"（纯组合字符码表），
+    # osd_font8x16 是 8x16 ASCII 字模 ROM（由 scripts/gen_osd_font8.py 生成，
+    #   不要手改；改字库请改生成器再 --emit），
+    # osd_panel 把字符码+字模摆到画面右上角并做暗色玻璃底，
+    # osd_autopop 在参数变化后自动弹窗 2.5 秒（不占键号）。
+    'rtl\osd\osd_param_text.v'                         = @('project\hdmi\osd_param_text.v')
+    'rtl\osd\osd_font8x16.v'                           = @('project\hdmi\osd_font8x16.v')
+    'rtl\osd\osd_panel.v'                              = @('project\hdmi\osd_panel.v')
+    'rtl\osd\osd_autopop.v'                            = @('project\hdmi\osd_autopop.v')
+    # ===== 仅 hdmi_td：B1 图层叠加与字幕 =====
+    # osd_strings 是"哪一行第几列显示什么字"（由 scripts/gen_osd_strings.py 生成，
+    #   不要手改；改文案请改生成器里的 LINE_* 常量再 --emit），
+    # osd_caption 把字符码摆到标题/序号/状态/标语四处并算滚动偏移。
+    'rtl\osd\osd_strings.v'                            = @('project\hdmi\osd_strings.v')
+    'rtl\osd\osd_caption.v'                            = @('project\hdmi\osd_caption.v')
     # ===== 仅 hdmi_td =====
     'rtl\top\dmz_eg4s20_hdmi_top.v'                    = @('project\hdmi\dmz_eg4s20_hdmi_top.v')
     'rtl\video\hdmi\hdmi_pll.v'                        = @('project\hdmi\hdmi_pll.v')

@@ -11,10 +11,12 @@ if (-not [IO.Path]::IsPathRooted($ReportDir)) { $ReportDir = Join-Path $root $Re
 New-Item -ItemType Directory -Force -Path $ReportDir | Out-Null
 $sources = @(
     'rtl/common/async_fifo.v', 'rtl/video/video_timing_gen.v',
+    'rtl/video/image_window_mask.v',
     'rtl/storage/framebuf_arbiter.v', 'rtl/storage/sdram_ctrl_wrap.v',
-    'rtl/storage/pix_reader.v', 'rtl/storage/fat32_reader.v',
-    'rtl/storage/bmp_parser.v', 'rtl/storage/img_loader.v', 'rtl/storage/image_player.v',
-    'sim/testbench/tb_image_player.v'
+    'rtl/storage/pix_reader.v', 'rtl/storage/fade_mixer.v', 'rtl/storage/fat32_reader.v',
+    'rtl/storage/bmp_parser.v', 'rtl/storage/img_loader.v', 'rtl/storage/img_scaler.v',
+    'rtl/storage/image_player.v',
+    'sim/testbench/tb_image_player.v', 'sim/testbench/tb_img_scaler.v'
 )
 $hashes = @($sources | ForEach-Object {
     $file = Join-Path $root $_
@@ -30,16 +32,24 @@ try {
     & "$ModelSimPath\vlog.exe" -quiet +define+SDRAM_SIM_MODEL @($sources | ForEach-Object { Join-Path $root $_ }) *> compile.txt
     if ($LASTEXITCODE -ne 0) { throw 'vlog failed; no stale simulation was run' }
     # marker 是该用例在日志里必须出现的通过标记，允许同一 testbench 跑不同参数组合。
-    $cases = @(@{name='image_player'; arguments=@(); marker='image_player'})
+    # image_player_scaled 是 C2 自适应缩放的端到端用例：96×64 源图缩到 32×16 容器，
+    # 验证取整、居中、只写窗口、letterbox 屏蔽四件事。
+    $cases = @(
+        @{name='img_scaler'; top='tb_img_scaler'; marker='img_scaler'; arguments=@()},
+        @{name='image_player'; arguments=@(); marker='image_player'},
+        @{name='image_player_scaled'; arguments=@('-gSCALE=1'); marker='image_player_scaled'}
+    )
     if ($FullVga) {
         $cases += @{name='image_player_full'; arguments=@('-gFULL=1'); marker='image_player_full'}
         $cases += @{name='image_player_single'; arguments=@('-gSEAMLESS=0'); marker='image_player'}
     }
     foreach ($case in $cases) {
         $log = $case.name + '.txt'
+        $top = 'tb_image_player'
+        if ($case.ContainsKey('top')) { $top = $case.top }
         $simArgs = @('-c', '-quiet', '-onfinish', 'stop') + $case.arguments + @(
             '-do', 'onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0',
-            'work.tb_image_player'
+            ('work.' + $top)
         )
         & "$ModelSimPath\vsim.exe" @simArgs *> $log
         $exit = $LASTEXITCODE

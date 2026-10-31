@@ -49,17 +49,27 @@ module pcm_to_pwm (
     wire [31:0] sample_ext = {sample_ofs, 8'b0};
 
     // ---- 一阶 sigma-delta 累加器 -------------------------------------------
-    reg  [31:0] acc;
-    wire [31:0] acc_next = acc + sample_ext;
+    // 累加器必须用 33 位：调制输出取的是"进位"（bit32），不是截断和的符号位。
+    //
+    // 数学依据：acc(n+1) = (acc(n) + x) mod 2^32，这个 mod 就等价于"减掉 y*2^32"，
+    // 所以反馈量 y 必须是进位。两者并不等价：
+    //   进位 = 1  <=>  acc + x >= 2^32          （溢出，需减回）
+    //   bit31 = 1 <=>  (acc + x) mod 2^32 >= 2^31（截断和的符号位）
+    // 而 x = {sample+2^23, 8'b0} 恒为 256 的倍数、acc 从 0 起，于是 acc 的所有
+    // 取值都落在"256 的倍数"这个等距点集上，该点集恰好对 2^31 对称 —— 结果是
+    // bit31 恒有一半时间为 1，任何直流输入都输出 50% 占空比，音频恒定无声。
+    // 改用进位后占空比才真正跟随输入（tb_pcm_to_pwm 的 rootcause 用例可验证）。
+    reg  [32:0] acc;
+    wire [32:0] acc_next = {1'b0, acc[31:0]} + {1'b0, sample_ext};
     reg         pwm_q;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            acc   <= 32'd0;
+            acc   <= 33'd0;
             pwm_q <= 1'b0;
         end else begin
             acc   <= acc_next;
-            pwm_q <= acc_next[31];   // 最高位即调制输出，与累加值同拍
+            pwm_q <= acc_next[32];   // 进位即调制输出，与累加值同拍
         end
     end
 

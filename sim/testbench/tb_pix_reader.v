@@ -17,7 +17,7 @@ module tb_pix_reader;
 	parameter FIFO_AW = 6;
 	parameter LEVEL_HI = 48;
 	parameter STRESS = 1;
-	localparam CLK_SDR_PERIOD = 6.667;
+	parameter CLK_SDR_PERIOD = 25.0;
 	localparam CLK_PIX_PERIOD = 40.0;
 	localparam H_TOTAL = PIX_PER_LINE + H_FP + H_SYNC + H_BP;
 	localparam V_TOTAL = LINES + V_FP + V_SYNC + V_BP;

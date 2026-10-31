@@ -21,7 +21,7 @@
 //   C1  复位后无错误、无告警
 //   C2  SD 层分类: err=1→C1 / 2,3,4→C2 / 8→F1 / 5,6,7→d1 / 其它→C9
 //   C3  图库层分类: err=1→F1 / 2→F2 / 3→F3 / 5→d2 / 6→d3 / 其它→d9
-//   C4  图片层分类: err=2→b1 / 7→b2 / 1→F4 / 3,4,5,8,9→d4,d5,d6,d7,d8
+//   C4  图片层分类: err=2→b1 / 7→b2 / 1→F4 / 3,4,5,8,9→d4,d5,d6,d7,d8 / 11,12→dB,dC
 //   C5  "卡好但零张图"→ 00 且 err_active=1（改造前完全无提示的盲区）
 //   C6  sd_cd 无卡抢先提示 → C0
 //   C7  优先级: sd_fail > gallery_fail > image_failed
@@ -218,6 +218,11 @@ module tb_err_prompt;
         chk_prompt(1'b1, CH_DATA, 4'd7, "C4 image_err=8 sdram -> d7");
         @(negedge clk); image_err = 4'd9; @(negedge clk);
         chk_prompt(1'b1, CH_DATA, 4'd8, "C4 image_err=9 timeout -> d8");
+        // 【2026-10-30 新增】按阶段细分的两个超时码，必须在数码管上与 d8 区分开。
+        @(negedge clk); image_err = 4'd11; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd11, "C4 image_err=11 sdram init timeout -> dB");
+        @(negedge clk); image_err = 4'd12; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd12, "C4 image_err=12 write commit timeout -> dC");
 
         // ================= C5 卡好但零张图（改造前的交互盲区）=================
         clear_all;

@@ -70,7 +70,8 @@
 //   输入  gallery_done   : 图库扫描完成（电平，自锁）
 //   输入  gallery_count[4:0]: 扫描到的图片张数（0~31）
 //   输入  image_failed   : 图片装载失败（电平）
-//   输入  image_err[3:0] : 1..5=img_loader 透传；6=SD 失败；7=像素数；8=SDRAM；9=超时
+//   输入  image_err[3:0] : 1..5,10=img_loader 透传；6=SD 失败；7=像素数；8=SDRAM；
+//                            9=装载无进度(d8)；11=SDRAM 初始化超时(dB)；12=写完成超时(dC)
 //   输出  err_active     : 1 = 当前有面向用户的错误（驱动 LED bit7 / 数码管切换）
 //   输出  prompt_hi[3:0] : 数码管 dig3 = 助记字母类（C/F/0/b/d）
 //   输出  prompt_lo[3:0] : 数码管 dig2 = 类内子码（0~9）
@@ -304,6 +305,16 @@ module err_prompt #(
                     //   显示 dA，与 d4(读块失败)/d5(簇链异常) 区分开。
                     prompt_hi = CH_DATA;
                     prompt_lo = 4'd10;
+                end
+                4'd11: begin
+                    // 【2026-10-30 新增】image_player 码 11: C_MEM 等 SDRAM init_done 超时 → dB
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd11;
+                end
+                4'd12: begin
+                    // 【2026-10-30 新增】image_player 码 12: C_COMMIT 等写完成超时 → dC
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd12;
                 end
                 default: begin
                     // 含 6（SD 失败透传，正常会被 sd_fail 分支先接住）

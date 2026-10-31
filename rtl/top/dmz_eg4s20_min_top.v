@@ -248,7 +248,7 @@ module dmz_eg4s20_min_top (
     ) u_buzz (
         .clk        (clk),
         .rst_n      (rst_n_btn),
-        .tone_sel   (2'd1),              // 按键音模式
+        .tone_sel   (3'd1),              // 按键音模式（端口是 3 位，必须写 3 位）
         .trig       (key_event),
         .buzzer_out (buzzer)
     );

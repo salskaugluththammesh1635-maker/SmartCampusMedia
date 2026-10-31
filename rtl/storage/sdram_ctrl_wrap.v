@@ -18,7 +18,7 @@
 //        `inout` 直接连到 FPFA 管脚，仿真时没有模型驱动会一直 X 态。
 //     ③ **位宽与命名风格与本工程不一致**：加密核用 `App_wr_en` 这类下划线
 //        混合大小写，本工程统一小写 + `_n` 后缀的低有效约定。
-//   本模块把这三件事集中处理：宏在这里统一定义、仿真/综合在这里分流、
+//   本模块把这三件事集中处理：工程配置头统一宏、仿真/综合在这里分流、
 //   命名在这里转换。上层（framebuf_arbiter 及以上）只看到干净的小写接口。
 //
 // 【三、仿真与综合的分流机制（关键）】
@@ -47,7 +47,7 @@
 //   3) **读写不可同时**：同一条数据总线，读周期与写周期必须完全分开。
 //   4) 四字组的首址必须对齐，组内地址由首址累加。上层仲裁器选择四拍恒基址；
 //      官方可读驱动也使用基址+拍号，不能把“每拍低两位都为零”写成硬核要求。
-//   5) **`ref_vld` 是唯一流控**：`sdr_busy` 官方标注"暂不使用"，不要拿它判。
+//   5) **`ref_vld` 是唯一流控**：包含组边界排空和手动刷新窗口；高时不接受命令。
 //   6) **`app_wr_dm` 语义**：`dm[n]=1` 表示**屏蔽** `din[8n+7:8n]` 字节。
 //      全写时置 `4'b0000`（注意：官方例程 `app_wrrd.v` 里用的是 `4'b0000`，
 //      与 `docs/eram_sdram_reference.md` §3 表格里写的"屏蔽时置 4'b1111"
@@ -60,7 +60,7 @@
 //   本模块内部**绝不用它驱动任何逻辑**（否则等于自造一个时钟域）。
 //
 // 【六、设计陷阱与规避】
-//   1) **频率改动的连带修改**：`CLK_FREQ_HZ` 改了，`global_def.v` 里的
+//   1) **频率改动的连带修改**：`CLK_FREQ_HZ` 改了，`ip/config/sdram/global_def.v` 里的
 //      `SDR_CLK_PERIOD` 与 `SELF_REFRESH_INTERVAL` 必须同步改，否则刷新
 //      周期算错，SDRAM 会静默丢数据（不是报错，是数据悄悄变错）。
 //   2) **不要在仿真模式下依赖引脚**：定义 `SDRAM_SIM_MODEL` 后物理引脚端口全部悬空，
@@ -85,6 +85,7 @@ module sdram_ctrl_wrap #(
     output wire        init_done,    // 初始化完成，可以开始读写
     output wire        ref_vld,      // 刷新进行中（高 = 必须避让）
     output wire        busy,         // = !init_done | ref_vld
+    output wire        refresh_error, // 刷新握手超时/意外读返回，粘滞至复位
 
     // ---------------- 用户侧（接 framebuf_arbiter）----------------
     input  wire        app_wr_en,
@@ -119,11 +120,12 @@ module sdram_ctrl_wrap #(
     // -------------------------------------------------------------------------
     assign busy = ~init_done | ref_vld;
 
-    // 仿真模式下 SDR_CKE 常量（与官方 top.v 一致：self_refresh_open=1 时恒 1）
+    // SDR_CKE 始终有效：周期 AUTO REFRESH 不需要将 CKE 拉低。
     assign sdram_cke = 1'b1;
     assign sdram_cs_n = 1'b0;
 
 `ifdef SDRAM_SIM_MODEL
+    assign refresh_error = 1'b0;
     // =========================================================================
     // 仿真路径：行为模型，不需要加密核
     // =========================================================================
@@ -159,27 +161,92 @@ module sdram_ctrl_wrap #(
     // =========================================================================
     // 综合路径：安路 APUG011 加密核
     // =========================================================================
-    // global_def.v 的宏在这里统一定义，避免散落
-    //   （加密核内部自己会 `include global_def.v`，此处只用于本文件可读性）
-    localparam SDR_DATA_WIDTH = 32;
-    localparam SDR_ADDR_WIDTH = 21;
-    localparam SDR_DM_WIDTH   = 4;
+    // 自动刷新请求与四字组尾交叠时，真实核会输出相邻 25 ns 的两条 AREF，
+    // 违反 tRC。改走官方手动请求端口：只在完整组结束、读返回排空并静默
+    // 16 拍后提交单拍请求，再等核的刷新标志起落。ref_vld 在组边界提前
+    // 阻止新组，既不截断已接受的组，也不丢弃命令。
+    localparam [2:0] R_RUN=0, R_QUIET=1, R_ISSUE=2, R_WAIT_HI=3, R_WAIT_LO=4;
+    // 32 ms / 2048 行，给 64 ms 保持要求留出事务排空与握手的余量。
+    localparam REFRESH_INTERVAL = CLK_FREQ_HZ / 64_000;
+    reg [2:0] refresh_state;
+    reg [15:0] refresh_count;
+    reg refresh_due;
+    reg [1:0] refresh_wr_phase, refresh_rd_phase;
+    reg [5:0] read_pending;
+    reg [4:0] quiet_count;
+    reg [10:0] refresh_watchdog;
+    reg refresh_fault;
+    wire core_ref;
+    wire groups_complete = (refresh_wr_phase == 0) && (refresh_rd_phase == 0);
+    wire stop_new = refresh_due && groups_complete;
+    wire manual_request = (refresh_state == R_ISSUE) && !refresh_fault;
+    assign ref_vld = core_ref || (refresh_state != R_RUN) || stop_new || refresh_fault;
+    assign refresh_error = refresh_fault;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            refresh_state <= R_RUN;
+            refresh_count <= 0;
+            refresh_due <= 1'b0;
+            refresh_wr_phase <= 0;
+            refresh_rd_phase <= 0;
+            read_pending <= 0;
+            quiet_count <= 0;
+            refresh_watchdog <= 0;
+            refresh_fault <= 1'b0;
+        end else begin
+            if (app_wr_en && init_done && !ref_vld) refresh_wr_phase <= refresh_wr_phase + 1'b1;
+            if (app_rd_en && init_done && !ref_vld) refresh_rd_phase <= refresh_rd_phase + 1'b1;
+            case ({app_rd_en && init_done && !ref_vld, sdr_rd_en})
+                2'b10: read_pending <= read_pending + 1'b1;
+                2'b01: if (read_pending != 0) read_pending <= read_pending - 1'b1;
+                default: ;
+            endcase
+            if (!init_done) begin
+                refresh_count <= 0;
+                refresh_due <= 1'b0;
+                refresh_state <= R_RUN;
+            end else begin
+                if (refresh_count < REFRESH_INTERVAL-1) refresh_count <= refresh_count + 1'b1;
+                else refresh_due <= 1'b1;
+                case (refresh_state)
+                    R_RUN: if (stop_new) begin refresh_state <= R_QUIET; quiet_count <= 0; end
+                    R_QUIET: if (read_pending != 0 || app_rd_en || app_wr_en || !groups_complete)
+                        quiet_count <= 0;
+                    else if (quiet_count == 15) refresh_state <= R_ISSUE;
+                    else quiet_count <= quiet_count + 1'b1;
+                    R_ISSUE: refresh_state <= R_WAIT_HI;
+                    R_WAIT_HI: if (core_ref) refresh_state <= R_WAIT_LO;
+                    R_WAIT_LO: if (!core_ref) begin
+                        refresh_state <= R_RUN; refresh_due <= 1'b0; refresh_count <= 0;
+                    end
+                    default: refresh_state <= R_RUN;
+                endcase
+            end
+            if ((refresh_state == R_WAIT_HI) || (refresh_state == R_WAIT_LO)) begin
+                if (refresh_watchdog < 1024) refresh_watchdog <= refresh_watchdog + 1'b1;
+                else refresh_fault <= 1'b1;
+            end else refresh_watchdog <= 0;
+            if (init_done && sdr_rd_en && (read_pending == 0) && !app_rd_en)
+                refresh_fault <= 1'b1;
+        end
+    end
 
     // Sdr_busy 本模块不使用，但必须显式接出。Verilog-2001 要求先声明后使用。
     wire sdr_busy_unused;
 
     sdr_as_ram #(
-        .self_refresh_open (1'b1)
+        .self_refresh_open (1'b0)
     ) u_sdr_as_ram (
         .Sdr_clk           (clk),
         .Sdr_clk_sft       (clk_sft),
         .Rst               (sdr_rst),
 
         .Sdr_init_done     (init_done),
-        .Sdr_init_ref_vld  (ref_vld),
+        .Sdr_init_ref_vld  (core_ref),
         .Sdr_busy          (sdr_busy_unused),
 
-        .App_ref_req       (1'b0),          // self_refresh_open=1 时不用
+        .App_ref_req       (manual_request),
         .App_wr_en         (app_wr_en),
         .App_wr_addr       (app_wr_addr),
         .App_wr_dm         (app_wr_dm),

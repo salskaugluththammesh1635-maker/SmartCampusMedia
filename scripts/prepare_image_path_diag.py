@@ -112,7 +112,7 @@ endmodule""")
 
     # Explicit source list: no dependency on TD's directory auto-discovery.
     verilog = [
-        "ip/local/sdram/global_def.v", "ip/local/sdram/sdr_wrrd.enc.v",
+        "ip/config/sdram/global_def.v", "ip/local/sdram/sdr_wrrd.enc.v",
         "ip/local/sdram/sdr_init_ref.enc.v", "ip/local/sdram/sdr_as_ram.enc.v",
         "rtl/common/seg_decoder.v", "rtl/display/seg_scan4.v", "rtl/input/key_matrix_4x4.v",
         "rtl/audio/buzzer_tone.v", "rtl/audio/pwm_audio_out.v", "rtl/common/async_fifo.v",

@@ -1,13 +1,14 @@
-[CmdletBinding()]
-param([int[]]$Modes=@(0,1,2,3,4))
+﻿[CmdletBinding()]
+param([int[]]$Modes=@(0,1,2,3,4), [string]$ReportDir='reports\eram_core_diag\real_core')
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $questaRoot='D:\MentorGraphics\HLVX.2.13\SDD_HOME\hyperlynx64\Ams\pkgs\icx_pro_sim\22.1\questasim\v2022.1'
 $env:AMS_MODEL_TECH='D:\MentorGraphics\HLVX.2.13\SDD_HOME\hyperlynx64\Ams\pkgs\icx_pro_sim\22.1\libs'
 $bin=Join-Path $questaRoot win64
-$report=Join-Path $root 'reports\eram_core_diag\real_core'
+$report=$ReportDir
+if(-not [IO.Path]::IsPathRooted($report)) { $report=Join-Path $root $report }
 New-Item -ItemType Directory -Force -Path $report | Out-Null
-$sources=@('ip/local/sdram/global_def.v','ip/local/sdram/sdr_wrrd.enc.v',
+$sources=@('ip/config/sdram/global_def.v','ip/local/sdram/sdr_wrrd.enc.v',
     'ip/local/sdram/sdr_init_ref.enc.v','ip/local/sdram/sdr_as_ram.enc.v',
     'ip/local/sdram/IS42s32200.v','rtl/storage/sdram_ctrl_wrap.v','sim/testbench/tb_eram_core_bus.v')
 $result=[ordered]@{startedAt=(Get-Date).ToString('o'); status='running'; sources=@(

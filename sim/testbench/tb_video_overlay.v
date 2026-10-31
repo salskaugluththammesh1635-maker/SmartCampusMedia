@@ -50,6 +50,11 @@ module tb_video_overlay;
     reg        audio_valid = 1'b0;
     reg        wave_en     = 1'b0;
 
+    // ---- B1 字幕层 ----
+    reg        caption_en  = 1'b0;
+    reg [2:0]  play_state  = 3'd0;
+    reg        auto_play   = 1'b0;
+
     // ---- 输出 ----
     wire [23:0] rgb_out;
 
@@ -71,6 +76,9 @@ module tb_video_overlay;
         .audio_sample (audio_sample),
         .audio_valid  (audio_valid),
         .wave_en      (wave_en),
+        .caption_en   (caption_en),
+        .play_state   (play_state),
+        .auto_play    (auto_play),
         .rgb_out      (rgb_out)
     );
 
@@ -80,6 +88,8 @@ module tb_video_overlay;
     integer errors = 0;
     integer checks = 0;
     integer w;                      // 波形历史填充计数
+    integer n_hit, n_a, n_b;        // 字幕带像素计数（V13）
+    integer n_play, n_emerg, n_pause, n_auto;
 
     task chk;
         input         cond;
@@ -123,6 +133,9 @@ module tb_video_overlay;
             audio_sample = 24'sd0;
             audio_valid  = 1'b0;
             wave_en      = 1'b0;
+            caption_en   = 1'b0;
+            play_state   = 3'd0;
+            auto_play    = 1'b0;
         end
     endtask
 
@@ -153,6 +166,33 @@ module tb_video_overlay;
             audio_sample = s;
             @(negedge clk);
             audio_valid  = 1'b0;
+        end
+    endtask
+
+    // 统计矩形窗口内等于 expect 的像素个数
+    //   用途：字幕是"一组点阵笔画"，逐点断言既冗长又脆弱（字形一改就全废），
+    //   所以这里只统计"这个窗口里有没有足够多的目标色"——笔画在不在、
+    //   衬底在不在、两幅画面是否不同，都能用计数稳定判定。
+    task count_rect;
+        // 形参顺序按"先 x 后 y、先小后大"：(x0, y0, x1, y1)
+        input  [10:0] x0;
+        input  [9:0]  y0;
+        input  [10:0] x1;
+        input  [9:0]  y1;
+        input  [23:0] expect;
+        output integer n;
+        integer xx, yy;
+        begin
+            n = 0;
+            for (yy = y0; yy <= y1; yy = yy + 1) begin
+                for (xx = x0; xx <= x1; xx = xx + 1) begin
+                    // 注意: 直接传 integer，由 11 位端口自动截断。
+                    //   写成 xx[10:0]（对 integer 取位选）在 ModelSim 里不可靠，
+                    //   实测会退化成常量 0，导致整个窗口只采样到 (0,0) 一个点。
+                    at(xx, yy);
+                    if (rgb_out === expect) n = n + 1;
+                end
+            end
         end
     endtask
 
@@ -486,6 +526,135 @@ module tb_video_overlay;
         de = 1'b0;
         at(11'd320, 10'd200);
         chk_eq24(rgb_out, 24'd0, "V11 blanking forces waveform output to 0");
+
+        // ---------------- V12 KEY3 科普态常显标记 ----------------
+        // 现场反馈"按 KEY3 没有进科普态"，根因是日常与科普两态画面完全相同。
+        // 本段锁定科普标记的几何与开关：顶部 y∈[0,7] 通栏 + 左上 x∈[0,23]
+        // 且 y∈[8,31] 的块，颜色 24'h00_C8_E0，且只由 info_mode==1 触发。
+        $display("");
+        $display("--- V12 KEY3 science-mode marker ---");
+        defaults;
+        rgb_in    = 24'h40_40_40;
+        info_mode = 2'b01;
+
+        at(11'd0, 10'd0);
+        chk_eq24(rgb_out, 24'h00_C8_E0, "V12 top bar starts at y=0");
+        at(11'd639, 10'd7);
+        chk_eq24(rgb_out, 24'h00_C8_E0, "V12 top bar spans full width at y=7");
+        at(11'd320, 10'd8);
+        chk_eq24(rgb_out, 24'h40_40_40, "V12 y=8 leaves the top bar outside the corner block");
+        at(11'd0, 10'd8);
+        chk_eq24(rgb_out, 24'h00_C8_E0, "V12 corner block starts at x=0,y=8");
+        at(11'd23, 10'd31);
+        chk_eq24(rgb_out, 24'h00_C8_E0, "V12 corner block ends at x=23,y=31");
+        at(11'd24, 10'd20);
+        chk_eq24(rgb_out, 24'h40_40_40, "V12 x=24 is right of the corner block");
+        at(11'd10, 10'd32);
+        chk_eq24(rgb_out, 24'h40_40_40, "V12 y=32 is below the corner block");
+
+        // 日常态（mode=0）与应急态（mode=2）都不画标记
+        info_mode = 2'b00;
+        at(11'd320, 10'd0);
+        chk_eq24(rgb_out, 24'h40_40_40, "V12 normal mode draws no top bar");
+        info_mode = 2'b10;
+        at(11'd320, 10'd0);
+        chk_eq24(rgb_out, 24'h40_40_40, "V12 emergency mode draws no top bar");
+
+        // 标记与既有 OSD 的优先级：九宫格线仍压过标记
+        info_mode = 2'b01;
+        grid_en   = 1'b1;
+        at(11'd213, 10'd160);
+        chk_eq24(rgb_out, 24'h00_FF_00, "V12 grid line wins over the science marker");
+        grid_en = 1'b0;
+
+        // 标记是设计色，不受亮度/反色影响
+        bright_sel = 3'd4;
+        invert_en  = 1'b1;
+        at(11'd320, 10'd0);
+        chk_eq24(rgb_out, 24'h00_C8_E0, "V12 marker colour unchanged at darkest+invert");
+
+        // 消隐期仍然强制为 0（标记不得漏到消隐区）
+        de = 1'b0;
+        at(11'd320, 10'd0);
+        chk_eq24(rgb_out, 24'd0, "V12 blanking forces marker output to 0");
+        de = 1'b1;
+
+        // ---------------- V13 B1 字幕层（集成级） ----------------
+        //   这里只验证"字幕层接进 overlay 后"的接线与优先级语义：
+        //     开关生效 / 衬底压暗 / 笔画色 / 状态行随 play_state 变化 / 带外不受影响。
+        //   字形与坐标的逐点正确性由 tb_osd_caption 的 3057 点比对负责，
+        //   不在这里重复（否则字形一改就要改两处）。
+        $display("");
+        $display("--- V13 B1 caption layer ---");
+        defaults;
+        rgb_in = 24'h40_40_40;
+
+        // 关着的时候：字幕区域必须与"没有字幕层"完全一致
+        caption_en = 1'b0;
+        at(11'd40, 10'd20);
+        chk_eq24(rgb_out, 24'h40_40_40, "V13 caption off leaves title band untouched");
+        at(11'd40, 10'd52);
+        chk_eq24(rgb_out, 24'h40_40_40, "V13 caption off leaves state band untouched");
+        at(11'd40, 10'd450);
+        chk_eq24(rgb_out, 24'h40_40_40, "V13 caption off leaves ticker band untouched");
+
+        // 打开后：衬底带把图像压到 1/4 亮度（0x40 -> 0x10）
+        caption_en = 1'b1;
+        play_state = 3'd4;   // ST_AUTO -> 行 2 "PLAY"
+        at(11'd40, 10'd20);
+        chk_eq24(rgb_out, 24'h10_10_10, "V13 caption band darkens image to 1/4");
+
+        // 带外必须完全不受影响（画面中心、以及三条带之间的空白）
+        at(11'd320, 10'd240);
+        chk_eq24(rgb_out, 24'h40_40_40, "V13 image centre outside all caption bands");
+        at(11'd320, 10'd40);
+        chk_eq24(rgb_out, 24'h40_40_40, "V13 gap between title and state bands");
+
+        // 笔画色：标题带里必须存在近白像素（有字），且不等于衬底色
+        count_rect(11'd32, 10'd16, 11'd127, 10'd31, 24'hF0_F0_F0, n_hit);
+        chk(n_hit > 40, "V13 title band draws glyph strokes");
+        count_rect(11'd32, 10'd16, 11'd127, 10'd31, 24'h10_10_10, n_hit);
+        chk(n_hit > 40, "V13 title band shows darkened backdrop behind glyphs");
+
+        // 序号带：info_index 变化必须改变像素（说明 index_val 接到了字幕层）
+        count_rect(11'd576, 10'd16, 11'd623, 10'd31, 24'hF0_F0_F0, n_a);
+        info_index = 5'd17;
+        count_rect(11'd576, 10'd16, 11'd623, 10'd31, 24'hF0_F0_F0, n_b);
+        chk(n_a > 0 && n_b > 0, "V13 index band draws glyph strokes");
+        chk(n_a != n_b, "V13 index change alters the index glyphs");
+
+        // 状态带：不同 play_state 必须给出不同画面（映射表真的接上了）
+        info_index = 5'd0;
+        play_state = 3'd4;   // PLAY
+        count_rect(11'd32, 10'd48, 11'd103, 10'd63, 24'hF0_F0_F0, n_play);
+        play_state = 3'd5;   // EMERGENCY
+        count_rect(11'd32, 10'd48, 11'd103, 10'd63, 24'hF0_F0_F0, n_emerg);
+        play_state = 3'd3;   // ST_READY
+        auto_play  = 1'b0;
+        count_rect(11'd32, 10'd48, 11'd103, 10'd63, 24'hF0_F0_F0, n_pause);
+        auto_play  = 1'b1;
+        count_rect(11'd32, 10'd48, 11'd103, 10'd63, 24'hF0_F0_F0, n_auto);
+        chk(n_play > 0 && n_emerg > 0 && n_pause > 0 && n_auto > 0,
+            "V13 every play state draws a state word");
+        chk(n_emerg > n_play, "V13 EMERGENCY is wider than PLAY");
+        chk(n_pause != n_auto, "V13 ST_READY distinguishes PAUSE from AUTO");
+
+        // 标语带：整条 64 字符滚动，必须始终有笔画
+        auto_play = 1'b0;
+        count_rect(11'd0, 10'd448, 11'd639, 10'd463, 24'hF0_F0_F0, n_hit);
+        chk(n_hit > 100, "V13 ticker band draws scrolling text");
+
+        // 字幕层不抢其它 OSD：九宫格线在字幕带之外，仍为纯绿
+        grid_en = 1'b1;
+        at(11'd213, 10'd160);
+        chk_eq24(rgb_out, 24'h00_FF_00, "V13 grid line unaffected by caption layer");
+        grid_en = 1'b0;
+
+        // 消隐期强制 0
+        de = 1'b0;
+        at(11'd40, 10'd20);
+        chk_eq24(rgb_out, 24'd0, "V13 blanking forces caption output to 0");
+        de = 1'b1;
 
         // ---------------- 收尾 ----------------
         $display("");

@@ -138,13 +138,17 @@ module test_pattern_gen #(
                 else        box_x <= box_x - BOX_SIZE;
                 // 触到右边界则转向，回到左边界再转回来
                 // （注意：这里比较的是"更新前"的 box_x，与上面的赋值同一拍生效）
+                // 因为判据看的是更新前的值，回程到达 0 的那一步必须用 <= 而不是 ==：
+                // box_x 由 BOX_SIZE 减到 0 时，更新前的值是 BOX_SIZE（不等于 0），
+                // 若只判 ==0 就不会翻回正向，下一步执行 0 - BOX_SIZE 在 11 位
+                // 无符号下溢成 1984，方块飞出画面。
                 if ((box_x + BOX_SIZE) >= (H_ACTIVE - BOX_SIZE)) box_dx <= 1'b0;
-                else if (box_x == 11'd0)                         box_dx <= 1'b1;
+                else if (box_x <= BOX_SIZE)                      box_dx <= 1'b1;
                 // ---- Y 方向往返（同理）----
                 if (box_dy) box_y <= box_y + BOX_SIZE;
                 else        box_y <= box_y - BOX_SIZE;
                 if ((box_y + BOX_SIZE) >= (V_ACTIVE - BOX_SIZE)) box_dy <= 1'b0;
-                else if (box_y == 10'd0)                         box_dy <= 1'b1;
+                else if (box_y <= BOX_SIZE)                      box_dy <= 1'b1;
             end
         end
     end

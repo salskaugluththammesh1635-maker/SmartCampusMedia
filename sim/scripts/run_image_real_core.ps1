@@ -1,13 +1,14 @@
-param([switch]$Small,[switch]$IdleDmFix)
+﻿param([switch]$Small,[switch]$IdleDmFix,[string]$ReportDir='reports\image_real_core_sim')
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $bin='D:\MentorGraphics\HLVX.2.13\SDD_HOME\hyperlynx64\Ams\pkgs\icx_pro_sim\22.1\questasim\v2022.1\win64'
 $env:AMS_MODEL_TECH='D:\MentorGraphics\HLVX.2.13\SDD_HOME\hyperlynx64\Ams\pkgs\icx_pro_sim\22.1\libs'
-$report=Join-Path $root 'reports\image_real_core_sim'
+$report=$ReportDir
+if(-not [IO.Path]::IsPathRooted($report)){$report=Join-Path $root $report}
 if($Small){$report=Join-Path $report 'small'}
 if($IdleDmFix){$report=Join-Path $report 'idle_dm_fix'}
 New-Item -ItemType Directory -Force -Path $report | Out-Null
-$sources=@('ip/local/sdram/global_def.v','ip/local/sdram/sdr_wrrd.enc.v',
+$sources=@('ip/config/sdram/global_def.v','ip/local/sdram/sdr_wrrd.enc.v',
     'ip/local/sdram/sdr_init_ref.enc.v','ip/local/sdram/sdr_as_ram.enc.v',
     'ip/local/sdram/IS42s32200.v','rtl/common/async_fifo.v','rtl/video/video_timing_gen.v',
     'rtl/storage/framebuf_arbiter.v','rtl/storage/sdram_ctrl_wrap.v','rtl/storage/pix_reader.v',

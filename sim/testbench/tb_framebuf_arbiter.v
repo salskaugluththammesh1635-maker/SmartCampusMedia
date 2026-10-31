@@ -14,6 +14,7 @@ module tb_framebuf_arbiter;
     localparam FRAME_WORDS = 256;
     localparam RD_LATENCY = 10;
     localparam RD_TIMEOUT = 1024;
+    localparam MIN_RD_GROUP_CYCLES = 13;
     localparam MEM_WORDS = 1024;
     localparam FIFO_WORDS = 4096;
     localparam CLK_PERIOD = 6.667;
@@ -61,6 +62,7 @@ module tb_framebuf_arbiter;
     integer errors = 0;
     integer cases_done = 0;
     integer cycle_count = 0;
+    integer last_rd_group_cycle = -1;
     integer wr_cmds = 0;
     integer rd_cmds = 0;
     integer rd_acks = 0;
@@ -165,6 +167,7 @@ module tb_framebuf_arbiter;
     always @(posedge clk) begin
         if (!rst_n) begin
             cycle_count = 0;
+            last_rd_group_cycle = -1;
             wr_cmds = 0;
             rd_cmds = 0;
             rd_acks = 0;
@@ -197,7 +200,13 @@ module tb_framebuf_arbiter;
             chk(wr_ack === (app_wr_en && wr_req), "wr_ack equals same-cycle real FIFO write acceptance");
             chk(rd_ack === (app_rd_en && model_rd_phase == 0),
                 "rd_ack denotes exactly an accepted read-group first beat");
-            if (rd_ack) rd_acks = rd_acks + 1;
+            if (rd_ack) begin
+                if (last_rd_group_cycle >= 0)
+                    chk(cycle_count - last_rd_group_cycle >= MIN_RD_GROUP_CYCLES,
+                        "accepted read-group starts are at least thirteen clocks apart");
+                last_rd_group_cycle = cycle_count;
+                rd_acks = rd_acks + 1;
+            end
             if (rd_restart) begin
                 captured_restart_base = rd_base;
                 restart_pending_reference = 1'b1;
@@ -534,11 +543,11 @@ module tb_framebuf_arbiter;
         chk(model_wr_phase == 0 && model_rd_phase == 0, "stress finishes all partial groups");
         cases_done = cases_done + 1;
 
-        $display("CASE T11: healthy continuous read lasts more than twice RD_TIMEOUT");
+        $display("CASE T11: healthy continuous read lasts more than four times RD_TIMEOUT");
         do_reset;
         sdr_init_done = 1'b1;
         rd_req = 1'b1;
-        repeat (RD_TIMEOUT * 2 + 64) @(negedge clk);
+        repeat (RD_TIMEOUT * 4 + 64) @(negedge clk);
         chk(rd_cmds > RD_TIMEOUT && rd_returns > RD_TIMEOUT,
             "long stream has both issues and returns beyond timeout threshold");
         chk(!err, "progressing long stream never trips no-return watchdog");
@@ -615,7 +624,7 @@ module tb_framebuf_arbiter;
         drop_returns = 1'b1;
         allow_err = 1'b1;
         rd_req = 1'b1;
-        repeat (64) @(negedge clk);
+        wait_reads(28, RD_TIMEOUT / 2);
         chk(rd_cmds == 28 && max_outstanding == 28,
             "whole-group credit reserve accepts twenty-eight words without saturation loss");
         chk(!err, "credit backpressure alone does not immediately trigger timeout");

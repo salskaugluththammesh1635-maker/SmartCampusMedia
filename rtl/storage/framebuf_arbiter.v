@@ -6,6 +6,7 @@
 // 重启先捕获基址，待组结束、在飞返回和输出排空才回位并给 done。
 // 看门狗按连续无回包计时；超时锁故障至系统复位，不伪造排空。
 // ref_vld 中不接受命令，模型保留组相位；真核跨刷新相位尚待硬件核实。
+// APUG011 的间歇读组首至少相隔 13 拍；12 拍间隔已在真核复现漏 ACT。
 // =============================================================================
 `timescale 1ns / 1ps
 module framebuf_arbiter #(
@@ -14,6 +15,7 @@ module framebuf_arbiter #(
 	parameter BUS_TURN_GAP = 2,        // 方向切换空拍数，0..255
 	parameter WR_STARVE_LIMIT = 256,   // 写请求优先等待阈值
 	parameter RD_TIMEOUT = 1024,       // 连续无回包看门狗，1..65535
+	parameter RD_GROUP_CYCLES = 13,    // 相邻读组首的最小周期数，1..255
 	parameter FRAME_BASE = 21'd0,      // 四字对齐帧首地址
 	parameter FRAME_WORDS = 18'd153600 // 帧字数，须为四的倍数
 ) (
@@ -69,6 +71,7 @@ module framebuf_arbiter #(
 	reg [15:0] wr_starve;             // 写需求的服务等待
 	reg wr_starve_reached;            // 阈值提前一拍比较，避免比较器串入接受路径
 	reg [7:0] gap_cnt;                // 换向空拍计数
+	reg [7:0] rd_group_wait;          // 独立于组内四拍的读组首节拍保护
 	wire bus_ok;                     // 当前边沿可接受命令
 	wire wr_starved;                 // 写侧已等待过久
 	wire wr_last_beat;               // 写组第四拍
@@ -90,7 +93,7 @@ module framebuf_arbiter #(
 	assign rd_last_beat = (rd_beat == 2'd3); // 四拍后才换向
 	assign wr_new_allowed = wr_req && (!rd_req || wr_starved || rd_fault); // 读优先并防写饥饿
 	assign rd_new_allowed = rd_req && !wr_starved && !rd_rst_pend && !rd_restart
-		&& (rd_outstanding <= 5'd27); // 组首预留四个信用
+		&& (rd_outstanding <= 5'd27) && (rd_group_wait == 8'd0); // 组首预留四个信用
 	assign wr_fire = (st == A_WR) && bus_ok && (wr_grp_active || wr_new_allowed); // 单一接受谓词
 	assign wr_real = wr_fire && wr_req; // 真数据才使 FIFO 出队
 	assign rd_timeout = (rd_outstanding != 5'd0) && !sdr_rd_en
@@ -115,6 +118,14 @@ module framebuf_arbiter #(
 	assign rd_idle = !rd_grp_active && (rd_outstanding == 5'd0) && !rd_valid
 		&& !rd_fire && !rd_rst_pend && !rd_restart && !rd_fault; // 故障不得伪造排空
 	assign busy = !sdr_init_done; // 保留初始化状态语义
+
+	// 只限制下一组首拍，已开启的四拍组保持连续。不能靠 rd_valid 判断核已可
+	// 再接受组首：真实 APUG011 在特定 12 拍间隔会返回 valid 却漏掉 bank ACT。
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) rd_group_wait <= 8'd0;
+		else if (rd_ack) rd_group_wait <= RD_GROUP_CYCLES - 1;
+		else if (rd_group_wait != 8'd0) rd_group_wait <= rd_group_wait - 8'd1;
+	end
 
 	// 状态寄存器：状态选择与寄存分开。
 	always @(posedge clk or negedge rst_n) begin

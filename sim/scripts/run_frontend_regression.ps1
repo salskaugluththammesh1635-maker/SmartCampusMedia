@@ -22,7 +22,19 @@ $sources = @(
     'sim/testbench/tb_bmp_parser.v', 'sim/testbench/tb_img_loader.v',
     'sim/testbench/tb_player_ctrl.v',
     'sim/testbench/tb_err_prompt.v', 'sim/testbench/tb_buzzer_tone.v',
-    'sim/testbench/tb_key_action.v', 'sim/testbench/tb_video_overlay.v'
+    'sim/testbench/tb_key_action.v', 'sim/testbench/tb_video_overlay.v',
+    'rtl/video/science_font16.v', 'rtl/video/science_page.v', 'rtl/video/video_content_mux.v',
+    'sim/testbench/tb_science_page.v', 'sim/testbench/tb_video_content_mux.v',
+    # B1 图层叠加与字幕：字模 ROM / 字符串表 / 字幕渲染器
+    'rtl/osd/osd_font8x16.v', 'rtl/osd/osd_strings.v', 'rtl/osd/osd_caption.v',
+    'sim/testbench/tb_osd_caption.v',
+    # B3 实时参数 OSD：参数文字表 / 参数面板 / 变化自动弹窗
+    # osd_font8x16 上面已列出，三个 B3 模块共用同一套字模。
+    'rtl/osd/osd_param_text.v', 'rtl/osd/osd_panel.v', 'rtl/osd/osd_autopop.v',
+    'sim/testbench/tb_osd_param_text.v', 'sim/testbench/tb_osd_panel.v',
+    'sim/testbench/tb_osd_autopop.v',
+    # B2 换帧转场混合器：纯组合像素缩放，独立单元验证
+    'rtl/storage/fade_mixer.v', 'sim/testbench/tb_fade_mixer.v'
 )
 $hashes = @($sources | ForEach-Object {
     @{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $root $_) -Algorithm SHA256).Hash }
@@ -51,7 +63,14 @@ try {
         @{name='err_prompt'; top='tb_err_prompt'; marker='*** ALL CHECKS PASSED ***'; arguments=@()},
         @{name='buzzer_tone'; top='tb_buzzer_tone'; marker='*** ALL CHECKS PASSED ***'; arguments=@()},
         @{name='key_action'; top='tb_key_action'; marker='ALL CHECKS PASSED: key_action'; arguments=@()},
-        @{name='video_overlay'; top='tb_video_overlay'; marker='ALL CHECKS PASSED: video_overlay'; arguments=@()}
+        @{name='video_overlay'; top='tb_video_overlay'; marker='ALL CHECKS PASSED: video_overlay'; arguments=@()},
+        @{name='science_page'; top='tb_science_page'; marker='ALL CHECKS PASSED: science_page'; arguments=@()},
+        @{name='video_content_mux'; top='tb_video_content_mux'; marker='ALL CHECKS PASSED: video_content_mux'; arguments=@()},
+        @{name='osd_caption'; top='tb_osd_caption'; marker='ALL CHECKS PASSED: osd_caption'; arguments=@()},
+        @{name='osd_param_text'; top='tb_osd_param_text'; marker='ALL CHECKS PASSED: osd_param_text'; arguments=@()},
+        @{name='osd_panel'; top='tb_osd_panel'; marker='ALL CHECKS PASSED: osd_panel'; arguments=@()},
+        @{name='osd_autopop'; top='tb_osd_autopop'; marker='ALL CHECKS PASSED: osd_autopop'; arguments=@()},
+        @{name='fade_mixer'; top='tb_fade_mixer'; marker='ALL CHECKS PASSED: fade_mixer'; arguments=@()}
     )
     foreach ($case in $cases) {
         $log = $case.name + '.txt'

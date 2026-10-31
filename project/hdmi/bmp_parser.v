@@ -93,7 +93,15 @@ module bmp_parser #(
     // DEFAULT_W / DEFAULT_H: 期望图像宽高。素材统一 640×480，
     //   但保留参数化以便阶段五做缩放适配时复用本模块。
     parameter [15:0] DEFAULT_W = 16'd640,
-    parameter [15:0] DEFAULT_H = 16'd480
+    parameter [15:0] DEFAULT_H = 16'd480,
+    // CHECK_SIZE: 是否强制「实际宽高 == 期望宽高」。
+    //   1 = 严格（默认）: 尺寸不符报 err_code=4。独立使用本模块时的语义。
+    //   0 = 放宽: 接受任意宽高，只要求宽高非 0。
+    //   为什么需要放宽（C2 图片自适应缩放）: 一旦 img_scaler 串在
+    //   bmp_parser 之后，任意分辨率都能映射进 640×480 的帧缓存，此时
+    //   「尺寸必须等于 640×480」这条限制就成了唯一挡路的判据。放宽后
+    //   img_w/img_h 仍照常输出，由 img_scaler 拿去做缩放计算。
+    parameter CHECK_SIZE = 1
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -164,6 +172,11 @@ module bmp_parser #(
     reg  [15:0] pad_left;           // 当前行还需跳过的填充字节数
     reg  [31:0] skip_left;          // 头部之后、像素数据之前还需跳过的字节数
     reg         top_down;           // 1 = 自顶向下布局（原始高度为负），不需翻转
+
+    // 高度取绝对值（组合）。ST_VALIDATE 里要拿它和 cap_h 比，而 img_h
+    // 在同一拍才被赋值，直接读 img_h 会拿到上一帧的旧值 —— 必须用本组合值。
+    wire [15:0] hdr_abs_h = f_raw_h[31] ? ((~f_raw_h[15:0]) + 16'd1)
+                                        : f_raw_h[15:0];
 
     // ========================================================================
     // always 块 [5] / 共 5 块: 行尺寸参数推导（组合）
@@ -288,10 +301,17 @@ module bmp_parser #(
                         err_code <= 4'd3;             // 有压缩
                         hdr_fail <= 1'b1;
                         st       <= ST_IDLE;
-                    end else if (img_w != cap_w ||
-                                 ((f_raw_h[31]) ? ((~f_raw_h[15:0]) + 16'd1)
-                                                : f_raw_h[15:0]) != cap_h) begin
+                    end else if ((CHECK_SIZE != 0) &&
+                                 (img_w != cap_w || hdr_abs_h != cap_h)) begin
                         err_code <= 4'd4;             // 宽高不符
+                        hdr_fail <= 1'b1;
+                        st       <= ST_IDLE;
+                    end else if ((CHECK_SIZE == 0) &&
+                                 (img_w == 16'd0 || hdr_abs_h == 16'd0)) begin
+                        // 放宽模式仍要挡住 0 尺寸: img_scaler 会按 0 算出
+                        // 无效的目标尺寸并永远不置 cfg_ok，上层只能等超时，
+                        // 不如在这里用「宽高不符」直接失败，报错语义一致。
+                        err_code <= 4'd4;             // 宽高为 0
                         hdr_fail <= 1'b1;
                         st       <= ST_IDLE;
                     end else if (data_off < 32'd54) begin
