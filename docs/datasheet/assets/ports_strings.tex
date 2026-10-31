@@ -1,0 +1,10 @@
+% 端口表 —— 由 gen_datasheet_assets.py 解析 RTL 生成，勿手改
+\begin{tabular}{@{}c l c p{3.9cm}@{}}
+\toprule
+\textbf{} & \textbf{信号} & \textbf{宽} & \textbf{说明}\\
+\midrule
+$\rightarrow$ & {\ttfamily line\_sel} & 4{\scriptsize\ttfamily\ {[}3:0{]}} & 文本行 0..15 \\
+$\rightarrow$ & {\ttfamily col} & 6{\scriptsize\ttfamily\ {[}5:0{]}} & 字符列 0..63 \\
+$\leftarrow$ & {\ttfamily char\_code} & 7{\scriptsize\ttfamily\ {[}6:0{]}} & 该位置的 ASCII 码，0x00 = 无字 \\
+\bottomrule
+\end{tabular}

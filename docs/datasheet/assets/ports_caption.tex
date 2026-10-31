@@ -1,0 +1,17 @@
+% 端口表 —— 由 gen_datasheet_assets.py 解析 RTL 生成，勿手改
+\begin{tabular}{@{}c l c c p{7.2cm}@{}}
+\toprule
+\textbf{} & \textbf{信号} & \textbf{位宽} & \textbf{范围} & \textbf{说明}\\
+\midrule
+$\rightarrow$ & {\ttfamily pixel\_clk} & 1 & {\scriptsize\ttfamily --} & 像素时钟 25 MHz \\
+$\rightarrow$ & {\ttfamily rst\_n} & 1 & {\scriptsize\ttfamily --} & 异步复位，低有效 \\
+$\rightarrow$ & {\ttfamily de} & 1 & {\scriptsize\ttfamily --} & 数据有效 \\
+$\rightarrow$ & {\ttfamily active\_x} & 11 & {\scriptsize\ttfamily {[}10:0{]}} & 当前像素列 0..639 \\
+$\rightarrow$ & {\ttfamily active\_y} & 10 & {\scriptsize\ttfamily {[}9:0{]}} & 当前像素行 0..479 \\
+$\rightarrow$ & {\ttfamily caption\_en} & 1 & {\scriptsize\ttfamily --} & 字幕层总开关 \\
+$\rightarrow$ & {\ttfamily state\_line} & 4 & {\scriptsize\ttfamily {[}3:0{]}} & 状态行行号，取 2..7（越界则显示空白） \\
+$\rightarrow$ & {\ttfamily index\_val} & 5 & {\scriptsize\ttfamily {[}4:0{]}} & 页面序号 0..31，供 \# / * 替换 \\
+$\leftarrow$ & {\ttfamily caption\_pixel} & 1 & {\scriptsize\ttfamily --} & 本像素是字幕笔画 \\
+$\leftarrow$ & {\ttfamily caption\_band} & 1 & {\scriptsize\ttfamily --} & 本像素落在字幕带内（用于压暗衬底） \\
+\bottomrule
+\end{tabular}

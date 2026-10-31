@@ -13,80 +13,53 @@
 项目必须严格遵守《全国大学生嵌入式芯片与系统设计竞赛 2026 FPGA 创新设计赛道选题指南》中
 "选题一：基于安路 EG4S20 的 HDMI 多媒体播放系统"的要求（指南 PDF 位于工作区根目录）。
 
-## 2026-10-28 会话状态快照（S8：SDRAM 降频至 40 MHz 全收敛 + SD 总线竞态修复 + 上板首测，本节为最新事实基线）
+## 2026-10-30 当前交接基线
 
-> **先读 `TASKS.md`** 与 **`docs/keymap_2026-10-26.md`**（16 键键位表唯一权威来源）。
->
-> 本轮新增两份必读文档：
-> - **`docs/board_verification_2026-10-27.md`**（685 行）——上板验证手册，把全部未验证项编排成 6 阶段 + 2 项核定。
->   配套脚本 `scripts/prepare_board_verify_assets.ps1` 一键生成四套 SD 素材（8.1 MB，已被 `.gitignore` 排除）。
-> - **`docs/handover_2026-10-28_display_diagnosis.md`**（373 行）——本轮上板画面异常的完整诊断交接（模型无视觉能力的前提、
->   实测证据、五条假设 H1~H5、四步判别表、踩坑教训）。
->
-> 错误码语义的唯一真相源仍是 `rtl/control/err_prompt.v` 的块③，**不要在别处复制那张映射表**。
+**B2 换帧转场已完成（仿真 + 综合布线，未上板）；正式顶层此前已上板显示 SD 图片，用户确认深色区域周期白条解决；但按 KEY0/KEY1 换图时白色噪点仍存在，缺陷未关闭。** 显示缺陷按 [噪点未解决交接报告](handover_2026-10-29_noise_unresolved.md) 继续排查，不能把旧的 mux 仿真通过视为现场修复完成。B2 转场见 [B2 转场记录](fade_transition_2026-10-29.md)。完整按键、长时间轮播及音频验收仍待记录。
 
-1. **本轮改动**：三个独立命题，按时间顺序。
-   - **① 时序收敛**：SiP SDRAM 域两次降频 **150 MHz → 100 MHz → 40 MHz**，全设计 setup 从 `SWNS −7.232 ns` 变为 **`SWNS +1.935 ns / STNS 0.000 ns`**，
-     7 个 path group **全部 0 违例**。SDC **一条未改**（`clkc[1]` 与 `clkc[2]` 仍在同一时钟组，不靠拆组刷绿）。
-   - **② SD 总线竞态修复**：上板首测数码管稳定 `d810`（`image_err=9` 装载超时），根因是 `image_player` 的 `.sd_ready()` 误接 `sd_ok` 而非 `sd_owner_player`，
-     导致 `gallery_probe` 与 `image_player` 抢同一条 SPI 总线、`img_loader` 的读块请求被静默丢弃。已修，并补 `BLK_TIMEOUT` 看门狗（新错误码 `E_BLKTMO = 4'd10` → 显示 `dA`）。
-   - **③ 上板验证体系**：手册 + 素材脚本 + 显示诊断交接文档（见上）。
-2. **降频的物理依据（核心结论，别再走回头路）**：读路径 slack 恒等于 **`T/2 − 10.565 ns`**，写路径恒等于 **`T/2 − 7.001 ns`**。
-   三档互证：150 MHz `3.333−10.565 = −7.232` ✓、100 MHz `5.000−10.565 = −5.565` ✓、40 MHz `12.500−10.565 = +1.935` ✓。
-   其中 **5.000 ns 是 TD 硬核模型对 SiP 接口的固定惩罚**，实测最差路径 `u_sdram_sip.dq[0] → u_sdram_sip_syn_1.bpad` 的
-   `Data Path Delay = 6.453 ns` 在 150 / 100 / 40 MHz 三个频率下**完全相同**——延迟是常数，只有预算 `T/2` 在变。
-   **临界频率：读 ≤ 47.33 MHz（瓶颈）、写 ≤ 71.42 MHz。** 旁证：安路社区实测「ODDR→OPAD→SDRAM→DQ→IDDR 约 5 ns」「实用主频不超过 100 MHz」。
-   **已排除的三条捷径**：拆时钟组刷绿（改变统计口径，不改变硬件）、`set_multicycle_path`（MEGA65 在 Xilinx 上实测反噬 5.6 ns，本工程 `phys_opt -post_route` 直接崩 `0xC0000005`）、`phys_opt`（`-post_place` 反而把 0.275 变差到 0.178 ns）。
-3. **降频的代价（如实）**：SDRAM 带宽 600 → **160 MB/s**（40 MHz × 4 B），640×480@60 Hz 24 bit 需 55.3 MB/s → **仍富余 2.9 倍**。
-   刷新周期 `SELF_REFRESH_INTERVAL = 64000000/25/2048 = 1250` 拍 = 31.25 µs，远小于 64 ms。LUT 占用与 150 MHz 版几乎一致（降频**不消耗额外资源**）。
-4. **降频连带修改清单**（改频率必须四处同改，少一处就自相矛盾）：
-   - `rtl/storage/sdram_pll.v`：`CLKC1_DIV(25) / CLKC1_CPHASE(24) / CLKC1_FPHASE(0)`（0°）、`CLKC2_DIV(25) / CLKC2_CPHASE(11) / CLKC2_FPHASE(4)`（180°）。
-     VCO 保持 **1000 MHz**（`REFCLK_DIV(4)` → 内部参考 12.5 MHz，`CLKC0_DIV(80)`），环路滤波参数原样不动。TD 日志 `USR-1002` 确认 `clkc[1]`/`clkc[2]` 均 `-divide_by 1.2500`，后者带 `-phase 180`。
-   - `ip/local/sdram/global_def.v:11`：`` `define SDR_CLK_PERIOD 1000000000/40000000 ``
-   - `rtl/storage/sdram_ctrl_wrap.v`：`parameter CLK_FREQ_HZ = 40_000_000`
-   - `rtl/storage/sdram_bringup_top.v`：`.CLK_FREQ_HZ (40_000_000)`
-   - **相移编码公式**（换任意频率都用得上）：延时 = `(CPHASE+1) + FPHASE/8` 个 VCO 周期；相位 = 延时 / `CLKCx_DIV` × 360°。
-     180° 通式：`DIV` 偶数 → `CPHASE = DIV/2 − 1, FPHASE = 0`；`DIV` 奇数 → `CPHASE = (DIV−3)/2, FPHASE = 4`。
-5. **本轮实测通过**：
-   - **静态时序（40 MHz）**：`SWNS 1.935 / STNS 0.000 / HWNS 0.011 / HTNS 0.000`，`Period Check WNS 0.000`。
-     逐组：`clkc[0]→clkc[0]` SwNS 20.162（8379 端点）、`clkc[1]→clkc[1]` **+16.706**（2578 端点，Min Period 8.294 ns）、
-     `clkc[2]→clkc[2]` 6.113、`clkc[0]→clkc[2]` 6.554、`clk→clk` 17.090、
-     **`clkc[1]→clkc[2]`（写 DQ）+5.630**、**`clkc[2]→clkc[1]`（读 DQ）+1.935**（全设计最小余量）。
-     150 MHz 下这两组分别是 **−3.537 / −7.232**。
-   - **位流**：`project/hdmi_td_Runs/phy_1/hdmi_td.bit` = **629,640 B，2026-10-28 17:53:32**（含音频波形叠加，`area.txt` 层次表有 `u_wave | audio_waveform`）。
-   - **资源**（`reports/s6_integration/area.txt`）：LUT **10,751 / 19,600 = 54.85%**、寄存器 **5,773 / 19,600 = 29.45%**、LE 11,522、
-     BRAM9K 17/64、DSP 13/29、PAD 45/188、PLL 2/4、GCLK 4/16。
-   - **lint**：`python scripts/lint_verilog.py rtl project/src project/hdmi` → 77 文件，E0/E1/E2 全 0。
-   - **仿真**：`reports/s6_integration/frontend/result.json`（2026-10-27 0:58:44）与 `reports/s6_integration/audio/result.json`（2026-10-26T22:18:56，passed，2 test）。
-   - **上板首测（SD 修复前）**：LED 仅 D4/D5/D7 亮、D6 灭；数码管稳定 `d810` → 判为 `image_err=9` 装载超时，根因已定位并修复。
-6. **仍未通过（不得含糊）**：
-   - **修复 SD 竞态后的新位流只上板看过一次画面，尚未确认是否恢复正常出图。** 现场现象：屏幕确实是 **IMG001**（白边、中央白框、
-     数字「1」笔画位置都对得上），但**两条深蓝底带变成「暗底 + 窄亮条」的周期条纹**（周期 116~132 px、亮条宽 22~26 px），
-     且**中央白框内的黑色数字看不见**。五条候选假设见 `docs/handover_2026-10-28_display_diagnosis.md` 第 5 节，**尚未定论**。
-   - **正式顶层从未上板完整跑完全部 6 阶段验证**；`docs/board_verification_2026-10-27.md` 的验收记录表仍是空的。
-   - **键盘行序、SD 的 MOSI/MISO 极性、八个新键（KEY7~KEY14）仍未现场核定**（`docs/keymap_2026-10-26.md` 第八节的方法）。
-   - **HDMI 内嵌音频从未上板出声**（仿真 2 个 test 通过，但板子无 DDC/EDID，能否出声取决于显示器）。
-   - `PHY-7002` ×2：`u_sdram_sip` 位置约束未遵守，一直存在。
-   - **`project/hdmi_td.al` 工作区有一处未提交的 TD 自动改写**：删掉了 `hdmi/audio_waveform.v` 整块并把 `hdmi/video_overlay.v` 的
-     `CompileOrder` 从 116 改回 30。**直接用这个 .al 构建会因缺源文件而 elaborate 报 black box**（历史 `e41315a` 因此缺 12 个源）。
-     备份在 `D:\FPGA_Compelate\_crop\hdmi_td.al.worktree_bak`，**下次构建前先核对 .al 里的源文件清单是否完整**。
-   - **`PROGRESS` 里的 `S12` 章节与 `handover_2026-10-28_display_diagnosis.md` 均未提交**（工作区 `??`）。
-7. **工程固定动作（本轮再次踩到的坑）**：
-   - **TD 脚本**：`td_commands_prompt.exe <script>` 跑 tcl 时，脚本里**必须先 `cd $prjdir` 再 `open_project`**（`.al` 内源文件是相对路径），
-     `open_project` / `read_adc` / `read_sdc` 的路径**不加引号、用正斜杠**；脚本**不能带 UTF-8 BOM**（否则 `invalid command name "锘¿#"`）。
-     正确命令序：`import_device eagle_s20.db -package EG4S20BG256` → `open_project` → `elaborate -top dmz_eg4s20_hdmi_top` → `read_adc` → `read_sdc`。
-     **跳过 `read_adc` 会报 `HDL-8001 ERROR: Incorrect top-level module name`。**
-   - **验证脚本本身不判时序**（负余量也 exit 0），必须读产物里的 `SWNS/STNS` 才算判过。`flow_s6_bit.tcl` 则会自检并打印 `S6_TIMING_PASSED` / `S6_TIMING_FAILED`，据此返回 EXIT 0 / EXIT 3。
-   - **改完 `rtl/` 必跑 `scripts/sync_src.ps1`**（自带 lint，41 个副本按 MD5 判断）；新增 `.v` 必须同时改 `project/hdmi_td.al`。
-   - **PowerShell 编辑中文文件必须用 read/edit/write 工具，不能用 `Get-Content`/`Set-Content`**（UTF-8 被按 GBK 读入再写回，首行会变成 `# 鏅烘挱鏍″洯`）。
-   - **edit 工具会丢 UTF-8 BOM**：改 `.ps1` 后必须用 `[System.IO.File]::WriteAllText($p, $t, (New-Object System.Text.UTF8Encoding($true)))` 补回。
-   - **`cd` 之后调用 .NET 静态方法必须用绝对路径**（.NET 用进程 CWD，不是 PowerShell 的 location）。
-   - **提交信息必须用 write 写进文件再 `git commit -F`**（PowerShell 无 heredoc）。
-8. **本会话的硬约束前提（下次接手先认清）**：**当前模型的这个会话没有视觉能力**（`read_image` 返回 "the current model does not support images"）。
-   因此**所有关于上板画面的判断只能来自 PowerShell + System.Drawing 的像素测量**（ASCII 图、行/列 run-length、直方图、相关系数），
-   不能凭"看图"下结论。本会话已因此返工三次：先是把透视梯形的裁剪框当成矩形（得出假结论「三条白边丢失」），
-   再用错图的边界坐标（`topY=378/botY=1487` 对一张高 1215 的图）。**测量前先打印图片尺寸，先把四角坐标量准，再谈结构。**
-9. **不要把行为仿真通过说成综合通过或上板通过。** 本轮时序是**真实收敛**（Routed 置信度 + 位流已出），但**画面是否正确仍未定论**，两者不能混为一谈。
+接手时按任务读取下列文档，旧日期快照仅供追溯：
+
+| 工作 | 当前依据 |
+|---|---|
+| 启动、构建、最新位流与资源时序 | [README](../README.md) |
+| 实现状态与剩余验收 | [任务清单](../TASKS.md)、[板端验证手册](board_verification_2026-10-27.md) |
+| B2 换帧转场（设计取舍与证据） | [B2 转场记录](fade_transition_2026-10-29.md) |
+| 显示修复、真实核回归及用户反馈 | [显示修复记录](display_fix_2026-10-29.md) |
+| 换图欠载处理与独立科普页 | [显示修复记录](display_fix_2026-10-29.md)、[开发进度](progress.md)、[噪点未解决交接报告](handover_2026-10-29_noise_unresolved.md) |
+| HDMI 音源、固定衰减与试听边界 | [HDMI 音频说明](hdmi_audio_2026-10-26.md) |
+| 键位及物理映射核定 | [16 键功能表](keymap_2026-10-26.md)、[板级确认清单](pending_confirmations.md) |
+| 错误提示设计 | [错误提示说明](error_prompt_2026-10-27.md)，码值以 `rtl/control/err_prompt.v` 为准 |
+| 数据流、跨域与 SDRAM 合同 | [架构](../ARCHITECTURE.md)、[SDRAM 参考](eram_sdram_reference.md) |
+
+### 当前实现与验证边界
+
+- HDMI 支路将左右声道 `signed [23:0]` PCM 各算术右移 6 位，幅度为原来的 **1/64（−36.12 dB）**；PWM 与画面电平/波形接原始音源。48 kHz / 24 bit、ACR、KEY6 静音保持当前逻辑。现有音频回归 19 + 5 PASS 覆盖音源、ACR、PWM；新增顶层衰减经接线复核和完整 TD 构建，未被该回归直接编译覆盖。
+- 最新交付为 [hdmi_noise_sci_fix.bit](../reports/noise_sci_fix_20261029/hdmi_noise_sci_fix.bit)，2026-10-29 20:51:55，629640 B，已含低音量衰减、欠载像素处理和独立科普页。身份与输入哈希见 [manifest.json](../reports/noise_sci_fix_20261029/manifest.json)；该清单的下载与板端验证标志仍为 false。上一份交付是 [hdmi_audio_quiet.bit](../reports/hdmi_audio_quiet_20261029/hdmi_audio_quiet.bit)（17:17:54）。
+- 两处改动：①顶层画面选择器将帧级 `image_ready` 与像素级 `image_pixel_valid` 分开处理；已有图片期间，欠载像素输出黑色，测试图案仅在没有已就绪图片时显示；②KEY3 科普模式选择独立的 640×480 FPGA/数字逻辑科普页，包含中文字形、数据流和组合逻辑、时序逻辑、并行处理卡片，不依赖 SD 卡资源；应急红屏仍优先。完整前端回归 15/15、631 条 PASS；**用户已烧录复验，KEY0/KEY1 切图噪点仍存在**。
+- 最新 TD v6.2.168116 构建退出 0，setup +1.935 ns、hold +0.011 ns、TNS 均 0。既有 SIP 位置、PLL 本地反馈和部分外部 IO 约束告警仍在；不能将当前约束内通过写成所有物理路径均已测量。
+- 本轮资源为 LUT 12544/19600、寄存器 5945/19600、LE 13256、BRAM9K 17/64、DSP 13/29、GCLK 4/16、IO 41/188，见 [area.txt](../reports/noise_sci_fix_20261029/area.txt)。
+- 显示修复版 [hdmi_display_fix.bit](../reports/display_fix_20261029/hdmi_display_fix.bit) 是用户确认显示恢复的基线；旧 `project/hdmi_td_Runs/phy_1/hdmi_td.bit` 不是最新交付。各构建入口读取**当前工作区源码**，重跑旧入口不会自动恢复历史哈希。
+- SDRAM 为 40 MHz 0°/180°，两相仍在同一时序组；读优先并防写饥饿，读组首至少间隔 13 拍。生产包装器关闭核自动刷新，在完整四字组边界排空读返回、等待 16 拍静默后手动刷新；超时粘滞故障与仲裁错误汇入内存错误 8。
+- SDRAM 配置源为 `ip/config/sdram/global_def.v`，`scripts/sync_src.ps1` 复制到忽略的 `ip/local/sdram/global_def.v`。完整括号修复后名义间隔为 625 拍；旧“有效 1250 拍”的结论已由宏负测试推翻。
+- `SEAMLESS=1` 双缓冲、16 键分配、可读错误提示、电平/波形叠加均已实现。**B2 换帧转场**（`rtl/storage/fade_mixer.v` + `image_player` 转场状态机，淡出到黑→全黑翻帧首→淡入，约 286 ms）已实现，三档仿真 8,270 / 8,263 / 1,228,817 零错、前端回归 20/20、TD 综合布线 setup +1.935 ns / hold +0.003 ns，**未上板**。FFT、音频文件播放、汉字字符字幕尚未实现；按键物理行序及全表验收未全部核定。
+- 原照片中央黑色数字 **1 实际可见**；历史“数字缺失”是误判。确认的现场缺陷是深蓝区周期白条。KEY4/KEY5“没有改变”是用户线索，不能在未核定键码时单独证伪某个假设。
+- 真实核原图 614407 次检查零错；刷新 161949 次 / 5 场景零错；64 ms 保持后两次回读共 307200 字零错；存储 220706 次、播放器 8265 / FULL 1228812 / 单缓冲 8263 次检查均通过。小型证据见 [evidence](../reports/display_diag_20261028/README.md)。串行视频回归覆盖真实编码核和生产串行 RTL，音频包解码及实际线缆/接收端仍在覆盖范围之外。
+
+### 继续工作时的操作约定
+
+改 `rtl/` 或 SDRAM 配置后运行 `scripts/sync_src.ps1`，核对 `project/src`、`project/hdmi` 与本地 IP 配置；新增源文件核对 `.al` 清单。TD Tcl 先切换到工程目录再打开相对路径工程，使用无 BOM；脚本退出 0 后仍须确认相应时序报告。中文 Markdown 使用 UTF-8 无 BOM，并保留原换行；显式以 UTF-8 解码，避免默认代码页往返损坏。
+
+后续优先记录：先按交接报告复现并定位 KEY0/KEY1 切图噪点，再复验 KEY3 科普页、低音量 HDMI 试听、KEY6 静音以及完整板端验收。仅修改文档无需重新跑 RTL 仿真或生成位流。
+
+## 2026-10-28 历史摘要（S8）
+
+当日完成 SDRAM 150 → 100 → 40 MHz 降频和 SD 总线所有权修复，并建立上板验证手册。首测出现深蓝区周期白条；当时的照片统计误判了中央黑色数字，且刷新宏、自动刷新交叠、真实核读组边界尚未定位。随后 10 月 29 日完成修复及真实核回归，用户确认显示问题解决。
+
+历史测量过程见 [10 月 28 日诊断记录](handover_2026-10-28_display_diagnosis.md)，按日的构建数字见 [开发进度](progress.md)。当日工具无法显示图片是当次会话的限制，不是当前工具能力或后续排查必须遵守的限制。
+
+## 早期快照的阅读口径
+
+以下 10 月 26 日及更早快照保留当日状态、检查数和未完成项；其中“未上板”“负余量”“未重新综合”等仅对应当时版本。当前完成度、引脚语义和操作顺序以本文件 10 月 29 日基线及上述维护文档为准。
 
 ## 2026-10-26 会话状态快照（S7：KEY7～KEY14 键位分配，历史基线）
 
@@ -239,13 +212,13 @@
 
 0b. **【接口规范·强制】**（2026-10-06 全 RTL 复审新增，详见 progress.md 代码审查记录）：
    - **同一按键不得被两个模块同时用作功能触发** —— 新增按键功能前先查
-     `rtl/top/dmz_eg4s20_bringup_top.v` 顶部的键位分配表（已发生：KEY0/KEY1 曾被
+     `docs/keymap_2026-10-26.md` 与 `rtl/control/key_action.v` 的当前分配（已发生：KEY0/KEY1 曾被
      播放控制与图案切换同时占用，一次按键触发两种行为；TB 已加 T3b 防回归）；
    - **一个模块一个职责，不留死端口** —— 不为"将来可能用到"预留输出
      （已发生：`player_ctrl.seg_status` 16 位无人使用，且注释/实现/位定义三方不一致）；
    - **端口注释必须与实现一致**（位序、极性、位宽三项），复审会逐条核对；
    - **同步命令**：改完 `rtl/` 后执行 `scripts/sync_src.ps1`（增量同步到
-     `project/src/` 并自动 lint 双查），**不要手工复制**。
+     `project/src/`、`project/hdmi/` 和本地 SDRAM 配置，并自动 lint），**不要手工复制**。
 
 0c. **【编码规范·强制】RTL 层不使用 `function` / `task`**（2026-10-16 依用户要求全量清除）：
    - **为什么**：Verilog 的 `function` 综合后本就是纯组合逻辑（由综合器内联展开），

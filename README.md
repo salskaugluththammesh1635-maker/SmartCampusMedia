@@ -2,634 +2,383 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-基于安路 EG4S20 FPGA 的校园多媒体信息发布与应急提示终端。SD 卡读取、FAT32 解析、BMP 解码、帧缓存、播放控制、HDMI 视频与音频输出全部由 FPGA 逻辑实现，**没有外接处理器、没有软核、没有运行任何软件**。
+基于安路（Anlogic）**EG4S20** FPGA 的校园多媒体信息发布与应急提示终端。
+
+整条链路——SD 卡读写、FAT32 解析、BMP 解码、帧缓存、播放控制、HDMI 视频与音频输出——**全部由 FPGA 逻辑实现**：没有外接处理器，没有 CPU 软核，没有跑任何一行软件。
 
 面向全国大学生嵌入式芯片与系统设计竞赛 2026 FPGA 创新设计赛道，选题一：基于安路 EG4S20 的 HDMI 多媒体播放系统。
 
-> 本文讲**怎么用、怎么复现、现在做到哪一步**。
-> 想看**为什么这么设计**——分层、数据流、时钟与跨域、存储器布局、仲裁、可观测性、设计取舍，见 [架构分析](ARCHITECTURE.md)。
-> 任务清单与完成度见 [TASKS.md](TASKS.md)；按日期的发展过程见 [开发进度](docs/progress.md)。
+> **读哪一篇？**
+> 本文 = *它是什么、怎么用、怎么复现、做到哪一步*。
+> 想知道*为什么这么设计*（分层、数据流、时钟与跨域、存储器布局、仲裁、可观测性、取舍）→ [架构分析](ARCHITECTURE.md)。
+> 想知道*还剩什么没做* → [任务总览](TASKS.md)。
+> 想知道*测试到底覆盖了什么* → [测试覆盖](TEST_COVERAGE.md)。
+> 想知道*哪一天改了什么、踩了什么坑* → [开发进度](docs/progress.md)。
+> 全部文档索引见 [docs/README.md](docs/README.md)。
 
 ---
 
-## 一、当前状态（截至 2026-10-27）
+## 一、这是什么
 
-**能做什么**：插上写好 BMP 的 SDHC 卡，上电后自动扫描图库、装载图片、以 640×480@59.5 Hz 送上 HDMI 显示，同时把同一份 PCM 样本嵌入 HDMI 音频并输出到板载 3.5 mm；16 个按键控制播放、轮播、应急，以及亮度、反色、九宫格、信息条、音频电平条等画面后处理。
+一块板子、一颗 FPGA、一张 SD 卡、一根 HDMI 线。上电后自动扫描卡里的 `IMGnnn.BMP`，按 5 秒间隔轮播，同时输出 HDMI 画面与音频；16 个按键可以随时干预。
 
-**验证到哪一步**：行为仿真（ModelSim）全绿，正式顶层 `dmz_eg4s20_hdmi_top` 的 elaborate → 综合 → 布局 → 布线 → bitgen 全流程通过。**静态时序已于 2026-10-27 全部收敛**：把 SDRAM 域两次降频（150 → 100 → **40 MHz**）后，setup WNS 从 −7.232 ns 变为 **+1.935 ns、TNS 0.000 ns、7 个 path group 全 0 违例**，`flow_s6_bit.tcl` 自检打印 `S6_TIMING_PASSED` 并返回 EXIT 0。**但正式顶层仍未上板。**
-
-> 关于收敛方式：这次不是靠改约束「刷绿」，而是**真实降频**。[`constraints/dmz_eg4s20_hdmi.sdc`](constraints/dmz_eg4s20_hdmi.sdc) 的有效约束一条都没改，`clkc[1]` 与 `clkc[2]` 仍在同一时钟组内，0°/180° 的相位关系完整保留。收敛的代价是 SDRAM 带宽从 600 MB/s 降到 160 MB/s，仍然满足 640×480@60Hz 所需的 55.3 MB/s（富余 2.9 倍）。
-
-> 关于 bit 与最终时序的关系：2026-10-27 的最终构建由 [`flow_s6_bit.tcl`](project/flow_s6_bit.tcl) 完成，走满 bitgen。该脚本会解析 `timing.txt` 自检时序：不达标时**照常出 bit 但返回 EXIT 3**（150 MHz 时的实测 `S6_TIMING_FAILED: setup=-7.232 ns hold=0.019 ns; bit is a candidate only`），达标才返回 EXIT 0。当前构建已通过自检，`project/hdmi_td_Runs/phy_1/hdmi_td.bit` 是**时序收敛后的正式位流**（629,640 B）。
-
-三条必须同时知道的事实：
-
-1. **上板证据来自独立诊断工程，不是正式顶层。** 2026-10-20 在 DMZ-EG4S20 板卡上用 `image_dm_fix` 显示出白底中央红块：数码管 `7777`、LED0～5 亮、整帧读回比较通过，应急红屏与间歇蜂鸣也已实测。该灯码只适用于诊断工程，**正式顶层至今没有上板记录**。
-2. **SiP 接口的负余量是真实物理延迟，不是工具算错。** 第一次降频到 100 MHz 后接口仍为负（读 −5.565 ns / 写 −2.001 ns），两次实测反推出与频率无关的常数开销（读 `T/2 − 10.565 ns`、写 `T/2 − 7.001 ns`），临界频率是读 47.33 MHz / 写 71.42 MHz。因此必须降到 40 MHz 才真正收敛。详见「静态时序」一节。
-3. **面积与时序数据已重新采集。** 见「资源占用」与「静态时序」，均来自 2026-10-27 21:12 的最终构建（40 MHz）。
-
-**功能通过 ≠ 时序通过 ≠ 上板通过**，本仓库所有记录都按这三档分开陈述。
-
----
-
-## 二、硬件与工具链
-
-| 项目 | 配置 |
-|---|---|
-| 核心板 | 大拇指 DMZ-EG4S20，FPGA 为 EG4S20BG256 |
-| 底板 | MO 综合底板：HDMI 座、SD 卡槽、4×4 键盘、4 位数码管、8 位 LED、蜂鸣器、PWM 音频 |
-| 输入时钟 | 50 MHz（球 R7） |
-| 帧存储 | 芯片内置 SiP SDRAM，2M×32 bit，共 8 MiB，不占板级 IO |
-| 视频输出 | 640×480，约 59.5 Hz，HDMI 1.4b（TMDS 差分四对） |
-| 开发工具 | 安路 TD（综合/布局布线）、ModelSim（行为仿真）；Python 3 与 Windows PowerShell 跑工程脚本 |
-
-### 板级引脚（由顶层端口注释与 `.adc` 约束交叉核对）
-
-| 资源 | 引脚 | 说明 |
+| 能力 | 实现方式 | 状态 |
 |---|---|---|
-| 复位 | E3 | `rst_n_btn`，低有效 |
-| 键盘行 | E10, C10, F9, D9 | 输出，低电平扫描选通 |
-| 键盘列 | E11, D11, C11, F10 | 输入，上拉，按下为低 |
-| LED[7:0] | B14, B15, B16, C15, C16, E13, E16, F16 | 高电平点亮 |
-| 数码管段 | A4, A6, B8, E8, A7, B5, A8, C8 | 低电平点亮 |
-| 数码管位选 | C9, B6, A5, A3 | 低电平选通 |
-| 蜂鸣器 | H11 | 低电平响 |
-| SD 卡 | CS=F13, SCK=F15, MOSI=F14, MISO=D14, CD=E15 | SPI 模式，CD 无卡为 1 |
-| 模拟音频 | F3 | 一阶 sigma-delta 1 bit 流，板载低通+功放 |
-| HDMI TMDS | CLK=P1, D0=N1, D1=P4, D2=J3 | LVDS33，只出差分正端，负端由工具自动配对；**无 DDC，不做 EDID** |
+| 静态图片播放 | SD→FAT32→BMP→SDRAM 帧缓存→HDMI | ✅ 已上板 |
+| 自动轮播 | `player_ctrl` 5 秒计时 + 双缓冲无缝换帧 | ✅ 已上板 |
+| 手动切图 | KEY0/KEY1，淡出到黑 → 换帧 → 淡入（约 286 ms） | ✅ 已上板 |
+| 图片缩放 | `img_scaler` 只缩不放，小图 1:1 居中 + letterbox 遮蔽 | ✅ 仿真 + 综合布线 |
+| 应急提示 | KEY15/KEY3 直达全屏红底告警 | ✅ 已上板 |
+| 科普教学页 | 独立 640×480 RTL 页面（FPGA 与数字逻辑入门） | ✅ 已上板 |
+| OSD 字幕 | 标题 / 图号 / 播放状态 / 64 字符滚动标语 | ✅ 仿真 + 综合布线 |
+| HDMI 音频 | 48 kHz / 24 bit PCM 嵌入数据岛 + 3.5 mm PWM 双路 | ✅ 已上板 |
+| 参数面板 | 亮度五档 / 反色 / 倍率 ×1~×4 实时调节 | ✅ 已上板 |
+| 画面诊断 | 信息条、九宫格、音频电平柱与波形 | ✅ 已上板 |
 
-管脚来源与冲突记录见 [板级确认清单](docs/pending_confirmations.md)，约束文件为 [`constraints/dmz_eg4s20_hdmi.adc`](constraints/dmz_eg4s20_hdmi.adc)。
+**关键约束**（它们直接决定了架构，不是随意取舍）：
 
-仓库原工具基线为 TD 6.2.1；本机后续构建使用 `D:/TD_6_24_APP` 中的 TD 6.2.168116。复现时请核对安装路径与版本，脚本里的路径按自身位置推导，不写死本机绝对路径。
+- **没有 CPU** —— 所有流程都是硬件状态机，没有中断、没有调度器、没有"等软件想起来"这回事。
+- **帧缓存只能放在 SiP SDRAM** —— 一帧 640×480 RGB565 = 600 KiB，EG4S20 片内 EBR 远不够，板上也没有外挂显存。
+- **SD 卡只有一条物理 SPI 总线** —— 探针、图库扫描、图片装载三件事必须严格串行。
+- **多时钟源** —— 视频 25 MHz、TMDS 串化 125 MHz、SDRAM 40 MHz，三域之间只能走异步 FIFO。
 
 ---
 
-## 三、系统架构
+## 二、当前状态（截至 2026-10-31）
 
-顶层入口 [`rtl/top/dmz_eg4s20_hdmi_top.v`](rtl/top/dmz_eg4s20_hdmi_top.v)，把整条链路串成三段严格串行：**SD 探针 → 图库扫描 → 图片装载**。
+**一句话**：正式顶层已经在板上稳定出图、显示卡内图片并可自动轮播；时序在 40 MHz 下全组收敛且余量可解释。转场、字幕、参数面板、缩放与看门狗这几项目前只有**仿真 + 综合布线**证据，最新一版合入了装载看门狗与启动交接加固，等待上板复验。
+
+### 位流
+
+位流体积 **629,640 B**，不随 Git 发布（`ip/local/` 下的官方加密核亦需自备），新环境请按[第七节](#七开发与复现)重建。
+
+| 版本 | 本地位流 | 生成时间 | 时序 | 状态 |
+|---|---|---|---|---|
+| **最新候选：看门狗与启动交接加固版** | [smartcampus_media_watchdog_20261030.bit](reports/watchdog_20261030/) | 2026-10-30 22:50 | setup **+1.935 ns** / hold **+0.003 ns** | 综合、布线、bitgen 与七套回归全过；**尚未上板** |
+| 烧录候选：图片防护版 | [smartcampus_media_20261030.bit](reports/flashable_20261030/) | 2026-10-30 15:39 | setup **+1.935 ns** / hold **+0.011 ns** | [验证报告](reports/flashable_20261030/verification.md) 完整；**尚未上板** |
+| 已烧录：显示选择与科普页版 | [hdmi_noise_sci_fix.bit](reports/noise_sci_fix_20261029/) | 2026-10-29 20:51 | setup +1.935 / hold +0.003 | 已上板；切图白条问题当时仍复现，后于 10-30 定位根因 |
+| HDMI 低音量试听版 | [hdmi_audio_quiet.bit](reports/hdmi_audio_quiet_20261029/) | 2026-10-29 17:17 | setup +1.935 / hold +0.003 | 已烧录；音量是否合适**待试听确认** |
+| 显示修复版 | [hdmi_display_fix.bit](reports/display_fix_20261029/) | 2026-10-29 08:14 | setup +1.935 / hold +0.035 | 已上板，**用户确认深色区白条问题解决** |
+
+> ⚠️ **两条 2026-10-30 的位流都还没有在实体板卡上跑过。** 烧录后请按[上板验证手册](docs/board_verification_2026-10-27.md)的重点项复验：启动出图、KEY0/KEY1 连按切图无竖向白条、自动轮播、KEY3 科普页、KEY15 应急页、音频、异常 BMP 恢复。仿真全帧对比不能代替板级检查。
+
+### 硬指标
+
+| 指标 | 数值 | 来源 |
+|---|---|---|
+| 时序（40 MHz，最终） | setup WNS **+1.935 ns**、hold WNS **+0.003 ns**、TNS 0、**0 个违例端点**（10,512 端点 / 578,116 路径） | `reports/watchdog_20261030/timing.txt` |
+| 资源 | LUT **15,088 / 19,600（76.98%）**、BRAM9K 17/64、DSP 19/29、PLL 2/4、GCLK 4/16、IO 41/188 | `reports/watchdog_20261030/area.txt` |
+| STA 覆盖率 | 99.89%（未覆盖部分为外部 IO 延迟与 PLL 反馈） | `reports/watchdog_20261030/coverage.txt` |
+| 自动回归 | **七套全过、848,063 条断言、约 25 分钟**（2026-10-31 实跑） | [TEST_COVERAGE.md](TEST_COVERAGE.md) |
+| lint | 103 个源文件，E0/E1/E2 阻断项 **全 0** | `scripts/lint_verilog.py` |
+| 视频 | 640×480 @ 59.52 Hz，像素时钟 25 MHz | `video_timing_gen` |
+| 音频 | 48 kHz / 24 bit PCM；HDMI 侧右移 6 位（**1/64 ≈ −36.12 dB**） | `audio_tone_gen` / 顶层 `HDMI_AUDIO_ATTEN_SHIFT` |
+
+### 最近三天解决了什么
+
+| 日期 | 问题 | 根因 | 处理 |
+|---|---|---|---|
+| 10-30 晚 | 上电后数码管稳定显示 **`d810`**、屏幕永不出图 | ① 播放器 `sd_ready` 接成电平 `sd_ok`，图库扫描还没结束就抢总线，单拍 `blk_start` 被仲裁选走 → 请求**直接丢弃**；② `img_loader`/`fat32_reader` 只等握手、无超时也不重发 → 永久挂死；③ 上层 4 秒超时是唯一兜底 | `sd_ready` 改接 `sd_owner_player`；`image_player` 增加 `pending` 请求锁存，跨所有权交接不丢脉冲；新增 `tb_startup_ownership`（9 条检查）固化该场景 |
+| 10-30 晚 | 慢卡整帧装载被误判成超时 | 看门狗是"整帧固定 4 秒"上限，与卡速耦合 | 改为**按进度计时**：每完成一个扇区就喂狗，`LOAD_TIMEOUT` 变成"单扇区无进度"上限；超时按阶段细分为 `d8`/`dB`/`dC` |
+| 10-30 | 零尺寸图片导致边界行为未定义 | 缩放器商寄存器位宽不足（`HDL-8007`），`img_scaler` 一度被当成黑盒 | 商寄存器全改 `[DIV_BITS-1:0]`；`bmp_parser` 增加 `CHECK_SIZE`；`tb_image_player` 覆盖 0×0 边界 |
+| 10-30 | C2 图片缩放需求 | — | 新增 `img_scaler`（Bresenham 只缩不放）+ `image_window_mask`（letterbox 置黑）；**目标宽必须 8 像素对齐** |
+| 10-29 晚 | 换图瞬间竖向白条 | 显示优先级把"有没有图"与"这一拍像素是否有效"压进一个三目，欠载拍漏出 `pattern_sel=0` 的纯白彩条 | `video_content_mux` 新增 `image_ever_ready`：有图期间欠载显示黑，测试图只作"从未有过素材"的兜底 |
+| 10-29 | 深色区周期白条、偶发花屏 | ① 读组首间隔 12 拍 < 真实核需要的 13 拍；② 刷新宏缺括号算出 −10 拍；③ 核内自动刷新与手动刷新交叠产生 25 ns 双 AREF | 12→13 拍；宏补括号；关核内自动刷新 + 排空 + 静默 16 拍 + 手动单拍刷新 + 1024 拍看门狗 |
+
+> 更早的过程（150 MHz → 100 MHz → 40 MHz 的降频推导、"为什么不能靠拆时钟组骗过工具"）见 [ARCHITECTURE.md §8](ARCHITECTURE.md) 与 [开发进度](docs/progress.md)。
+
+---
+
+## 三、硬件与工具链
+
+| 项 | 型号 / 版本 |
+|---|---|
+| 器件 | 安路 EG4S20BG256（19,600 LUT / 64 BRAM9K / 29 DSP / 4 PLL / 188 IO） |
+| 帧缓存 | 片内 SiP SDRAM `EG_PHY_SDRAM_2M_32`，2M×32 bit = 8 MiB，无外部引脚 |
+| 晶振 | 板载 50 MHz（球 R7） |
+| 视频输出 | HDMI（4 对 TMDS：CLK/D0/D1/D2），**板上未引出 DDC，不做 EDID 协商** |
+| 存储 | microSD（SPI 模式）、M25P16 SPI Flash（未使用写通道） |
+| 音频 | HDMI 内嵌 + 3.5 mm PWM 输出；另有 ADC 输入与触摸屏接口（未启用） |
+| EDA | 安路 TD **v6.2.168116**（默认 `D:/TD_6_24_APP`） |
+| 仿真 | ModelSim ASE 10.1d（默认 `D:/Quartus_APP/modelsim_ase/win32aloem`）；可选 Questa 2022.1 |
+| 脚本 | Python 3、PowerShell 5.1 |
+
+### 板级引脚
+
+| 功能 | 信号 | 球号 | 说明 |
+|---|---|---|---|
+| 时钟 | `clk` | R7 | 50 MHz 有源晶振 |
+| 复位 | `rst_n_btn` | E3 | 按键，低有效 |
+| 键盘行 | `key_row[3:0]` | E10, C10, F9, D9 | 低电平扫描选通 |
+| 键盘列 | `key_col[3:0]` | E11, D11, C11, F10 | 上拉，按下为低 |
+| LED | `led[7:0]` | B14, B15, B16, C15, C16, E13, E16, F16 | 高电平点亮 |
+| 数码管段 | `seg_data[7:0]` | A4, A6, B8, E8, A7, B5, A8, C8 | 低有效 |
+| 数码管位 | `seg_cs[3:0]` | C9, B6, A5, A3 | 低有效 |
+| SD 卡 | `sd_cs_n` / `sd_sck` / `sd_mosi` / `sd_miso` / `sd_cd` | F13 / F15 / F14 / D14 / E15 | `sd_cd` 无卡时为 1 |
+| HDMI | `HDMI_CLK_P` / `HDMI_D0_P` / `HDMI_D1_P` / `HDMI_D2_P` | P1 / N1 / P4 / J3 | LVDS33 |
+| 音频 | `audio_pwm` | F3 | 3.5 mm 耳机座 |
+| 蜂鸣器 | `buzzer` | H11 | 低电平鸣响 |
+
+> 引脚有三份来源（引脚说明 PDF、厂商例程 `pin.adc`、底板原理图），本项目以**引脚说明**为准；两处已知冲突（键盘行序、SD MOSI/MISO）仍需实测核定，见[上板验证手册](docs/board_verification_2026-10-27.md)。
+
+---
+
+## 四、系统架构
 
 ```mermaid
 flowchart LR
-    SD[SDHC 卡<br/>SPI Mode 0] --> SPI[sd_spi_ctrl]
-    SPI --> PROBE[sd_probe]
-    SPI --> GAL[gallery_probe]
-    PROBE --> FAT[fat32_reader]
-    GAL --> FAT
+    SD[(SD 卡)] -->|SPI Mode0| SPI[sd_spi_ctrl]
+    SPI --> FAT[fat32_reader]
     FAT --> BMP[bmp_parser]
-    BMP --> LOAD[img_loader<br/>两像素打包 32 bit]
-    LOAD --> WF[异步写 FIFO<br/>57 bit 地址+掩码+数据]
-    WF --> ARB[framebuf_arbiter]
-    ARB --> WRAP[sdram_ctrl_wrap]
-    WRAP --> CORE[APUG011 sdr_as_ram]
-    CORE <--> RAM[(8 MiB SiP SDRAM)]
-    ARB --> PIX[pix_reader<br/>预取+跨域 FIFO]
-    TIM[video_timing_gen] --> PIX
-    TIM --> MUX
-    TEST[test_pattern_gen<br/>8 种测试图] --> MUX
-    PIX --> MUX[画面选择<br/>应急红屏 优先于 图片 优先于 测试图]
-    MUX --> OVL[video_overlay<br/>亮度/反色/OSD 纯组合]
-    OVL --> AXIS[video_rgb_to_axis]
-    AUD[audio_tone_gen<br/>48 kHz PCM] --> TX[HDMI 1.4b 发送核]
-    AUD --> PWM[pcm_to_pwm σ-Δ] --> SPK[3.5 mm 音频]
-    ACR[audio_arc<br/>ACR CTS/N] --> TX
-    AXIS --> TX
-    TX --> PHY[hdmi_phy + lane_lvds_10_1<br/>4 路 10 bit TMDS]
-    PHY --> HDMI[HDMI 显示器]
-    KEY[4×4 键盘] --> KM[key_matrix_4x4]
-    KM --> CTRL[player_ctrl]
-    KM --> KACT[key_action]
-    CTRL --> IMG[image_player]
-    IMG --> ARB
-    CTRL --> MUX
-    KACT --> OVL
-    ERR[err_prompt<br/>5 类助记符] --> OUT[数码管 / LED / 蜂鸣器]
-    CTRL --> OUT
+    BMP --> SCALE[img_scaler]
+    SCALE --> LOAD[img_loader]
+    LOAD -->|57bit 异步 FIFO| ARB[framebuf_arbiter]
+    ARB -->|40MHz| SDRAM[(SiP SDRAM 8MiB)]
+    SDRAM --> ARB
+    ARB -->|32bit 异步 FIFO| PIX[pix_reader]
+    PIX --> FADE[fade_mixer]
+    FADE --> MUX[video_content_mux]
+    MUX --> OVL[video_overlay]
+    OVL --> OSD[osd_caption / osd_panel]
+    OSD --> AXIS[video_rgb_to_axis]
+    AXIS --> CORE[HDMI 1.4b 发射核]
+    CORE --> PHY[hdmi_phy 4×10bit]
+    PHY --> HDMI[[HDMI 输出]]
+    TONE[audio_tone_gen] --> CORE
+    TONE --> PWM[pcm_to_pwm]
+    PWM --> JACK[[3.5mm 音频]]
 ```
 
-**为什么三段必须串行**：`sd_spi_ctrl` 只有一个读块端口。探针、图库扫描、图片装载三方同时驱动 `blk_start`/`blk_addr` 就是多驱动，TD 会直接报错；而且并行会让 SD 事务交错，真卡上表现为 CRC 错误或超时。仲裁用「上一段是否已完成」而不是 `sd_ok` 这类持续电平来切换归属。
+**一条完整的数据流**（写路径 / 读路径分离，靠双缓冲解耦）：
 
-### 模块职责
+`SD 卡 → sd_spi_ctrl → fat32_reader → bmp_parser → img_scaler → img_loader → framebuf_arbiter → SDRAM`
+`SDRAM → framebuf_arbiter → pix_reader → fade_mixer → video_content_mux → video_overlay → osd → HDMI`
 
-**存储与素材**
+### 四条关键设计
 
-| 模块 | 职责 |
-|---|---|
-| [`sd_spi_ctrl`](rtl/storage/sd_spi_ctrl.v) | SDHC 初始化、SPI Mode 0、CMD17 单扇区读取；初始化 SCK 390.6 kHz，读块 12.5 MHz |
-| [`sd_probe`](rtl/storage/sd_probe.v) | 卡与 FAT32 卷的初始探测，输出 1~9 内部错误码 |
-| [`gallery_probe`](rtl/storage/gallery_probe.v) | 运行时扫描 `IMG001.BMP` 起的连续区间，遇首个缺失即停，上限 31 张；支持重扫（KEY10） |
-| [`fat32_reader`](rtl/storage/fat32_reader.v) | MBR/BPB 解析、根目录短文件名查找、FAT 簇链读取 |
-| [`bmp_parser`](rtl/storage/bmp_parser.v) | BMP 头检查、BGR 顺序与行方向处理、RGB888→RGB565 |
-| [`img_loader`](rtl/storage/img_loader.v) | 读文件+解析调度、像素打包、帧地址生成 |
-| [`image_player`](rtl/storage/image_player.v) | 装载状态机、双缓冲提交、装载/存储双路复位解耦、失败回落 |
-| [`framebuf_arbiter`](rtl/storage/framebuf_arbiter.v) | 写优先的读写仲裁、DQM 掩码管理；读侧回绕边界随基址运行期重算 |
-| [`sdram_ctrl_wrap`](rtl/storage/sdram_ctrl_wrap.v) | 封装官方 SDRAM 控制核，并提供纯 Verilog 行为模型供仿真 |
-| [`pix_reader`](rtl/storage/pix_reader.v) | SDRAM 预取、跨时钟像素 FIFO、逐像素输出；显示帧首由 `rd_base` 选定 |
-| [`sdram_pll`](rtl/storage/sdram_pll.v) | 第二颗 PLL，VCO 1000 MHz 定出 **40 MHz** 的 0° 与 180° 两相，**两相均经 BUFG 落全局时钟网** |
+1. **双缓冲 + 垂直消隐换帧**：写入后台帧，完整像素数到位才提交，`commit_pending` 等下一次垂直消隐上升沿才翻 `front_sel`，切换落在消隐区不撕裂。8 MiB 可放 13 帧，实际只用前 2 帧。
+2. **转场用"淡出到黑"而非交叉溶解**：交叉溶解需要两路并发读（27.4 M 字/s，占 40 MHz 带宽的 68%），且要复制 reader 与双读口仲裁器，会作废单读通路已验的全部证据。淡出方案只需一路读，`fade_mixer` 是纯组合的 237 LUT + 2 DSP + 0 寄存器。
+3. **单 SD 口三段严格串行**：探针 → 图库扫描 → 图片装载，用"上一段是否已完成"（`gallery_done || gallery_fail`）而不是电平 `sd_ok` 做判据。这是 `d810` 的教训：电平判据会让播放器在图库扫描期间抢到总线并把请求丢掉。
+4. **跨域一律走异步 FIFO**：写 57 bit（字地址 + 字节掩码 + 数据），读 32 bit；单 bit 状态用两级同步器，事件用翻转位握手，多 bit 计数用 Gray 码。音频不设独立时钟域——HDMI 1.4b 核的 EDID/Video/Audio/ACR 四个接口全部工作在像素时钟域。
 
-**视频**
-
-| 模块 | 职责 |
-|---|---|
-| [`video_timing_gen`](rtl/video/video_timing_gen.v) | 行场时序（640×480，H_TOTAL 800 / V_TOTAL 525），全参数化 |
-| [`test_pattern_gen`](rtl/video/test_pattern_gen.v) | 8 种判据明确的测试图，纯组合输出 |
-| [`video_overlay`](rtl/video/video_overlay.v) | 亮度五档、反色、九宫格、信息条、音频电平条；**纯组合无寄存器**，处理顺序为「亮度→反色→OSD」，保证 OSD 不会被调暗或反色 |
-| [`video_rgb_to_axis`](rtl/video/hdmi/video_rgb_to_axis.v) | RGB+DE+VS → 发送核要求的 AXIS 视频流（含帧首 `user` 与行尾 `last`） |
-| [`hdmi_phy`](rtl/video/hdmi/hdmi_phy.v) / [`lane_lvds_10_1`](rtl/video/hdmi/lane_lvds_10_1.v) | 4 路 10 bit TMDS 串化，基于 `EG_LOGIC_ODDR` |
-
-**音频**
-
-| 模块 | 职责 |
-|---|---|
-| [`audio_tone_gen`](rtl/audio/audio_tone_gen.v) | 48 kHz 分数分频采样使能、8 音 LUT、三角波 PCM，按播放状态选音高 |
-| [`audio_arc`](rtl/video/hdmi/audio_arc.v) | 产生音频时钟再生（ACR）包所需的 CTS/N |
-| [`pcm_to_pwm`](rtl/audio/pcm_to_pwm.v) | 一阶 sigma-delta，把 24 bit PCM 调制成 F3 上的 1 bit 流 |
-
-**控制与交互**
-
-| 模块 | 职责 |
-|---|---|
-| [`player_ctrl`](rtl/control/player_ctrl.v) | 图片索引、上一张/下一张、自动轮播、模式切换（日常/科普/应急） |
-| [`key_action`](rtl/control/key_action.v) | KEY7～KEY14 的**唯一译码点**：亮度档、反色、轮播倍率、重扫、九宫格、信息条、电平条、蜂鸣器静音 |
-| [`err_prompt`](rtl/control/err_prompt.v) | 把 5 个模块散落的 1~9 内部码归并成 5 类**用户动作**助记符，并按「延迟 1.5 s、只响 3 s」产出告警音请求 |
-| [`key_matrix_4x4`](rtl/input/key_matrix_4x4.v) | 1 ms 行扫描 + 20 ms 逐键消抖 + 按下沿事件 + 低位优先编码 |
-| [`seg_scan4`](rtl/display/seg_scan4.v) / [`seg_decoder`](rtl/common/seg_decoder.v) | 4 位数码管动态扫描与七段译码 |
-| [`buzzer_tone`](rtl/audio/buzzer_tone.v) | 四档音调：0 静音 / 1 按键音 / 2 应急音 / 3 故障告警音 |
-| [`async_fifo`](rtl/common/async_fifo.v) | Gray 码指针异步 FIFO，全部跨时钟域流量走它 |
-
-### 帧缓存与双缓冲提交
-
-一帧 **307,200 像素**，RGB565 每像素 16 bit，两像素拼一个 32 bit 存储字 → 一帧 **153,600 字 / 614,400 字节 / 600 KiB**。8 MiB 里可容下多帧，当前用两个 600 KiB 帧做前后台。
-
-默认 **`image_player` 的 `SEAMLESS=1`（双缓冲无缝切换）**：
-
-- 收到装载请求后整帧写**后台帧**，前台继续读**前台帧**，屏幕一帧不断；
-- 待完整像素数到齐、写 FIFO 排空后置提交挂起，在**下一个垂直消隐上升沿**翻转 `front_sel`，可见区因此不会撕裂；
-- 装载期间的复位拆成两条通路：`loader_rst_*` 只复位装载侧，`store_rst_*` 复位存储与显示侧，且只要已有在显帧就保持释放——这是「装载不停画」的实现基础。
-
-失败语义分两类：**装载侧失败**（SD 读、文件定位、BMP 头、像素数、超时）保留上一帧继续显示；**存储侧故障**（仲裁错误、SDRAM 失锁）必须撤 `image_ready`，因为显示通路的复位释放依赖它。首个有效帧之前失败仍显示测试图。
-
-把 `SEAMLESS` 置 0 退回单帧缓冲做对照：读写都落在第 0 帧，装载前共同复位存储通路，失败不保留旧帧。
-
-异步写 FIFO 为 **57 bit**，同时保存地址、字节掩码和数据，避免地址与数据跨域后错配。
-
-> **DQM 掩码（历史故障，已修复）**：SDRAM 的 DQM 同时影响读和写。真实写入使用请求掩码，分组补写使用 `4'hF`，**读取与空闲时必须用 `4'h0`**，否则正常读响应被掩码屏蔽，表现为整屏纯白。详见 [白屏定位记录](docs/white_frame_2026-10-20.md)。
-
-### 时钟、复位与跨域
-
-| 时钟域 | 频率 | 使用模块 | 时钟网络 |
-|---|---|---|---|
-| 板载参考 | 50 MHz | 两颗 PLL 的输入与启动复位 | 普通布线（fanout 仅 9） |
-| 视频 PLL 像素时钟 | 25 MHz | SD、文件解析、播放控制、像素时序、音频采样 | BUFG（`bufg_feedback` 兼作 PLL 反馈） |
-| 视频 PLL 串化时钟 | 125 MHz | HDMI TMDS 串行输出（严格 5×） | 普通布线（fanout 31） |
-| SDRAM PLL 内部时钟 | **40 MHz**，0° | 仲裁器、SDRAM 控制核、写 FIFO 写侧 | **BUFG**（`bufg_clk1`） |
-| SDRAM PLL 接口时钟 | **40 MHz**，180° | 送 SDRAM_CLK 引脚，做源同步对齐 | **BUFG**（`bufg_clk2`） |
-
-两颗 PLL 独立：`hdmi_pll` 的 VCO = 1000 MHz 定出 25/125 MHz，`sdram_pll` 的 VCO 同为 1000 MHz 定出 **40 MHz**（C1/C2 分频比 25，C0 分频比 80 作 12.5 MHz 反馈）——把 SDRAM 时钟塞进同一颗 PLL 会让 HDMI 的 25M/125M 参数与环路滤波被迫重验，风险大于收益，方案上不合并。25 MHz 而非 25.175 MHz 是整数分频的物理约束，偏差 0.7%，场频 59.5 Hz。
-
-> **为什么是 40 MHz 而不是 150 MHz**：150 MHz 下 SiP 接口组数学上无法收敛（详见「静态时序」一节的常数开销推导）。40 MHz 是满足 `f ≤ 47.33 MHz` 临界频率的最小整数、便于分频的选择，同时带宽 160 MB/s 仍是需求（55.3 MB/s）的 2.9 倍。
-
-跨域数据一律走 Gray 码指针异步 FIFO，状态用同步器或 Gray 计数处理，复位释放与 PLL 锁定关联。**SDRAM 的 0°/180° 具有确定相位关系，必须保留相关时序分析，不得声明为异步组**——历史上正是把同一 PLL 的 0°/180° 分成异步组，才得出过「+0.104 ns、0 违例」的错误结论。今天又用三组对照实验复验了一遍这个判断，详见下文「已排除的捷径」。
-
-**音频不占独立时钟域**：官方 HDMI 1.4b 发送核的 EDID / Video / Audio / ACR 四个接口全部工作在像素时钟域，因此 `audio_tone_gen` 与 `audio_arc` 直接跑在 25 MHz 的 `clk_pixel` 上，用分数分频产生 48 kHz 采样使能，**不需要 12.288 MHz 音频主时钟，也不需要 I2S 收发回环**。相对官方 `lab_ex5_i2s` 这是一处简化：该例程接 I2S 只是为了演示 I2S 输入这个接口形态，不是核的硬性要求。
-
-### 时钟网络修复（2026-10-27）
-
-`sdram_pll` 原来只把 C0 经 `bufg_feedback` 送进全局网，而真正驱动数百个负载的 C1（当时 150 MHz 0°）和送 SDRAM_CLK 的 C2（当时 150 MHz 180°）**直接从 PLL 引出到端口**，靠布局器自行决定走什么网。后果在时序报告里能直接看到：
-
-- `clkc[1]` 的时钟网络 fanout 844，**走普通布线，延迟 2.410 ns**，进入每条路径的 clock latency；
-- `clkc[2]` 的 fanout 只有 1，被布线器判为 local routing，TD 直接报 **`PHY-5079` CRITICAL-WARNING**；
-- 两颗 PLL 的反馈路径都报走 local network（**`USR-6135`**），补偿延迟不可预测。
-
-修复方式是给 C1、C2 各补一级 `EG_LOGIC_BUFG`：
-
-```verilog
-EG_LOGIC_BUFG bufg_clk1 (.i (clk1_raw), .o (clk1_buf));
-EG_LOGIC_BUFG bufg_clk2 (.i (clk2_raw), .o (clk2_buf));
-assign sdram_clk     = clk1_buf;   // 原来是 clk1_raw
-assign sdram_clk_sft = clk2_buf;   // 原来是 clk2_raw
-```
-
-注意**不能给 C0 再加第二个 BUFG**——一个 PLL 通道只能进一个 BUFG，C0 已经通过 `bufg_feedback` 进去了。
-
-实测收益（`clkc[1]` 自身域，同口径对比）：
-
-| 指标 | 修复前 | 修复后 |
-|---|---|---|
-| Setup WNS | +0.240 ns | **+0.326 ns** |
-| Min Period | 6.426 ns | **6.340 ns** |
-| Fmax | 155.618 MHz | **157.729 MHz** |
-| 违例端点 | 0 / 2590 | 0 / 2590 |
-| `PHY-5079` | 1 条 | **0 条** |
-| `USR-6135` | 2 条 | 2 条（与时钟网络无关，见「遗留告警」） |
-| `#gclk` | 2 / 16 | 4 / 16 |
-
-修复后时钟树在报告里明确走 GCLK：
-
-```
-net (fo=1)   u_sdram_pll/clk1_raw  →  GCLK x039y070z2  u_sdram_pll/bufg_clk1.clko  0.000ns
-net (fo=869) u_player/u_arb/clk  2.410ns
-```
-
-**收益是真实的，但幅度有限**：在 150 MHz 下它只优化了 `clkc[1]` 自身域，**并没有**改变 SiP 接口组的 −7.232 ns。把这一点说清楚很重要，因为下文「已排除的捷径」会看到，只要把 0°/180° 拆成异步组，接口组的数字就会「变好」到 +0.275 ns——那**不是**这次修复的功劳。真正让接口组收敛的是后来的**降频**（150 → 100 → 40 MHz），两步都不能省：BUFG 修的是时钟树质量，降频修的是预算不足。
-
-### 时序约束现状
-
-`constraints/dmz_eg4s20_hdmi.sdc` 目前仍是 **5 条有效约束**（另有详细注释说明调查结论）：
-
-```tcl
-create_clock -name clk -period 20 -waveform {0 10} [get_ports {clk}]
-derive_clocks
-set_clock_groups -asynchronous \
-    -group [get_clocks {u_pll/pll_inst.clkc[0] u_pll/pll_inst.clkc[2]}] \
-    -group [get_clocks {u_sdram_pll/pll_inst.clkc[1] u_sdram_pll/pll_inst.clkc[2]}]
-```
-
-**仍然没有任何 `set_input_delay` / `set_output_delay`**，SiP SDRAM 接口的板级时序未经约束。这是时序未收敛的直接原因之一，也是后续工作清单的第 1 项。
+细节（五层分层、四字组与刷新时序、单口仲裁、可观测性、模块接口契约速查）见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ---
 
-## 四、SD 卡素材与键位
+## 五、操作与诊断
 
-### 素材规格
+### SD 卡怎么准备
 
-支持 **SDHC + FAT32**，包括 MBR 分区卷和从 LBA0 开始的无分区卷。当前**不支持** SDSC、exFAT、长文件名、目录递归。
+把 `IMG001.BMP`、`IMG002.BMP`……（三位数字、从 001 开始、连续编号）放在**卡根目录**，格式化为 **FAT32**。图片规格：
 
-- 素材放根目录，连续命名 `IMG001.BMP`、`IMG002.BMP`……
-- 图片必须是 **640×480、24 bit、无压缩 BMP**，显示时转 RGB565。
-- 图库张数**运行时扫描**得出（`gallery_probe`），换卡不必重新综合；扫描结果同时决定「上一张/下一张/轮播」的边界。一张图都没有时按播放键不动作。
-- 没有 SD 热插拔自动恢复：插好卡按复位键重新初始化，或按 **KEY10 直接让图库重扫**（不必整板复位）。
+- 640×480、24 bit 未压缩 BMP（`biCompression = 0`）；
+- 尺寸不是 640×480 的图会被 `img_scaler` 等比缩小后居中显示（宽必须能被 8 整除才对齐），不是 640×480 也**不再直接报错**；
+- 33 MB 以上的卡用 SDHC（CMD17 单块读，512 B/块）。
 
-生成仓库里的两张测试图：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/make_test_bmps.ps1
-```
-
-[`IMG001.BMP`](assets/sd_images/IMG001.BMP) 是彩条，[`IMG002.BMP`](assets/sd_images/IMG002.BMP) 是白底中央 200×200 红块（红块范围 x=220～419、y=140～339）。**复现红块诊断时，要把 `IMG002.BMP` 复制到卡根目录并改名为 `IMG001.BMP`**。
-
-### 16 键完整键位表
-
-4×4 矩阵已全部分配，**同一个按键只被一个模块消费**（设计说明与历史事故见 [键位分配](docs/keymap_2026-10-26.md)）。
-
-| 按键 | 消费模块 | 当前行为 | 证据 |
-|---|---|---|---|
-| KEY0 / KEY1 | `player_ctrl` | 上一张 / 下一张；单张图库时重新装载同一张 | 仿真 |
-| KEY2 | `player_ctrl` | 切换自动轮播，基准间隔约 5 秒 | 仿真 |
-| KEY3 | `player_ctrl` | 日常 → 科普 → 应急 → 日常，可退出应急 | 仿真 |
-| KEY4 / KEY5 | 顶层 | 选择测试图；装载中、失败或像素未就绪时可见 | 仿真 |
-| KEY6 | 顶层 | 音频静音（同时静音 HDMI 内嵌音频与 3.5 mm），不影响蜂鸣器 | 仿真 |
-| KEY7 | `key_action` | 亮度五档循环：100% → 87.5% → 75% → 62.5% → 50% → 100% | 仿真 |
-| KEY8 | `key_action` | 反色开关（RGB 三通道按位取反） | 仿真 |
-| KEY9 | `key_action` | 轮播倍率循环：×1 → ×2 → ×3 → ×4，作用于 KEY2 的 5 秒基准 | 仿真 |
-| KEY10 | `key_action` → `gallery_probe` | 重扫图库，现场换卡按一下即可 | 仿真 |
-| KEY11 | `key_action` | 九宫格参考线（x=213/426，y=160/320，绿色单像素） | 仿真 |
-| KEY12 | `key_action` | 底部信息条（12 格位图显示图号/模式/亮度/倍率） | 仿真 |
-| KEY13 | `key_action` | 音频图层循环：关 → 电平条 → 波形 → 电平+波形 | 仿真 |
-| KEY14 | `key_action` | 蜂鸣器静音（只掐蜂鸣器，与 KEY6 互不影响） | 仿真 |
-| KEY15 | `player_ctrl` | 应急直达：红屏 + 间歇蜂鸣 | **上板确认** |
-
-**上板前必读**：KEY7～KEY14 只有仿真证据（`tb_key_action` 40 条、`tb_video_overlay` 64 条断言），从未在真实硬件上按过。此外键盘行序存在两处来源冲突（走近FPGA 与底板例程相反），**上板第一件事是确认哪一行对应 KEY0**，否则八个新键整体错位。详见 [板级确认清单](docs/pending_confirmations.md)。
-
-### LED 与数码管语义（与顶层代码逐行对齐）
-
-`LED[7:0]` 从高位到低位：
-
-| 位 | 含义 |
-|---|---|
-| LED7 | `err_active`：存在任何面向用户的错误（含「卡好但零张图」这类历史盲区） |
-| LED6 | 图片正在装载 |
-| LED5 | SDRAM PLL 已锁定（打拍到像素域） |
-| LED4 | PLL 锁定 **且** 发射核视频锁定——只看 PLL 锁定无法区分「时钟有了但核没对齐」 |
-| LED3 | 应急模式 |
-| LED2 | 读指针异常（`reader_status`） |
-| LED1 | 自动轮播中 |
-| LED0 | 图像就绪 |
-
-`数码管 DIG3/DIG2` 在「有错」与「正常」两种口径间**整组切换**（`rtl/top/dmz_eg4s20_hdmi_top.v:488-489`）：
-
-- **有错**（`err_active=1`）：DIG3 = 助记字母（`C`/`F`/`0`/`b`/`d`），DIG2 = 类内子码
-  - `C0` 请插卡（`sd_cd` 硬件电平直接给出，不等 SD 探测）／`C1` CMD0 重试用尽／`C2` CMD8/CMD55 异常／`C9` ACMD41/CMD58 异常
-  - `F1~F4` 请格式化为 FAT32（MBR 签名不是 0x55AA／BPB 非法／簇链坏／定位失败）
-  - `00` 卡是好的，但没有图片：请放入 `IMG001.BMP` 起的连续文件
-  - `b1` 图片格式不对／`b2` 尺寸不是 640×480／`b9` 其他 BMP 类错误
-  - `d1~d9` 数据通路或存储故障（SD 探测异常、SD 失败透传、像素数、SDRAM、超时等）
-- **正常**（`err_active=0`）：DIG3 = 播放状态（0 空闲／1 扫描／2 装载／3 就绪／4 轮播／5 应急），DIG2 = 当前图号
-
-`DIG1` 恒为装载序号低四位，`DIG0` 为当前测试图号。
-
-> 改造前故障码与播放状态码**混用同一个数字空间**（都占 DIG3），用户看到 `1` 无法判断是「SD 故障」还是「正在扫描 SD」。改用字母后类型一眼可分，普通用户只需认第一位字母就知道该做什么，第二位留给维修人员细分。
-
----
-
-## 五、仓库结构
-
-```text
-SmartCampusMedia/
-├── rtl/                 # 40 个 Verilog/VHDL（10,105 行，其中代码 5,806 行），日常维护入口
-│   ├── top/             #   3 个：正式顶层 + bringup + min 三个板级顶层
-│   ├── storage/         #   15 个：SD / FAT32 / BMP / 帧缓存 / SDRAM / 诊断（最大一块）
-│   ├── video/           #   10 个：时序、测试图、叠加，hdmi/ 子目录放发送核适配与串化
-│   ├── control/         #   3 个：player_ctrl / key_action / err_prompt
-│   ├── input/           #   1 个：4×4 矩阵键盘扫描与消抖
-│   ├── display/         #   1 个：数码管扫描
-│   ├── audio/           #   4 个：音调、PCM 生成与 sigma-delta 调制
-│   ├── common/          #   3 个：异步 FIFO、消抖、七段译码
-│   └── clock/ memory/ osd/   # 预留空目录（仅有 .gitkeep）
-├── constraints/         # 管脚 ADC（41 个 IO）与时序 SDC
-├── project/             # TD 工程（.al）、构建 Tcl、同步后的源码副本、验证脚本
-├── sim/                 # 31 个 testbench + 各自包含的回归脚本
-├── scripts/             # 源码同步、lint、工程生成、证据核对（Python/PowerShell）
-├── assets/sd_images/    # 可直接拷到 SD 卡的测试 BMP
-├── reports/             # 仿真、时序、面积、上板记录与扇区回放数据
-├── docs/                # 架构依据、集成记录、故障定位、键位与进度（23 篇）
-├── demo/                # 演示材料预留目录
-└── ip/local/            # 本地官方 IP，需自行准备，不随仓库发布
-```
-
-`rtl/` 是唯一手写入口。`project/src/`、`project/hdmi/` 是 TD 使用的副本，由 `scripts/sync_src.ps1` 单向同步更新；诊断工程保存独立的生成源码，便于核对已测版本。
-
----
-
-## 六、开发与复现
-
-以下命令均在仓库根目录运行。
-
-### 1. 同步与静态检查
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/sync_src.ps1
-python scripts/lint_verilog.py rtl project/src project/hdmi
-```
-
-同步脚本按映射增量复制并顺带跑 lint。规则：时序块用非阻塞赋值、组合块用阻塞赋值、禁止多驱动、禁止通过而非赋值的信号。当前结果 **E0=E1=E2=0**（77 个文件）。**必须先同步，再用 TD 构建**，否则综合的是旧源码。
-
-### 2. 行为仿真
-
-需要 ModelSim，默认路径 `D:/Quartus_APP/modelsim_ase/win32aloem`，可用各脚本的 `-ModelSimPath` 覆盖。建议把结果写进独立目录，保留历史证据：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File sim/scripts/run_frontend_regression.ps1 -ReportDir reports/local_check/frontend
-powershell -ExecutionPolicy Bypass -File sim/scripts/run_storage_regression.ps1 -FullVga -ReportDir reports/local_check/storage
-powershell -ExecutionPolicy Bypass -File sim/scripts/run_image_regression.ps1  -FullVga -ReportDir reports/local_check/image
-powershell -ExecutionPolicy Bypass -File sim/scripts/run_audio_regression.ps1  -ReportDir reports/local_check/audio
-powershell -ExecutionPolicy Bypass -File sim/scripts/run_sd_card_replay.ps1   -ReportDir reports/local_check/card_replay
-```
-
-四套脚本分别覆盖：SD 协议/FAT32/BMP/播控/键位/叠加、FIFO/仲裁/存储模型/像素读出、完整 VGA 装载显示、HDMI 音频与 PWM 音频、真实 SD 卡扇区回放。
-
-**脚本检查的是明确的通过标记，不是仿真进程的退出码**；每轮报告都把源码 SHA256 绑进去，运行期间源码一变即判定该轮证据失效。
-
-### 3. 官方 IP 与综合
-
-全链综合与真实控制核仿真需要自行从合法官方资料准备：
-
-- `ip/local/sdram/`：`global_def.v`、`sdr_wrrd.enc.v`、`sdr_init_ref.enc.v`、`sdr_as_ram.enc.v`；真实核仿真还需 `IS42s32200.v`。
-- `ip/local/hdmi/enc/`：`hdmi_1_4b_transmitter_core_wrapper.enc.v`（**当前使用的 HDMI 1.4b 发送核**），以及仅供历史参考的 `DVITransmitter.enc.vhd` 等 DVI 时期文件；同步至 `project/hdmi/enc/`。
-
-这些文件与参考资料（APUG010/011/092、IPUG012 等）不在 Git 中。行为模型回归**不需要**加密 IP；综合还依赖 TD 的器件库与原语支持。
-
-正式工程 [`project/hdmi_td.al`](project/hdmi_td.al)，顶层 `dmz_eg4s20_hdmi_top`。在 TD 中依次走 Read Design → Optimize RTL → Optimize Gate → Place → Route → Generate Bitstream，或直接用命令行脚本。
-
-三个命令行入口，路径一律用**正斜杠**：
-
-```powershell
-# 全流程含 bitgen（产物 project/hdmi_td_Runs/phy_1/hdmi_td.bit）——推荐用这个
-& D:/TD_6_24_APP/bin/td_commands_prompt.exe D:/FPGA_Compelate/SmartCampusMedia/project/flow_s6_bit.tcl
-
-# 只到时序报告，用于快速验约束改动（当前配置 = 40 MHz）
-& D:/TD_6_24_APP/bin/td_commands_prompt.exe D:/FPGA_Compelate/SmartCampusMedia/project/verify_timing_40mhz.tcl
-```
-
-`verify_timing_40mhz.tcl` 跑 `elaborate → read_adc → read_sdc → optimize_rtl → optimize_gate → place → route → update_timing -mode final`，把 `run.timing` / `run.ts` / `run.area` 写到 `reports/timing_40mhz_20261027/`（入库时按仓库惯例另存为 `timing.txt` / `area.txt`）。**该脚本本身不判时序**（时序为负也 `exit 0`），必须读 `run.ts` 才能知道是否真的收敛。历史上的 `verify_timing_final.tcl`（150 MHz）与 `verify_timing_100mhz.tcl` 同样保留，用于对照复现。
-
-`flow_s6_bit.tcl` 走满 bitgen 并**自检时序**：综合→布局→布线全 PASS 后照常出 bit，但会解析 `timing.txt` 里的 SWNS/HWNS，setup 或 hold 为负则打印 `S6_TIMING_FAILED` 并 `exit 3`。150 MHz 时实测输出 `S6_TIMING_FAILED: setup=-7.232 ns hold=0.019 ns; bit is a candidate only`；40 MHz 后变为 **`S6_TIMING_PASSED` + EXIT 0**。**「构建 PASS + 有 bit」不等于「时序通过」，必须同时看构建日志的退出码和布线后 timing 报告**——反过来说，看到 `S6_TIMING_PASSED` 才能把位流当正式交付物。
-
-> 踩坑记录：`project/flow_sdc.tcl` 在命令行调用下会报 `PRJ-8601 ERROR: Load project file D:\...\project\ error`（路径末尾只剩目录、文件名被吞）。根因已实测定位——**TD 里 `[file join]` 拼出的路径在 `cd` 之后交给 `open_project` 会失败**，换成 `$prjdir/hdmi_td.al` 显式正斜杠就正常；不 `cd` 时用 `file join` 也正常。四组对照：
->
-> | 条件 | `open_project` |
-> |---|---|
-> | `cd $prjdir` + `[file join $prjdir "hdmi_td.al"]` | ❌ `PRJ-8601` |
-> | `cd $prjdir` + `$prjdir/hdmi_td.al` | ✅ |
-> | 不 `cd` + `[file join ...]` | ✅ |
->
-> **结论：在 TD 脚本里拼路径一律用 `$var/name`，不要用 `[file join]`。**（`flow_s6_bit.tcl` 一直这么写，所以它从来没问题。）
-
-### 4. 重建已上板的红块诊断工程
-
-```powershell
-python scripts/prepare_image_dm_fix.py
-powershell -ExecutionPolicy Bypass -File sim/scripts/run_image_path_diag.ps1 -DmFix -FullVga
-& D:/TD_6_24_APP/bin/td_commands_prompt.exe ./project/flow_image_dm_fix.tcl
-python scripts/check_image_path_diag.py --dm-fix
-```
-
-生成器按当前检出路径创建工程，重新构建会刷新本地证据。历史 bit 不随仓库发布，也不能假设重建后哈希与历史一致。把卡内 `IMG001.BMP` 准备成白底红块，接好 HDMI，下载该诊断工程产出的 bit，复位后等约 5 秒。历史验收结果为 **`7777` / LED0～5 亮 / 中央红块出现**。
-
-`check_image_path_diag.py` 依赖本地 bit、官方 IP 与仿真记录，核对源码、bit 哈希和证据关联；它**不会把功能通过解释成时序通过**。全新克隆须先准备依赖并生成相应结果。
-
----
-
-## 七、验证证据
-
-| 验证项 | 已记录结果 | 证据入口 |
-|---|---|---|
-| 前端回归（13 个用例） | 13/13 全绿，累计 **584 条 PASS** | [result.json](reports/s6_integration/frontend/result.json)（2026-10-27 00:58） |
-| 存储回归（5 套 TB） | 5/5 全绿，累计 **201,723 项检查** | [result.json](reports/s6_integration/storage/result.json)（2026-10-20 01:12） |
-| 图像链三档 | 6,205 / **1,228,812**（真实 640×480）/ 6,203（单缓冲对照） | [result.json](reports/s6_integration/simulation/result.json)（2026-10-27 01:09） |
-| 双缓冲无缝切换 | `overlap_cycles=2,085,846`、`starve_cycles=0`、`front_flips=2` | [S10 记录](docs/seamless_double_buffer_2026-10-27.md) |
-| HDMI 音频通路（2 个 TB） | 2/2 全绿，累计 **24 条 PASS** | [result.json](reports/s6_integration/audio/result.json)（2026-10-26 22:23） |
-| 图库自动扫描 | 9 用例全绿，含 `gallery_probe` 23 条 | [result.json](reports/s7_gallery_probe/result.json) |
-| DQM 仲裁回归 | 15 场景、**50,900 项**检查通过 | [仲裁回归](reports/dm_mask_fix/arbiter/result.json) |
-| 完整图片诊断仿真 | 边界 6,184 项、完整 VGA **614,406 项** | [诊断仿真](reports/image_dm_fix/simulation/result.json) |
-| 真实加密 SDRAM 核仿真 | 修正后 614,406 项通过，原始失败对照保留 | [修正结果](reports/image_real_core_sim/idle_dm_fix/result.json) / [失败对照](reports/image_real_core_sim/small/result.json) |
-| 直接读回比较单元 | 12 项检查通过 | [读回单元](reports/image_dm_fix/unit/result.json) |
-| 正式顶层构建 | elaborate exit 0；综合/布局/布线/bitgen 全 PASS；**时序自检通过，脚本返回 EXIT 0**（`S6_TIMING_PASSED`） | [`reports/s6_integration/timing.txt`](reports/s6_integration/timing.txt)、`project/flow_s6_bit.tcl` |
-| 静态 lint | E0=E1=E2=0（77 个文件） | `scripts/lint_verilog.py` |
-
-### 资源占用
-
-来自 [最终面积报告](reports/s6_integration/area.txt)（2026-10-28 17:53 的构建，含 SD 总线交接修复、超时保护与音频波形叠加）：
-
-| 资源 | 占用 | 总量 | 比例 |
-|---|---|---|---|
-| LUT | 10,751 | 19,600 | 54.85% |
-| 寄存器 | 5,773 | 19,600 | 29.45% |
-| LE | 11,522 | — | — |
-| BRAM9K | 17 | 64 | 26.56% |
-| DSP | 13 | 29 | 44.83% |
-| PLL | 2 | 4 | 50.00% |
-| **GCLK** | **4** | **16** | **25.00%** |
-| IO | 41 | 188 | 21.81% |
-
-> 演进过程：40 MHz 首版 LUT 10,009 / 寄存器 5,326 → 加超时看门狗后 10,224 / 5,439 → 合并音频波形叠加（KEY13 四态）后 10,751 / 5,773。
-> GCLK 由 2 增至 4 是时钟网络修复（C1/C2 各加一个 BUFG）的结果。
-
-### 静态时序
-
-来自 [40 MHz 最终时序报告](reports/timing_40mhz_20261027/timing.txt)，完整分析见该目录的 [README](reports/timing_40mhz_20261027/README.md)。
-
-**全局**
-
-| 指标 | 150 MHz | 100 MHz | **40 MHz（当前）** |
-|---|---|---|---|
-| Setup WNS | −7.232 ns | −5.565 ns | **+1.935 ns** ✅ |
-| Setup TNS | −335.004 ns | −231.925 ns | **0.000 ns** ✅ |
-| Hold WNS | +0.019 ns | +0.019 ns | **+0.011 ns** ✅ |
-| 违例 path group | 2 组 | 2 组 | **0 组** ✅ |
-
-**逐 path group（40 MHz，全部 0 违例）**
-
-| Path Group | SWNS | STNS | 端点 | 状态 |
-|---|---|---|---|---|
-| `clkc[0] → clkc[0]`（25 MHz HDMI 主域） | +20.162 ns | 0.000 | 8379 | ✅ |
-| `clkc[1] → clkc[1]`（40 MHz 逻辑自身域） | **+16.706 ns** | 0.000 | 2578 | ✅ |
-| `clkc[2] → clkc[2]`（125 MHz TMDS 5x） | +6.113 ns | 0.000 | 74 | ✅ |
-| `clkc[0] → clkc[2]`（跨域） | +6.554 ns | 0.000 | 32 | ✅ |
-| `clk → clk`（50 MHz 输入域） | +17.090 ns | 0.000 | 8 | ✅ |
-| **`clkc[1] → clkc[2]`（写 SDRAM DQ）** | **+5.630 ns** | 0.000 | 48 | ✅ |
-| **`clkc[2] → clkc[1]`（读 SDRAM DQ）** | **+1.935 ns** | 0.000 | 32 | ✅ |
-
-**两个曾经必负的 SiP 接口组现在都在正余量内**。读路径余量 +1.935 ns 最小，它是全局瓶颈；写路径 +5.630 ns。
-
-### 为什么最终必须降到 40 MHz
-
-150 MHz 与 100 MHz 两次实测的数据点，反推出一个**与频率无关的常数开销**（两点互证，`slack` 单位 ns）：
-
-```
-读路径 slack = T/2 − 10.565     （T = 时钟周期）
-写路径 slack = T/2 −  7.001
-```
-
-| 频率 | T | T/2 | 读预测 | 读实测 | 写预测 | 写实测 |
-|---|---|---|---|---|---|---|
-| 150 MHz | 6.666 ns | 3.333 ns | −7.232 | **−7.232** ✓ | −3.668 | **−3.537** ✓ |
-| 100 MHz | 10.000 ns | 5.000 ns | −5.565 | **−5.565** ✓ | −2.001 | **−2.001** ✓ |
-| 40 MHz | 25.000 ns | 12.500 ns | **+1.935** | **+1.935** ✓ | **+5.499** | +5.630 ✓ |
-
-这个常数里，5.000 ns 是 TD 对 SiP 硬核接口的固定惩罚（`input (hard ip) +5.000` / `output (hard ip) −5.000`），
-其余是时钟树偏斜（读路径 Skew 4.172 ns）与封装内走线。**它们不随频率缩放**，所以降频只能线性地买到 T/2 的增长：
-
-- 读路径需要 `T/2 ≥ 10.565` → `T ≥ 21.130 ns` → **f ≤ 47.33 MHz**（真正的瓶颈）
-- 写路径需要 `T/2 ≥ 7.001` → `T ≥ 14.002 ns` → **f ≤ 71.42 MHz**
-
-100 MHz 处在两者之上，所以第一次降频后仍然为负；40 MHz 留出了充裕余量。
-
-**读路径最差路径在 40 MHz 下的完整链路**（`reports/timing_40mhz_20261027/timing.txt` L7168 附近）：
-
-```
-Begin : u_sdram_sip.dq[0]                    (clkc[2] 上升沿 @12.500 ns)
-          PAD x040y041     3.816 ns
-          launch edge                @18.332 ns
-          input (hard ip)  +5.000 ns   ← TD 给 SiP 硬核的固定惩罚
-End   : u_sdram_sip_syn_1.bpad
-          → sdr_wrrd.enc.v 的 Sdr_rd_dout[0]  (clkc[1] 上升沿 @25.000 ns)
-
-Budget          12.500 ns  （半个 25.000 ns 周期）
-Data Path Delay  6.453 ns  （cell 100%，net 0.000%）
-Logic Level      0
-Clock Skew       4.172 ns
-Slack           +1.935 ns  ✅
-```
-
-注意 `Data Path Delay 6.453 ns` 与 150 MHz、100 MHz 时**完全相同**——三个频率下这条路径的延迟是常数，
-这正是「常数开销」结论的直接证据：只有预算 T/2 在变，延迟不变。
-数据通路上 Logic Level = 0、net 延迟 0.000 ns，没有任何组合逻辑可以优化，所以**改 RTL 无效，唯一有效手段是给足预算**。
-
-### 已排除的捷径
-
-本仓库历史上已经踩过「拆异步组」的坑，2026-10-27 又用三组对照实验复验了一遍（同一 RTL、同一工具、同一器件）：
-
-| 实验 | RTL | 时钟组 | SWNS | STNS |
-|---|---|---|---|---|
-| ① 原始 | C1/C2 无 BUFG | 0°/180° 同组 | −7.232 ns | −335.004 ns |
-| ② 拆组 | C1/C2 加 BUFG | 0°/180° **拆异步** | **+0.275 ns** | 0.000 ns |
-| ③ 对照 | C1/C2 加 BUFG | 0°/180° **同组** | −7.232 ns | −335.004 ns |
-
-**实验 ③ 是决定性的**：加了 BUFG 之后，只要保留 0°/180° 分析，接口余量**一个数字都不变**。所以实验 ② 里那个漂亮的 +0.275 ns 全部来自拆组动作——把路径移出分析范围，而不是把接口修好了。这正是当初「+0.104 ns、0 违例」的同一个陷阱，**结论不变：0°/180° 必须留在同一时钟组**。
-
-另外两条也试过并排除：
-
-- **`set_multicycle_path`**：理论上能放宽 setup 检查，但 Xilinx 的 [MEGA65](https://raw.githubusercontent.com/MEGA65/mega65-core/f0e74a124c0c66622b49857356376f686614d25a/src/vhdl/mega65r4.xdc) 工程实测过它反而引入 5.6 ns 无端延迟，属于跨品牌的反噬陷阱。
-- **`phys_opt`**：`-post_place -effort high` 让余量从 +0.275 降到 +0.178 ns（反向），`-post_route -effort high` 在 TD v6.2.168116 上直接崩溃（`0xC0000005` 访问违规）。
-
-三组实验都可复现，产物已入库：
-
-| 实验 | 复现脚本 | 约束文件 | 结果 |
-|---|---|---|---|
-| ② 拆组 | [`verify_timing_fix.tcl`](project/verify_timing_fix.tcl) | `project/hdmi/dmz_eg4s20_hdmi.sdc`（当时的拆组版） | [timing.txt](reports/timing_fix_20261027/timing.txt) |
-| ③ 对照 | [`verify_timing_ctrl.tcl`](project/verify_timing_ctrl.tcl) | [`sdc_ctrl_samegroup.sdc`](project/hdmi/sdc_ctrl_samegroup.sdc) | [timing.txt](reports/timing_ctrl_samegroup_20261027/timing.txt) |
-| 最终 | [`verify_timing_final.tcl`](project/verify_timing_final.tcl) | `constraints/` 当前的同组版 | [timing.txt](reports/timing_final_20261027/timing.txt) |
-
-另外两条也已实测排除：
-
-- **`phys_opt -post_place -effort high`**：0.275 → **0.178 ns**，反而更差（它为全局重布线腾资源，打散了那条依赖短走线的路径）。
-- **`phys_opt -post_route -effort high`**：在 TD 6.2.168116 上**直接崩溃**（`0xC0000005` 访问违规），流程在 PASS-route 之后中断，报告不生成。
-
-### 板卡反馈（诊断工程）
-
-白底红块出现、整帧比较通过、应急红屏与间歇蜂鸣实测有效——见 [上板记录](reports/image_dm_fix/board_feedback.json) 与 [DQM 修复记录](docs/image_dm_fix_2026-10-20.md)。
-
-> 各历史记录绑定其对应源码与构建版本，不能替代后续改动后的重新验证。真实加密核仿真用的是功能性引脚模型，**不能验证板级物理时序**。
-
----
-
-## 八、已知限制与后续工作
-
-**发布阻塞项**
-
-1. **正式顶层首次上板**。目前所有硬件证据都来自诊断工程。静态时序已在 40 MHz 下全部收敛（WNS +1.935 ns / TNS 0），`flow_s6_bit.tcl` 自检打印 `S6_TIMING_PASSED`，`project/hdmi_td_Runs/phy_1/hdmi_td.bit` 是时序收敛后的正式位流（629,640 B，2026-10-27 21:12）。上板后应优先验证读路径的稳定性（连续换图、长时轮播），因为那 32 条读回路径的余量（+1.935 ns）是全设计最小的。<br>具体怎么验：[**上板验证手册**](docs/board_verification_2026-10-27.md) 把这次上板要确认的全部项目编排成了 6 个阶段，照着一遍做完即可把「未上板」状态清零。
-2. **上板后确认 40 MHz 是否仍然是必要的**。临界频率是读 47.33 MHz / 写 71.42 MHz，理论上 47 MHz 也能过，但 40 MHz 是更方便的整数分频（1000 MHz VCO ÷ 25）。若实测发现硬件在更高频率下稳定，可以回调；若发现读回偶发错误，还要继续降。
-3. **`u_sdram_sip` 的位置约束未被遵守**（`PHY-7002` ×2，期望 (12,12) 与 (164,288)）。不影响时序，属整洁性问题。
-
-**SDRAM 带宽的取舍**（记录清楚，避免后来者误以为可以随意提频）
-
-| 频率 | 带宽 | 640×480@60Hz 需求 | 富余 | 时序 |
-|---|---|---|---|---|
-| 150 MHz | 600 MB/s | 55.3 MB/s | 10.8× | ❌ 数学无解 |
-| 100 MHz | 400 MB/s | 55.3 MB/s | 7.2× | ❌ 读 −5.565 ns |
-| **40 MHz** | **160 MB/s** | **55.3 MB/s** | **2.9×** | ✅ **+1.935 ns** |
-
-降频没有牺牲功能：40 MHz 的带宽仍是单帧 640×480@60Hz 需求的 2.9 倍。若将来要上更高分辨率或更高帧率，需要先解决 SiP 接口的建模口径问题（见下一条），不能再靠提频。
-
-**功能缺口**（对照 [TASKS.md](TASKS.md)）
-
-- 视频解码（仅支持无压缩 BMP）、OSD 字幕、画面缩放、转场效果尚未实现。
-- 音频只做音调级联，音频可视化（需 FFT）未实现。
-- SD 热插拔无自动恢复（可用 KEY10 重扫替代）。
-- 拨码开关读取未实施（与 ES8388 同球互斥，待决策）。
-
-**上板一次跑完的验证流程**
-
-[上板验证手册](docs/board_verification_2026-10-27.md) 把 `docs/progress.md` 里所有 🔶/⬜ 条目编排成 6 个阶段（时钟 → HDMI 显示 → SD 与图库 → 应急与静音 → SDRAM 稳定性 → 音频），再加键盘行序、SD MOSI/MISO 两项核定。全部判据只用板子上真实可观测的五个通道：HDMI 屏、8 个 LED、4 位数码管、蜂鸣器、3.5 mm 音频——顶层没有 UART 也没有 JTAG 观测口。
-
-配套的 SD 卡素材由 `scripts/prepare_board_verify_assets.ps1` 一键生成四套：
+仓库自带两张测试图（`assets/sd_images/`）：`IMG001.BMP` 彩条、`IMG002.BMP` 白底中央 200×200 红块。也可以用脚本生成整套上板验证素材：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\prepare_board_verify_assets.ps1
 ```
 
-产出 `assets/sd_verify/{good,bad_size,bad_bmp,empty}/`，拷进卡根目录分别对应「正常图库」「宽高不符」「签名损坏」「零张图」四种期望结果，不需要手工准备图片。每张图上的大号数字与右下角白块数量就是它的文件序号，对着屏幕一眼能读出当前是第几张。
+产出 `assets/sd_verify/{good,bad_size,bad_bmp,empty}/` 四套，分别验证"正常图库 / 宽高不符 / 签名损坏 / 零张图"。
 
-**上板前确认项**
+### 16 键
 
-- 键盘行序：两处来源相反，需先确认哪一行对应 KEY0。
-- SD MOSI/MISO：引脚说明与例程相反，已采用引脚说明（标准 SPI 定义），待实测印证。
-- **SDRAM 接口的物理时序余量**：TD 的 `input/output (hard ip) ±5.000 ns` 是工具内置模型，不等于器件真实 tAC。40 MHz 下报告为正，但真实余量需要示波器测量 SDRAM_CLK 与 DQ 的相对关系才能确认（安路社区实测帖提到「SDRAM 时钟提前 2.666 ns 时读时序 bug 基本消失」，值得作为实测参考点）。
+| 键 | 功能 | 键 | 功能 |
+|---|---|---|---|
+| KEY0 | 上一张 | KEY8 | 反色开关 |
+| KEY1 | 下一张 | KEY9 | 显示倍率 ×1~×4 |
+| KEY2 | 自动轮播开关 | KEY10 | 重新扫描图库 |
+| KEY3 | 日常 / 科普 / 应急 三态切换 | KEY11 | 九宫格参考线 |
+| KEY4 | 上一个测试图案 | KEY12 | 信息条 |
+| KEY5 | 下一个测试图案 | KEY13 | 音频图层（关/电平/波形/两者） |
+| KEY6 | 静音（HDMI + 3.5 mm 同时） | KEY14 | 蜂鸣器静音 |
+| KEY7 | 亮度五档 | KEY15 | 应急模式直达（再按退出） |
 
-**遗留告警**（不影响时序，仅记录）
+### LED 与数码管
 
-- `USR-6135` ×2：两颗 PLL（`u_pll`、`u_sdram_pll`）的反馈路径都报走 local network、补偿延迟不可预测。这是 `FEEDBK_PATH = "CLKC0_EXT"` 外部反馈结构的固有告警。注意：在 2026-10-27 21:00 的 40 MHz 构建中该告警**计数为 0**（`USR-6135: 0`），与 150 MHz 构建时的 2 条不同——推测与布局结果有关，未深入追查。
-- `SYN-5013` ×2：`Sdr_init_ref_ba[1]`/`[0]` 未驱动（来自加密核 `sdr_init_ref.enc.v`，内部信号，无需处理）。
-- `SYN-5011`：`async_fifo` 中 `ramread0_syn_4` 的 `bea[0]`/`beb[0]` 未驱动（BRAM 未用端口，正常）。
-- `SYN-6562` ×3：`eram_init` 关闭时 init 值被忽略。
-- `HDL-5007`：`fat32_reader.v` 中 `'d900`/`'d800`/`'d700`/`'d600` 被截断为 9 bit（值本身在范围内，仅告警）。
-- `PHY-7002` ×2：见上「发布阻塞项」第 3 条。
+**LED[7:0]**（高有效）
+
+| LED | 含义 | LED | 含义 |
+|---|---|---|---|
+| LED7 | 当前有面向用户的错误 | LED3 | 应急模式 |
+| LED6 | 图片装载中 | LED2 | 读 FIFO 异常 |
+| LED5 | SDRAM PLL 锁定 | LED1 | 自动轮播开启 |
+| LED4 | HDMI PLL 锁定且核视频锁定 | LED0 | 图片就绪（`image_ready`） |
+
+**数码管 DIG3~DIG0** = `[错误类别 | 播放状态] [子码 | 内部错误码] [当前图号低 4 位] [测试图案序号]`
+
+`d810` 就是一次真实读数：类别 `d`（数据通路）、子码 `8`（装载无进度）、图号 1、测试图案 0。
+
+出错时两位换成"助记字母 + 类内子码"，用五类**用户动作**替代原先跨五个模块的 1~9 内部码：
+
+| 显示 | 含义 | 用户该做什么 |
+|---|---|---|
+| `C0` | 卡座报告无卡 | 插卡 |
+| `C1` / `C2` / `C9` | CMD0 重试耗尽 / CMD8·CMD55 异常 / ACMD41·CMD58 异常 | 换卡或检查接触 |
+| `F1` ~ `F4` | MBR 签名错 / 分区表异常 / 不是 FAT32 / 找不到图 | 重新格式化为 FAT32 |
+| `00` | 卡读通了，但根目录没有一张 `IMGnnn.BMP` | 往卡里放图 |
+| `b1` / `b2` / `b9` | BMP 头非法 / 宽高不是 640×480 / 其他 BMP 错误 | 换一张合规的图 |
+| `d1` ~ `d7` | SD 内部失败 / 读块失败 / 簇链异常 / FIFO 无空间 / SDRAM 仲裁或不在线 | 多为数据通路问题，先复位 |
+| `d8` | 装载无进度（看门狗超时） | 卡太慢或总线异常，换卡试 |
+| `dA` | 等 `blk_done` 握手超时（`img_loader` 84 ms 超时） | 控制器无响应，复位 |
+| `dB` / `dC` | 等 SDRAM 初始化超时 / 等写完成超时 | 复位；反复出现说明 SDRAM 侧有故障 |
+| `d9` | 未归类的数据通路故障 | — |
+
+出错后约 **1.5 秒静默观察期**（先让你看见数码管），再鸣响 3 秒。
 
 ---
 
-## 九、参与贡献
+## 六、仓库结构
 
-欢迎 issue 与 pull request。提交前请读 [贡献指南](CONTRIBUTING.md)：其中列明编码规范、`sync_src.ps1` 同步流程、lint 要求，以及提交证据时必须避免的三类过度宣称——**未跑的仿真、行为模型当真实 IP、功能通过当时序收敛**。
+```
+SmartCampusMedia/
+├── rtl/                     自研 RTL，53 个文件（唯一真源）
+│   ├── top/                 顶层装配（hdmi / bringup / min 三个顶层）
+│   ├── storage/             SD、FAT32、BMP、缩放、帧缓存、仲裁、SDRAM 包装
+│   ├── video/               时序发生器、内容选择、叠加、科普页（+ hdmi/ 子目录）
+│   ├── osd/                 字库、字幕、参数面板、自动弹出
+│   ├── control/ input/ display/ audio/ common/
+├── constraints/             SDC 时序约束（唯一真源）
+├── project/                 TD 工程 .al、构建 tcl、自动生成的源码副本
+├── sim/                     62 个 testbench + 20 个回归脚本 + 官方仿真库说明
+├── scripts/                 lint、同步、位图生成、字幕预览校验等 20 个工具
+├── assets/                  SD 测试图、上板验证素材、校园素材生成脚本
+├── reports/                 54 个带日期的构建与仿真证据目录
+├── docs/                    32 篇专题文档（索引见 docs/README.md）
+├── ip/                      config/ 为受版本控制的 SDRAM 宏；local/ 需自备
+└── ip/local/ ip/reference/  官方加密 IP 与例程（不随仓库发布）
+```
+
+> **只有 `rtl/` 和 `constraints/` 是代码真源。** `project/src`、`project/hdmi` 下是 `scripts/sync_src.ps1` 生成的副本，手改会在下次同步时被覆盖。
+
+---
+
+## 七、开发与复现
+
+### 1. 环境准备
+
+```powershell
+# 官方 IP 不随仓库发布，需从安路渠道获取后放到：
+#   ip/local/sdram/      （加密 SDRAM 核与引脚模型）
+#   ip/local/hdmi/enc/   （hdmi_1_4b_transmitter_core）
+# 仿真还需要官方仿真库（默认 D:\TD_6_24_APP\sim_release\eg4\）
+```
+
+### 2. 同步源码副本 + 静态检查（每次改完 RTL 必做）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\sync_src.ps1
+python scripts\lint_verilog.py rtl project\src project\hdmi
+```
+
+lint 会拦三类**必须为 0**的阻断项：**E0** 文件编码损坏、**E1** 同一 always 块里阻塞与非阻塞混用、**E2** 同一信号被多个 always 块驱动。
+
+### 3. 跑回归（七套）
+
+```powershell
+# 全量（约 25 分钟）
+powershell -ExecutionPolicy Bypass -File sim\scripts\run_full_regression.ps1
+
+# 单套
+powershell -ExecutionPolicy Bypass -File sim\scripts\run_frontend_regression.ps1   # 前端 20 用例
+powershell -ExecutionPolicy Bypass -File sim\scripts\run_storage_regression.ps1 -Suite All -FullVga
+powershell -ExecutionPolicy Bypass -File sim\scripts\run_image_regression.ps1 -FullVga
+powershell -ExecutionPolicy Bypass -File sim\scripts\run_audio_regression.ps1
+powershell -ExecutionPolicy Bypass -File sim\scripts\run_startup_ownership_regression.ps1
+powershell -ExecutionPolicy Bypass -File sim\scripts\run_unit_coverage_regression.ps1
+powershell -ExecutionPolicy Bypass -File sim\scripts\run_display_content.ps1
+```
+
+**怎么算通过**（四条同时满足，不是只看退出码）：
+
+1. 退出码为 0；
+2. 日志含 `ALL CHECKS PASSED: <top>` 标记；
+3. `PASS:` 行数大于 0；
+4. 日志不含 `CHECKS FAILED` / `GLOBAL TIMEOUT` / `FAIL:` / `** Error`。
+
+### 4. 综合、布局布线、生成位流
+
+```powershell
+& D:/TD_6_24_APP/bin/td_commands_prompt.exe ./project/flow_watchdog_20261030.tcl
+```
+
+脚本会依次打印 `FLASHABLE_BUILD_PASS-<step>`，最后解析 `timing.txt` 校验 setup/hold 松弛量；任一步失败或出现负松弛即 `exit 2/3`，**不会产出位流**。位流与 `timing.txt` / `area.txt` / `coverage.txt` 落在 `reports/<日期>/`。
+
+> ⚠️ TD 脚本里**不要用** `[file join]` 拼路径再交给 `open_project`——`cd` 之后会报 `PRJ-8601`。用 `$prjdir/name` 显式正斜杠。
+
+### 5. 常见坑
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| 数码管 `d810`，屏幕不出图 | 播放器抢了图库的 SD 总线，请求被丢弃 | 已修；确认 `sd_ready` 接的是 `sd_owner_player` |
+| 切图瞬间竖向白条 | 显示优先级在欠载拍回落到 `pattern_sel=0`（纯白彩条） | 已修；确认 `video_content_mux` 接了 `image_ever_ready` |
+| 慢卡被误判超时 | 看门狗按整帧计时 | 已修；看门狗改按扇区进度喂狗 |
+| ModelSim `vlog` 挂死、只打印 `in protected region` | 加密 HDMI 核在 ASE 10.1d 下无法仿真 | 整链仿真的替代方案见 [TEST_COVERAGE.md §4.4](TEST_COVERAGE.md) |
+| `unexpected non-printable character 0xef` | 用 `Set-Content -Encoding utf8` 写出了 BOM | `.v` 必须无 BOM，见 [贡献指南](CONTRIBUTING.md) |
+
+---
+
+## 八、验证与证据
+
+**三档口径**——这三档不能互相替代，任何结论都要说明它落在哪一档：
+
+| 档 | 证明什么 | 不能证明什么 |
+|---|---|---|
+| 行为仿真 | 逻辑功能与边界条件正确 | 真实加密 IP 的行为、时序是否收敛 |
+| 综合 + 布线 + STA | 资源放得下、时序在工具模型下收敛 | 上板一定正常（IO 延迟约束不完整） |
+| 上板 | 真实硬件上的输出正确 | 长时间无偶发失效（需压测） |
+
+主要证据目录：
+
+| 证据 | 位置 |
+|---|---|
+| 烧录候选完整验证记录（51 个源文件 SHA-256 + 全套回归） | [`reports/flashable_20261030/verification.md`](reports/flashable_20261030/verification.md) |
+| 最新构建的时序 / 面积 / 覆盖率报告 | `reports/watchdog_20261030/{timing,area,coverage}.txt` |
+| 七套回归的逐条结果（JSON） | `reports/local_check/` |
+| 噪点根因分析（含诊断决策树） | [`docs/noise_root_cause_2026-10-30.md`](docs/noise_root_cause_2026-10-30.md) |
+| 显示异常的三个根因 | [`docs/display_fix_2026-10-29.md`](docs/display_fix_2026-10-29.md) |
+| 上板验收清单（6 阶段 + 2 项核定） | [`docs/board_verification_2026-10-27.md`](docs/board_verification_2026-10-27.md) |
+
+**为什么最后必须降到 40 MHz**：读 DQ 的松弛量满足 `slack = T/2 − 10.565 ns`，写 DQ 满足 `slack = T/2 − 7.001 ns`。那个 10.565 ns 是 SiP 硬核模型的固定惩罚（5.000）+ 布线偏斜 + 封装延迟，且 `Data Path Delay 6.453 ns` 在 150/100/40 MHz 下**完全一样**——不存在靠调工具或加约束"优化"掉的余地。反算临界频率：读 ≤ 47.33 MHz、写 ≤ 71.42 MHz，所以 40 MHz 是唯一能同时满足两组、又留出可解释余量的选择。带宽仍是需求的 2.9 倍。
+
+> 曾试过的三段捷径都失败了：拆分时钟组只是把接口数字挪出了检查范围（BUFG 并不改变时序数字）；`phys_opt -post_place` 反而更差（0.275 → 0.178 ns）；`phys_opt -post_route` 在 TD v6.2.168116 直接崩溃（`0xC0000005`）。
+
+**遗留告警**（时序已通过，告警仍会打印）：`USR-6135`×2（PLL 反馈走 local network）、`SYN-5013`×2（加密核内部信号未驱动）、`SYN-5011`（BRAM 未用端口）、`SYN-6562`×3（`eram_init` 关闭）、`HDL-5007`（`fat32_reader.v` 中常量被截断为 9 bit，值在范围内）、`PHY-7002`×2（SiP 位置约束）。
+
+---
+
+## 九、已知限制与后续
+
+**功能缺口**
+
+- 只支持无压缩 24 bit BMP；PNG/JPEG、视频解码均未实现。
+- OSD 字库是 8×16 ASCII **41 字形**（数字、大写字母、少量符号），**不含汉字与小写字母**；中文 OSD 需要 16×16 点阵（约 40 LUT/字）。
+- 缩放只缩不放；目标宽度须能被 8 整除。
+- 参数（亮度/反色/倍率）只在会话内保持，掉电恢复默认（SD 卡只有读通道，未实现 SPI Flash 写入）。
+- 音频是状态音调，不是音频文件播放；电平柱与波形有，**没有 FFT**。
+- SD 热插拔无自动恢复（可用 KEY10 重扫替代）；拨码开关与 ES8388 同球互斥，未实施。
+
+**优先级最高的待办**
+
+| 优先级 | 事项 |
+|---|---|
+| P0 | 烧录 `watchdog_20261030` 位流，逐项复验启动出图、KEY0/KEY1 连按、轮播、科普页、应急页、音频、异常 BMP 恢复 |
+| P0 | 核定键盘行序与 SD MOSI/MISO 两处引脚来源冲突 |
+| P0 | 用示波器实测 SDRAM_CLK 与 DQ 的相对关系，确认 TD 的 ±5.000 ns 硬核模型是否可信 |
+| P1 | 长时压测 ≥ 2 小时 + 反复复位 + 断电重启；SDRAM 读路径持续压力 |
+| P1 | 异常注入（坏 BMP、超大簇链、拔卡瞬间）与 KEY7~KEY14 逐键板上确认 |
+| P2 | 汉字字幕（16×16 点阵）、参数持久化 |
+| P2 | 上板复验 B2 转场与 C2 缩放的真实观感 |
+
+---
+
+## 十、参与贡献
+
+欢迎 issue 与 pull request。动代码前请读 [贡献指南](CONTRIBUTING.md)：编码规范、`sync_src.ps1` 同步流程、lint 门槛，以及提交证据时**必须避免的三类过度宣称**——未跑的仿真、行为模型当真实 IP、功能通过当时序收敛。
+
+提交信息用 Conventional Commits（`feat:` / `fix:` / `docs:` / `refactor:` / `test:` / `chore:`），一次提交聚焦一件事。
 
 ## 许可证
 
@@ -644,4 +393,8 @@ powershell -ExecutionPolicy Bypass -File scripts\prepare_board_verify_assets.ps1
 
 ## 来源与声明
 
-自研模块与官方移植模块按源码注释区分。官方例程、加密 IP、器件模型与资料的版权归各自权利人所有，本仓库不发布这些文件，也不对它们赋予额外许可。**应急模式仅用于项目演示，本系统未取得公共安全或消防设备认证。**
+自研模块与官方移植模块按源码注释区分。官方例程、加密 IP、器件模型与资料的版权归各自权利人所有，本仓库不发布这些文件，也不对它们赋予额外许可。
+
+字体点阵与素材来源见 [`docs/science_font_attribution.md`](docs/science_font_attribution.md) 与 [`docs/OFL-NotoSansSC.txt`](docs/OFL-NotoSansSC.txt)。
+
+**应急模式仅用于项目演示，本系统未取得公共安全或消防设备认证。**

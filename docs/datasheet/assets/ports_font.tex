@@ -1,0 +1,10 @@
+% 端口表 —— 由 gen_datasheet_assets.py 解析 RTL 生成，勿手改
+\begin{tabular}{@{}c l c p{3.9cm}@{}}
+\toprule
+\textbf{} & \textbf{信号} & \textbf{宽} & \textbf{说明}\\
+\midrule
+$\rightarrow$ & {\ttfamily char\_code} & 6{\scriptsize\ttfamily\ {[}5:0{]}} & 字符码低 6 位（ASCII \& 0x3F） \\
+$\rightarrow$ & {\ttfamily row} & 4{\scriptsize\ttfamily\ {[}3:0{]}} & 字形行号 0..15（0 = 最上一行） \\
+$\leftarrow$ & {\ttfamily pixels} & 8{\scriptsize\ttfamily\ {[}7:0{]}} & 该行 8 个像素，bit7 = 最左 \\
+\bottomrule
+\end{tabular}

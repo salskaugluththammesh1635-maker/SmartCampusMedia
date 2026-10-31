@@ -1,6 +1,30 @@
 # 开发阶段进度表（progress）
 
-> **2026-10-27 最新状态（S12）★全部时序收敛**：SDRAM 域**两次降频 150 → 100 → 40 MHz** 后，全设计静态时序收敛——**SWNS +1.935 ns、STNS 0.000 ns、HWNS +0.011 ns，7 个 path group 全部 0 违例**，`flow_s6_bit.tcl` 打印 `S6_TIMING_PASSED` 并返回 **EXIT 0**（150 MHz 时是 `S6_TIMING_FAILED` / EXIT 3），`project/hdmi_td_Runs/phy_1/hdmi_td.bit` 已是时序收敛后的正式位流（629,640 B，2026-10-27 21:12）。
+> 2026-10-30 最新跟进：**C2 图片自适应缩放已完成**（`img_scaler` + `image_window_mask` + `bmp_parser` 的 `CHECK_SIZE` 开关）。缩放器按宽高比居中缩到 640×480 内，只缩不放，小图 1:1 居中；Bresenham 行列各一组 (STEP,THRESH) 抽稀，目标尺寸在帧头用 21 位恢复余数除法器算一次。关键约束：**目标宽必须 8 像素对齐**——`word_addr[20:2]` 截断叠加仲裁器四字突发组的「组基址+相位」寻址，要求行字数与行首字地址都落在 4 字边界，仅偶数对齐会整帧错位。`tb_img_scaler` 161 条 + 变异测试 11/11 全捕获、`tb_image_window_mask` 20 条、`tb_image_player` 四档 8,270 / 8,263 / 1,228,817 / 缩放 1,811、`tb_bmp_parser` 37 条全通过，lint 与 TD 综合布线通过。**未上板**，缩放观感待板上确认。详见[C2 缩放记录](c2_scaler_2026-10-30.md)。
+>
+> 前一轮（2026-10-29）：**B2 换帧转场已完成**（淡出到黑 → 全黑时翻帧首 → 淡入，约 286 ms）。混合器 `rtl/storage/fade_mixer.v` 是纯组合逐通道缩放，`image_player` 内新增 2 位转场状态与 8 位亮度系数，α 只在 `vblank_rise` 推进，翻帧点落在全黑那一拍。三档仿真 8,270 / 8,263 / 1,228,817 全零错（`flips_in_grey=0`），前端回归 20/20、整帧逐像素回归、lint、TD 综合布线（setup +1.935 ns / hold +0.003 ns、bitgen 成功）全通过。**未上板**，转场观感待板上确认。详见[B2 转场记录](fade_transition_2026-10-29.md)。
+
+> 2026-10-29 跟进：KEY3 科普态已接入独立 RTL 科普页。欠载像素补黑的 mux 仿真通过，但用户已烧录当前位流并确认按 KEY0/KEY1 切图时白色噪点仍存在，因此该缺陷未解决。当前现场复现、链路分析和下一步回归要求见[噪点未解决交接报告](handover_2026-10-29_noise_unresolved.md)。
+
+> **2026-10-29 晚状态（S13b 后续）★科普页已接入；换图噪点仍未解决**：独立科普页取代了此前只有角标的初版表现。
+> 画面选择器在图片已就绪时将无效像素输出黑色，原意是防止欠载时漏出白色测试彩条；但用户烧录当前位流后确认 KEY0/KEY1 切图仍有噪点。
+> KEY3 科普态选择独立的 640×480 FPGA/数字逻辑教学页，
+> 包含输入到输出的数据流、组合逻辑、时序逻辑和并行处理内容，不依赖 SD 卡。应急红屏仍为最高优先级。
+> 最新前端回归 **15/15、631 条 PASS**；TD v6.2.168116 构建与 bitgen 通过，setup +1.935 ns、hold +0.011 ns、TNS 均 0，
+> LUT/REG/LE 为 12,544 / 5,945 / 13,256。**KEY0/KEY1 噪点修复的板上复验未通过，缺陷待定位；科普页仍待单独复验**。详见[交接报告](handover_2026-10-29_noise_unresolved.md)。
+>
+> **2026-10-29 最新状态（S13）★正式顶层上板显示成功，显示异常已解决**：修复 SDRAM 读组节拍与刷新逻辑后，
+> 正式顶层 `dmz_eg4s20_hdmi_top` 在 DMZ-EG4S20 板上显示出 SD 卡内的图片，**用户确认深色区周期窄白条等显示异常已解决**。
+> 本轮三个根因：① `framebuf_arbiter` 相邻读组首间隔 **12 → 13 个 40 MHz 周期（325 ns）**——APUG011 真实核在
+> bank/row 边界组首相隔 12 拍会漏发 bank ACT；② `global_def.v` 刷新宏表达式**缺括号**，代入后
+> `SELF_REFRESH_INTERVAL=0`（减 10 得 −10），历史所称「有效 1250 拍」不成立，修正后 40 MHz → 625 拍名义间隔；
+> ③ 核内自动刷新与手动刷新交叠产生**相邻 25 ns 双 AREF**（违反 70 ns tRC），改为关闭核自动刷新、
+> 组边界排空读返回后**静默 16 拍**再发单拍手动刷新，握手看门狗 1024 拍，粘滞故障映射为 SDRAM 错误码 8。
+> 同轮把 HDMI 左右声道在发射核入口**算术右移 6 位（幅度 1/64 ≈ −36.12 dB）**，生成低音量试听位流。
+> **仍未验收**：低音量音频待试听、KEY7～KEY14 八个键未在板上按过、多图连续轮播与异常素材未逐项走查。
+> 详见文末 [S13 章节](#s13显示异常修复与正式顶层上板成功2026-10-29) 与 [显示修复记录](display_fix_2026-10-29.md)。
+>
+> **2026-10-27 状态（S12）★全部时序收敛**：SDRAM 域**两次降频 150 → 100 → 40 MHz** 后，全设计静态时序收敛——**SWNS +1.935 ns、STNS 0.000 ns、HWNS +0.011 ns，7 个 path group 全部 0 违例**，`flow_s6_bit.tcl` 打印 `S6_TIMING_PASSED` 并返回 **EXIT 0**（150 MHz 时是 `S6_TIMING_FAILED` / EXIT 3），`project/hdmi_td_Runs/phy_1/hdmi_td.bit` 已是时序收敛后的正式位流（629,640 B，2026-10-27 21:12）。
 >
 > **关键推理（两次实测反推常数开销）**：第一次降到 100 MHz 仍为负（读 DQ −5.565 ns、写 DQ −2.001 ns），但**内部逻辑域是 +2.604 ns、0 违例**。用 150/100 MHz 两个数据点互证，得到与频率无关的常数开销：**读 `slack = T/2 − 10.565 ns`、写 `slack = T/2 − 7.001 ns`**（预测值与实测误差 < 0.2 ns），由此算出临界频率 **读 47.33 MHz / 写 71.42 MHz**。40 MHz（T/2 = 12.5 ns）预测读 +1.935 / 写 +5.499，实测读 **+1.935** / 写 **+5.630**，完全吻合。
 >
@@ -112,7 +136,7 @@
 | HDMI TMDS 输出（APUG092 + PHY） | ⬜ | 管脚已核实（CLK=P1/D0=N1/D1=P4/D2=J3, LVDS33；**板载 HDMI 座, 无需转接板**）；实现可选底板例程 `hdmi_tx` 或官方 APUG092 |
 | SDRAM 帧缓存 | ⬜ | 官方 sdram IP + frame_read_write 移植（阶段四） |
 
-## 阶段三：HDMI 视频输出 ⬜
+## 阶段三：HDMI 视频输出 🔶（正式顶层已上板出图；显示器长时锁定未计时）
 
 前置条件：阶段二完成。
 
@@ -126,8 +150,8 @@
 | **工程同步机制** | ✅ | `scripts/sync_src.ps1` 升级为**双工程同步**（bringup_td + hdmi_td），带 MD5 增量比对与同步后 lint 双查 |
 | 静态检查 | ✅ | lint 26 文件：E0/E1/E2 全 0；ModelSim 语法检查：新增 2 模块编译通过 |
 | **TD 综合布线** | ✅ | 2026-10-25 修复 `.al` 后跑通完整 `flow_s6_bit.tcl`：`S6_PASS-optimize_rtl` → `optimize_gate` → `place` → `route` → `S6_BIT_FLOW_DONE`。**注意：流程跑通不等于时序收敛**，`S6_TIMING_FAILED: setup=-7.232 ns hold=0.023 ns`，脚本 exit 3，bit 仅作候选 |
-| 上板点亮 | ⬜ | 显示器稳定锁定 ≥30 分钟无异常。**正式顶层至今无上板记录**（唯一上板证据来自独立诊断工程 `image_dm_fix`） |
-| 记录分辨率与时序参数 | ⬜ | reports/hdmi_timing_report.md |
+| 上板点亮 | ✅ | **2026-10-29 正式顶层上板出图**：显示器显示 SD 卡内图片，用户确认显示异常解决（见 [S13](#s13显示异常修复与正式顶层上板成功2026-10-29)）。出口准则要求的「稳定锁定 ≥30 分钟」计时验收仍未做 |
+| 记录分辨率与时序参数 | 🔶 | 时序数字已归档在 `reports/hdmi_audio_quiet_20261029/`（`timing.txt`/`area.txt`/`coverage.txt`）；独立的 `reports/hdmi_timing_report.md` 未单独成文 |
 
 **阶段出口准则**：显示器稳定锁定 ≥30 分钟无异常。
 
@@ -136,7 +160,7 @@
 2. **PLL 不锁定**：若 LED[4] 不亮 → 用 TD IP Generator 重新生成 PLL（GUI 自动计算环路参数）
 3. **25MHz vs 25.175MHz**：偏差 0.7%（场频 59.58Hz），绝大多数显示器可接受；若某显示器不锁定，改用 PLL 生成 25.175MHz 近似值
 
-## 阶段四：资源读取与帧缓存 ⬜
+## 阶段四：资源读取与帧缓存 ✅（完整链路已上板显示；长时读回压力未做）
 
 前置条件：阶段三完成。
 
@@ -146,25 +170,25 @@
 | FAT32 短名定位与簇链遍历 | ✅ 仿真通过 | `rtl/storage/fat32_reader.v`、`tb_fat32_reader` |
 | BMP 解析（24 位非压缩起步） | ✅ 仿真通过 | `rtl/storage/bmp_parser.v`、`tb_bmp_parser` |
 | 跨时钟域 FIFO | ✅ 仿真通过 | `rtl/common/async_fifo.v`、`tb_async_fifo` |
-| SDRAM 帧缓存写入/读出（仲裁层） | 🔶 仿真通过，未上板 | `rtl/storage/framebuf_arbiter.v`、`tb_framebuf_arbiter` |
-| SDRAM 控制器封装（加密核 ⇄ 行为模型） | 🔶 仿真通过，已综合（150MHz 收敛） | `rtl/storage/sdram_ctrl_wrap.v`、`tb_sdram_ctrl_wrap` |
-| SDRAM 专用 150MHz 时钟 | ✅ TD 综合收敛（SWNS +0.104ns，Fmax 152.4MHz） | `rtl/storage/sdram_pll.v`、`sdram_bringup_top`、`progress.md` §S5-4 |
-| 完整链路：SD→BMP→SDRAM→HDMI | ⬜ | 单图显示记录 |
+| SDRAM 帧缓存写入/读出（仲裁层） | ✅ 仿真 + 上板 | `rtl/storage/framebuf_arbiter.v`、`tb_framebuf_arbiter`；读组首间隔已修为 13 拍（S13） |
+| SDRAM 控制器封装（加密核 ⇄ 行为模型） | ✅ 仿真 + 上板 | `rtl/storage/sdram_ctrl_wrap.v`、`tb_sdram_ctrl_wrap`；手动刷新 + 16 拍静默（S13），40 MHz 时序收敛 |
+| SDRAM 专用时钟 | ✅ TD 综合收敛（40 MHz，读 DQ +1.935 ns / 写 DQ +5.630 ns） | `rtl/storage/sdram_pll.v`、`sdram_bringup_top`、[S12 章节](#s12sdram-降频到-40mhz-后时序全部收敛2026-10-27) |
+| 完整链路：SD→BMP→SDRAM→HDMI | ✅ | **2026-10-29 上板单图完整显示**，用户确认无失真、白条消失（见 [S13](#s13显示异常修复与正式顶层上板成功2026-10-29)） |
 
 **阶段出口准则**：单张图片完整、无失真显示。
 
-## 阶段五：基础播放系统 ⬜
+## 阶段五：基础播放系统 🔶（逻辑已全部实现，板端逐项验收未完成）
 
 前置条件：阶段四完成。
 
 | 任务 | 状态 | 交付物 |
 |---|---|---|
-| 多图片切换（上一张/下一张） | 🔶 | `gallery_probe` 图库自动扫描 + `player_ctrl` 切图逻辑已仿真通过；切图的实际装载尚未上板 |
-| 自动轮播 + 播放/暂停 | 🔶 | `player_ctrl` 轮播定时器与暂停逻辑已仿真通过（tb_player_ctrl 94 条 PASS），且轮播间隔可经 KEY9 运行时缩放；未上板 |
-| 基础音频输出 | ⬜ | rtl/audio, audio_test |
-| 音视频联动（页面→音频关联） | ⬜ | 联动记录 |
-| 错误状态提示（缺图/格式错） | 🔶 | 图库扫描失败/装载失败已映射到 LED[7] 与数码管第 4 位（1=SD、2=装载、3=图库）；未上板 |
-| 状态显示（数码管/LED/画面状态栏） | 🔶 | LED 8 位与 4 位数码管已接线（含图库失败码）；未上板 |
+| 多图片切换（上一张/下一张） | 🔶 | `gallery_probe` 图库自动扫描 + `player_ctrl` 切图 + 双缓冲无缝切换已实现；板上只确认首图与单图，多图连续走查未做 |
+| 自动轮播 + 播放/暂停 | 🔶 | `player_ctrl` 轮播定时器与暂停逻辑已仿真通过（tb_player_ctrl 94 条 PASS），轮播间隔可经 KEY9 运行时缩放；板上未逐档验证 |
+| 基础音频输出 | 🔶 | `audio_tone_gen` 48 kHz/24 bit PCM → HDMI 内嵌（1/64 幅度）+ `pcm_to_pwm` 3.5 mm；`audio_arc` 提供 ACR。**新低音量待试听** |
+| 音视频联动（页面→音频关联） | 🔶 | 音调由播放状态驱动（空闲/扫描/装载/就绪/轮播/应急），KEY6 同时静音两路；板上未逐状态核对 |
+| 错误状态提示（缺图/格式错） | 🔶 | `err_prompt` 五类助记符（C/F/0/b/d + 类内子码）覆盖请插卡、请格式化、零张图、BMP 不符、数据通路与存储故障；板上只观察到 `d810` 一类 |
+| 状态显示（数码管/LED/画面状态栏） | 🔶 | LED 8 位与 4 位数码管已接线并随正式顶层工作；逐位语义未在板上全部核对 |
 
 **阶段出口准则**：基础验收标准 A1~A9 全部通过（见 project_definition.md 第六节）。
 
@@ -176,15 +200,20 @@
 
 | 任务 | 状态 | 交付物 |
 |---|---|---|
-| B1 图层叠加与字幕 | 🔶 | `rtl/video/video_overlay.v`：九宫格参考线（KEY11）、底部 12 格信息条（KEY12）、右侧音频电平条（KEY13）。**只有位图块，没有字符字形，显示不了文字字幕**；`rtl/osd/` 仍为空。未上板 |
-| B2 淡入淡出转场 | ⬜ | rtl/video/transition, 转场测试 |
+| B1 图层叠加与字幕 | ✅ | 赛题要求的四项字幕全部落地，通路为 `rtl/osd/` 三层：`osd_strings`（字符码表，`scripts/gen_osd_strings.py` 生成）→ `osd_font8x16`（8×16 点阵 41 字形，`scripts/gen_osd_font8.py` 生成）→ `osd_caption`（坐标/滚动/序号替换）。标题「SMART CAMPUS」、页面序号「IMG 07」、播放状态随 `playback_state` 自动切换、底部 64 字符滚动标语（约 69 秒一轮）。字幕带衬底压暗 1/4。**验证档位：仿真 + 综合布线；未上板** |
+| B2 淡入淡出转场 | ✅ | `rtl/storage/fade_mixer.v`（纯组合逐通道缩放，237 LUT + 2 DSP + 0 寄存器）+ `image_player` 内 2 位转场状态与 8 位亮度系数。换帧走「淡出到黑 → 全黑时翻帧首 → 淡入」，约 286 ms（`FADE_FRAMES=8`）。翻帧点落在全黑那一拍，故只需一路读通路——这是否决交叉溶解的原因（两路读需 27.4 M 字/s，占 40 MHz 的 68%，且要复制整套 reader 与双读口仲裁器）。`tb_fade_mixer` 14 条 + `tb_image_player` 三档 8,270 / 8,263 / 1,228,817（`flips_in_grey=0`），前端回归 20/20、TD 综合布线 setup +1.935 ns / hold +0.003 ns。**验证档位：仿真 + 综合布线；未上板**，见[B2 转场记录](fade_transition_2026-10-29.md) |
 | B3 实时参数调节与 OSD | 🔶 | 亮度五档（KEY7）、反色（KEY8）、轮播倍率 ×1~×4（KEY9）均运行时可调；参数值经 KEY12 信息条可见。**不保存、无菜单入口**。未上板 |
 | C1 音频可视化（音量柱起步） | 🔶 | `video_overlay` 内电平柱直接取 PCM 幅度（取绝对值后映射 bit[20:14] 到 0~127 像素），KEY13 开关。**无 FFT，不是频谱**。未上板 |
-| C2 图片自适应缩放（视余力） | ⬜ | 缩放模块 |
+| C2 图片自适应缩放 | ✅ | `rtl/storage/img_scaler.v` 串在 `bmp_parser` 与 `img_loader` 之间，按宽高比居中缩到 640×480 内（只缩不放，小图 1:1 居中）；Bresenham 行列各一组 (STEP,THRESH) 抽稀，目标尺寸由 21 位恢复余数除法器在帧头算一次；`bmp_parser` 新增 `CHECK_SIZE` 开关放开尺寸校验；`image_player` 改用缩放坐标寻址、按 `out_w*out_h` 折算字数判完成；新增 `rtl/video/image_window_mask.v` 在送显前把 letterbox 区屏蔽成黑。**目标宽必须 8 像素对齐**（`word_addr[20:2]` 截断 + 仲裁器四字突发组组内寻址的前提，仅偶数对齐会整帧错位）。`tb_img_scaler` 161 条 + 变异测试 11/11 全捕获、`tb_image_window_mask` 20 条、`tb_image_player` 四档 8,270 / 8,263 / 1,228,817 / 缩放 1,811、`tb_bmp_parser` 37 条全通过。**验证档位：仿真 + 综合布线；未上板**，见[C2 缩放记录](c2_scaler_2026-10-30.md) |
 
 > **本轮（2026-10-26，S9）把 B1/B3/C1 从零起点推到"有第一层实现"**：三个能力合并在一个纯组合模块 `video_overlay` 里完成，
 > 零 BRAM、零新增时钟域、零寄存器。它们共用的关键是"像素坐标 + 当前参数 → 输出颜色"这一条纯组合通路。
-> **三项都只有仿真证据，且都没有重新综合布线。**
+> **截至 2026-10-29，`video_overlay` 已随正式顶层进入综合布线并上板（顶层出图证明它不影响基础通路），
+> 但 KEY7～KEY14 这八个触发键仍未在真实硬件上按过——功能本身的证据仍只到仿真档。**
+
+> **2026-10-30 追加 B2**：转场没有走 `video_overlay`，而是插在 `pix_reader` 之后、`video_content_mux` 之前的
+> `fade_mixer` 上——因为它必须与 `de` 同拍（`pix_reader` 的 `pix_rgb565` 是组合输出），
+> 放进 `video_overlay` 会多绕一层且拿不到整帧恒定的亮度系数。阶段六至此只剩 C2 未开始。
 
 **阶段出口准则**：至少 B1+B2 稳定完成且回归通过。
 
@@ -2021,11 +2050,408 @@ SD 卡素材由 `scripts/prepare_board_verify_assets.ps1` 一键生成四套
 
 ---
 
-## 问题记录
+## S13：显示异常修复与正式顶层上板成功（2026-10-29）
+
+> 本节是阶段三「上板点亮」与阶段四「完整链路」两项长期 ⬜ 的收口记录。
+> 从 S12 的「时序收敛但从未上板」，走到「正式顶层在板上出图、用户确认显示异常解决」。
+
+### 一、现场事实与一次结论更正
+
+- 首测（2026-10-28）观察到的是**深蓝区周期窄白条**，不是「中央黑色数字看不见」。
+  重新测量原始照片后确认：**中央黑色数字 1 实际可见**，此前「数字缺失」的结论作废
+  （详见 [10-28 诊断记录](handover_2026-10-28_display_diagnosis.md) 的测量方法与被推翻的假设）。
+- 用户反馈「按 KEY4/KEY5 切换画面无变化」——这是**线索而非证据**：键码映射未核定时，
+  不能用它单独证伪任何假设（键盘行序至今仍是未核定项）。
+
+### 二、三个根因（全部有负测试对照）
+
+| # | 根因 | 证据 | 修复 |
+|---|---|---|---|
+| 1 | `framebuf_arbiter` 相邻读组首间隔 **12 个 40 MHz 周期不够**。APUG011 真实核在 bank/row 边界上，组首相隔 12 拍会**漏发 bank ACT**，读回数据错 | 12 拍负测试：10 项检查 / **5 错**、退出码 1；13 拍 + 数据手册时序：10 项检查 / **0 错**、退出码 0。102 个场景扫描中 **18 个 <13 拍场景全部失败**，所有 ≥13 拍场景全部通过 | `RD_GROUP_CYCLES` 默认改 13（40 MHz 下 325 ns） |
+| 2 | 刷新宏**表达式缺括号**。旧宏代入后 `SELF_REFRESH_INTERVAL = 0`，再减 10 得 **−10**，历史所称「有效 1250 拍」不成立 | 宏展开负测试 | 配置统一到 `ip/config/sdram/global_def.v` 并完整加括号；40 MHz → **625 拍**名义间隔 |
+| 3 | 核内自动刷新与外部手动刷新**交叠**，产生相邻 **25 ns 双 AREF**，违反 70 ns tRC | 时序核对 | `sdram_ctrl_wrap` 关闭核自动刷新；在完整四字组边界排空读返回后**静默 16 拍**再发单拍手动刷新；握手看门狗 1024 拍；粘滞 `refresh_error` 需复位，映射为 SDRAM 错误码 **8** |
+
+附带修掉一处：`C_RESET` 重试路径上仍能读到旧的同步故障（负测试 8271 项检查 / 2 错），
+修复后图像链 8265 / 8263 全零错。
+
+### 三、本轮实测证据
+
+- 上板同图（`assets/sd_verify/good/IMG001.BMP`，SHA256 `F7486BD0…D07A8A`）经**真实 SDRAM 核 + 引脚模型**：
+  **614,407 项检查零错**（0 缺像素、0 错像素、0 引脚模型时序错误）。
+- 刷新协议与故障恢复：**5 个场景、161,949 项检查零错**。
+- 整帧保持：保持 64 ms、物理 AREF **3843 次**；两次读回共 **307,200 字零错**。
+- 存储回归 5 套 TB：**220,706 项检查**零错；图像链三档 8,265 / 1,228,812 / 8,263 零错。
+- 串行视频回归：原图 1,299,794 四通道字 / 51,991,760 bit 零错，独立 TMDS 逆解码 623,986 像素 0 错；
+  相位扫描 0～7000 ps 共 8 场景 34,822 字 / 1,392,880 bit 零错。
+
+### 四、最终位流
+
+| 位流 | 入口 | 时间 | 大小 | 时序 | 用途 |
+|---|---|---|---|---|---|
+| `reports/display_fix_20261029/hdmi_display_fix.bit` | `project/flow_display_fix.tcl` | 2026-10-29 08:14:50 | 629,640 B | SWNS +1.935 / HWNS **+0.035** / STNS·HTNS 0 | **用户确认显示恢复的基线** |
+| `reports/hdmi_audio_quiet_20261029/hdmi_audio_quiet.bit` | `project/flow_hdmi_audio_quiet.tcl` | 2026-10-29 17:17:54 | 629,640 B | SWNS +1.935 / HWNS **+0.003** / STNS·HTNS 0 | HDMI 低音量试听版，**待试听** |
+
+两版资源与时序几乎相同（LUT 10,888 / 10,890，寄存器 5,825 / 5,809），**hold 不同（0.035 vs 0.003），引用时不可混用**。
+旧 `project/hdmi_td_Runs/phy_1/hdmi_td.bit` 不是最新交付；各构建入口读取**当前工作区源码**，
+重跑旧入口不会自动恢复历史哈希。
+
+### 五、HDMI 音频降到 1/64
+
+顶层在发射核入口把左右声道各**算术右移 6 位**（`HDMI_AUDIO_ATTEN_SHIFT = 6`，幅度 1/64 ≈ **−36.12 dB**）。
+3.5 mm（`pcm_to_pwm`）与画面上的电平条/波形**保持原幅度**，KEY6 同时静音两路。
+`audio_arc` 的 ACR 与 valid 时序不受影响。音频回归 19 + 5 条 PASS 覆盖音源、ACR、PWM；
+**顶层衰减本身经接线复核与完整 TD 构建，未被该回归直接编译覆盖**，因此仍需板上试听确认。
+
+### 六、仍未完成（本轮不宣称的部分）
+
+1. **低音量音频未试听**。下载后需按硬件复位键，确认响度、KEY6 静音、显示器音频解码均正常。
+2. **KEY7～KEY14 八个键仍未在板上按过**。键盘行序存在两处来源冲突，上板第一件事是核定行序，
+   否则八个键整体错位。核定方法见 [上板验证手册](board_verification_2026-10-27.md) §七。
+3. **多图连续播放、自动轮播、异常素材注入未逐项走查**。本轮上板只确认了「首图完整显示」。
+4. **长时稳定性未计时**。阶段三出口要求「显示器稳定锁定 ≥30 分钟」，阶段七要求 ≥2 小时，均未做。
+5. **SDRAM 读 DQ 余量 +1.935 ns 是全设计最小余量**，长时读回压力测试未做。
+
+### 七、复核命令
+
+```bash
+# 显示内容回归（真实 SDRAM 核 + 引脚模型 + 数据手册时序）
+powershell -ExecutionPolicy Bypass -File scripts/prepare_board_verify_assets.ps1
+powershell -ExecutionPolicy Bypass -File sim/scripts/run_display_content.ps1 -RealCore -DatasheetTiming -ByteGap 15 -ReportDir reports/local_check/display_content
+
+# 刷新协议与整帧保持
+powershell -ExecutionPolicy Bypass -File sim/scripts/run_sdram_refresh_regression.ps1 -ReportDir reports/local_check/refresh
+powershell -ExecutionPolicy Bypass -File sim/scripts/run_sdram_frame_retention.ps1 -ReportDir reports/local_check/retention
+
+# 重新构建两个位流
+& D:/TD_6_24_APP/bin/td_commands_prompt.exe ./project/flow_display_fix.tcl
+& D:/TD_6_24_APP/bin/td_commands_prompt.exe ./project/flow_hdmi_audio_quiet.tcl
+```
+
+**上板验证入口：`docs/board_verification_2026-10-27.md`**（六阶段手册，判据只用 HDMI 屏、8 个 LED、
+4 位数码管、蜂鸣器、3.5 mm 五个通道）。
+
+## S13b：初版换图噪点与科普态标记修复记录（2026-10-29 晚，后由独立科普页版本扩展）
+
+> 以下验证数据和科普标记实现记录的是独立科普页之前的初版。当前交付状态、科普页面实现及最新回归与构建数据，以本文件顶部摘要和 `reports/noise_sci_fix_20261029/manifest.json` 为准。
+
+S13 上板成功后做交互走查，用户反馈两处观感缺陷。两条都不是「坏了」，而是**设计上的一处偷懒**暴露出来。
+
+### 一、问题一：按 KEY0 / KEY1 换图时闪白色噪点
+
+**现象**：每次换图瞬间，画面上闪出白色碎点/白条，随即恢复正常图像。
+
+**根因**：`rtl/top/dmz_eg4s20_hdmi_top.v` 的显示优先级写成了一句三目：
+
+```verilog
+// 修复前
+wire [23:0] video_base = !de ? 24'd0
+                       : ((mode==2) ? 24'hFF0000
+                       : ((image_ready && image_pixel_valid) ? image888 : {pr,pg,pb}));
+```
+
+这里把两个**语义完全不同**的条件压进了同一个判断：
+
+- `image_ready` 是**帧级**状态：有没有一张完整的、可以显示的前台帧；
+- `image_pixel_valid` 是**像素级**状态：这一拍读通路有没有把像素送上来。
+
+换图时后台帧开始写入，写通道与前台读通道共享同一个 SDRAM 端口，算术上必然出现短暂的读欠载。旧写法认为「欠载了就该回落测试图」，于是该像素取 `{pr,pg,pb}`；而 `pattern_sel` 的复位值是 0，即 `test_pattern_gen` 的 8 色彩条，**最左一条正是 `24'hFF_FF_FF` 纯白**。换图越频繁，白点越明显。
+
+**修复**（`rtl/top/dmz_eg4s20_hdmi_top.v:236`）：
+
+```verilog
+// 修复后：两层嵌套，先问「有没有图」，再问「这一拍有没有像素」
+wire [23:0] video_base = !de ? 24'd0
+                       : ((mode==2) ? 24'hFF0000
+                       : (image_ready ? (image_pixel_valid ? image888 : 24'd0)
+                                      : {pr,pg,pb}));
+```
+
+语义变成：**只要还有前台帧，就永远走图片层**；某拍欠载则显示黑色（图像区的自然延伸），绝不漏出测试图案。测试图案退回它应有的角色——「完全没有素材时（无卡 / 图库为空 / 装载失败）的兜底画面」。
+
+> 这也是为什么用户会看到**白色**而不是彩色：漏出的恰好是复位值 0 那条的第一格。若 `pattern_sel` 复位在其他图案上，现象会变成别的颜色，反而更难判断。
+
+### 二、问题二：按 KEY3 看不出进入了科普态
+
+**现象**：按 KEY3，数码管状态位有变化，但画面没有任何可见反馈，用户无法判断当前是哪一态。
+
+**根因**：`player_ctrl` 的 KEY3 是 日常(0) → 科普(1) → 应急(2) 三态循环。三态里只有应急态有独占画面（顶层 `mode==2` 整屏红），而**日常与科普的画面内容完全相同**——两者的差别只体现在 `video_overlay` 底部信息条的第 5~6 号格子上，而信息条要先按 KEY12 才会显示。也就是说：`info_mode` 这个信号一路接到了叠加层，却没有一个「不看信息条也能看见」的表现形式。
+
+**修复**（`rtl/video/video_overlay.v`，新增第三级-A2 段）：
+
+```verilog
+// 科普态常显标记：顶部 8 像素通栏 + 左上 24×24 方块，合成 "L" 形
+wire px_sci = (info_mode == 2'b01) &&
+              ((active_y <= 10'd7) ||
+               ((active_x <= 11'd23) && (active_y <= 10'd31)));
+```
+
+并在合成表达式里把它插在信息方块之上、九宫格之下：
+
+```verilog
+rgb_mixed = px_grid  ? 24'h00_FF_00    // 九宫格参考线（最高）
+          : px_sci   ? 24'h00_C8_E0    // 科普态标记 ★新增
+          : px_box_on? 24'h40_E0_D0    // 信息条方块
+          : px_level ? 24'h20_FF_20    // 音频电平条
+          : px_wave  ? wave_rgb        // 波形
+          : px_info  ? 24'h10_18_20    // 信息条底
+          : img_layer;                 // 图像（最低）
+```
+
+设计要点：
+
+- **不参与亮度与反色**。标记取自 `px_sci` 分支，位于 `img_layer` 之外，因此 KEY7 调到最暗、KEY8 开反色时它都是同一个青色，不会因显示设置而消失。
+- **优先级可解释**：调试用的九宫格压过它（调试优先），它压过信息条（状态优先于说明）。
+- **零代价**：纯组合逻辑，不加 BRAM、不加时钟域，面积只涨了一个比较器分支（LUT 10,890 → 10,905）。
+
+### 三、验证
+
+| 项 | 结果 |
+|---|---|
+| `tb_video_overlay` 新增 V12 段 | 14 条断言：y=0/7 通栏、y=8 起只在 x≤23 有块、x=23 与 y=31 边界、x=24/y=32 之外无标记、`mode=0` 与 `mode=2` 都不画、九宫格优先、最暗+反色下颜色不变、消隐期强制 0。总检查 **64 → 90** |
+| `tb_key_action` | 因 KEY3 相关路径复核，断言 40 → **42**（新增 2 条三态边界） |
+| 前端回归（13 用例） | **13/13 全绿，612 条 PASS**，报告 `reports/noise_sci_fix_20261029/frontend/result.json`（2026-10-29 19:26） |
+| 静态检查 | `lint_verilog.py rtl` 40 文件、全工程 79 文件，**E0=E1=E2=0** |
+| 重新构建 | `project/flow_noise_sci_fix.tcl` → `NOISE_SCI_FIX_TIMING_PASSED: setup=1.935 hold=0.003`，EXIT 0 |
+| 位流 | `reports/noise_sci_fix_20261029/hdmi_noise_sci_fix.bit`，629,640 B，2026-10-29 19:35:06 |
+| 面积 | LUT **10,905**/19,600（55.64%）、寄存器 **5,798**（29.58%）、LE 11,843、BRAM9K 17/64、DSP 13/29、GCLK 4/16 |
+| 时序 | SWNS **+1.935 ns**、STNS 0、HWNS **+0.003 ns**；7 个 path group **全部 0 违例**（读 DQ +1.935 / 32 端点仍是全局瓶颈） |
+
+### 四、教训
+
+**「有没有」和「这一拍有没有」必须分开写。** 把帧级有效与像素级有效合并成一个条件，在正常情况下看不出问题（两者几乎总是同时为真），只在带宽竞争、换帧、复位释放这些短暂窗口里才破；而这类窗口恰恰是用户最容易察觉的（换图时人一定在看屏幕）。同理，**任何「模式切换」都必须有不需要额外操作就能看见的视觉反馈**——把状态藏在另一个按键（KEY12）之后，等于没有反馈。
+
+### 五、仍未完成
+
+1. **本轮两个修复待板上复验**：连续按 KEY0/KEY1 观察是否还有白点；按 KEY3 确认青条与左上角块出现。
+2. 低音量音频试听（S13 遗留）。
+3. KEY7～KEY14 八个键的板端核定与键盘行序。
+4. 多图连续播放、自动轮播、异常素材注入的逐项走查。
+5. 长时稳定性计时（≥30 分钟 / ≥2 小时）与 SDRAM 读 DQ 压力测试。
+
+---
+
+## S14：B1 图层叠加与字幕（2026-10-29 晚）
+
+### 一、这一轮补的是"字"，不是"块"
+
+B1 之前的状态是：`video_overlay` 已经有九宫格、信息条、电平条、波形、科普标记，但**没有任何字形** ——
+信息条是 12 个二进制位图块，"第几张图"只能靠数格子的位置来读。赛题 B1 要求的是
+「标题、页面序号、播放状态、动态计数/滚动标语」，这四样都得是**可读的文字**。
+
+所以本轮真正新增的是字符通路，落成 `rtl/osd/` 三个模块：
+
+| 模块 | 职责 | 规模 |
+|---|---|---|
+| `osd_font8x16` | 8×16 点阵字模 ROM，41 个字形（` -./0-9:A-Z`） | 750 行，纯组合 |
+| `osd_strings` | 16 行 × 64 列的字符码表 | 156 行，纯组合 |
+| `osd_caption` | 坐标定位、滚动偏移、序号替换、衬底带 | 290 行，纯组合 + 一个帧计数器 |
+
+`osd_font8x16` 与 `osd_strings` 都是**脚本生成**的，不手写：
+`scripts/gen_osd_font8.py`（PIL 栅格化 Consolas Bold）与 `scripts/gen_osd_strings.py`（按字符串自动展开列号）。
+理由很实际：字符表里数错一列，综合不报错、仿真不报错，只有上板才看得出来；让脚本数，就没有这个错误源。
+
+### 二、四个关键设计决策
+
+**1. 为什么是 8×16 而不是 8×8。**
+最初按 8×8 生成，实测 `A` 糊成一个实心块，`B`/`D`/`8` 三者互相难分 —— Consolas Bold 在 8×8 下笔画宽度就是 1 像素，
+`B` 的两个腔体必然填死。8×16 是经典 VGA 文本规格，笔画能拉开。代价是字模表大了一倍，但字模是纯常量表，综合后大部分会被优化掉。
+
+**2. 为什么字符集只有 41 个。**
+`0-9`、`A-Z`、` -./:`，就这些。字幕要表达的东西（标题、序号、状态词、标语）全是大写字母加数字。
+LUT 余量只剩约 36%，砍掉小写和其余标点是必要取舍；需要时改生成器的 `CHARSET` 常量重新 `--emit` 即可。
+
+**3. 为什么四路文字只例化一套 ROM（单路渲染）。**
+屏幕上同时有 4 处文字，但**一个像素任一时刻只属于其中一处** —— 四条 y 带互不重叠，标题与序号共用一条带靠 x 区分。
+所以只需要一套 `osd_strings` + `osd_font8x16`，用 if 选出当前像素的行号/列号。四套 ROM 会把 LUT 直接吃掉一大块。
+
+**4. 为什么字幕带用"压暗"而不是"填黑"。**
+填黑会在画面上糊出一条硬边黑条，观感很脏；压到 1/4 亮度则保留画面明暗层次，像半透明底纹，白字同样可读。
+只压暗图像层，不影响其它 OSD 图层（它们在下游优先级更高）。
+
+### 三、仿真暴露的三个真实缺陷（都不是风格问题）
+
+**缺陷 1：序号列号换算折返。**
+序号在 x∈[576,623]，`active_x[8:3]` 取的是 `(x>>3) mod 64`，72 折成 8，减 72 得到负数 —— 序号整块不显示。
+必须用 `active_x[9:3]`（mod 128）再减 72。这个错误在综合和仿真里都不会报错，只有逐点比对能抓到，
+所以 `tb_osd_caption` 的参考模型刻意用 `/` 和 `%` 算坐标（与 RTL 的位切片写法不同），一旦折返立刻失配。
+
+**缺陷 2：滚动的列内偏移用错了坐标。**
+标语滚动时列内偏移必须取**滚动后**的坐标 `ticker_src[2:0]`，用 `active_x[2:0]` 会让每个字符的笔画错位。
+同样是逐点比对抓到的。
+
+**缺陷 3：滚动计数器的位宽。**
+`scroll_px` 只给 6 bit 时，从 63 回绕到 0 会让整条标语瞬间跳 63 像素 —— 视觉上是一跳，不是平滑滚动。
+改成 9 bit（0..511），512 像素 = 64 字符 = 整轮，回绕时画面完全重合。
+
+### 四、验证证据（本轮实测，非历史引用）
+
+| 项 | 结果 |
+|---|---|
+| `tb_osd_caption` | **56 条断言全过**；**3057 点逐点比对零失配**；`ALL CHECKS PASSED: osd_caption` |
+| `tb_video_overlay` | 从 90 条扩到 **106 条全过**（新增 V13 字幕集成 16 条：开关生效/衬底压暗/笔画存在/序号联动/6 种状态词/标语滚动/不抢九宫格/消隐为 0） |
+| 前端回归 | `osd_caption` case 通过。另 16 个 case 通过 |
+| `lint_verilog.py rtl` | 50 个文件，E0/E1/E2 全 0 |
+| 综合布线（TD 6.24，2026-10-29 23:21） | `NOISE_SCI_FIX_TIMING_PASSED: setup=1.935 hold=0.003`；位流 629,640 字节 |
+| 资源占用 | LUT **13,502/19,600 = 68.89%**（较上一轮 12,544 增 **+958**，余量 31%）；寄存器 5,993 = 30.58%；BRAM9K 17/64；DSP 15/29 |
+| 网表落地确认 | `timing.txt` 中 42 行命中 `u_overlay/u_caption`，含 `u_caption/u_strings/sel0_syn_264 → hdmi/osd_strings.v(51)`、`u_caption/u_font/char_code[0] → hdmi/osd_font8x16.v(40)`，证明三层都真进了网表而非被优化掉 |
+| 前端回归（复跑） | **20/20 case 全通过**（含 `osd_panel` 55、`osd_autopop` 26、`fade_mixer` 14） |
+| 预览图 OCR 校验 | 三条静态带反读正确：`SMART CAMPUS` / `IMG 07` / `PLAY`；6 种状态词（PLAY/PAUSE/AUTO/WAITING/EMERGENCY/FAIL）全部正确；序号 0~31 遍历 **32 个值零失配** |
+| 预览图滚动校验 | 9 个相位（1/3/7/8/17/64/180/255/511）对比基准帧，**10176 像素笔画掩码零失配**；含 1/3/7/17/255/511 等非 8 倍数跨字符边界用例 |
+
+`tb_osd_caption` 的用例覆盖：C01 字模内容抽查、C02 字符表抽查、C03~C06 四条带逐点比对（标题/序号 4 个值/状态 6 行/标语两个滚动相位）、C07 带外透明、C08 关断静默、C09 滚动计数器（8 帧 +1、511 回绕、复位清零）、C10 衬底带几何。
+
+**预览图校验方法（`scripts/verify_caption_preview.py`）。** 上板前没有真实照片，先用 Python 按 RTL 同一套数据渲染一张 640×480 预览图，再把它反读回来核对，避免"看图觉得对"这种主观判据：
+
+- **静态三条带用 OCR**：把预览图按 8×16 网格切回字形，在 RTL 字模表里找唯一匹配。匹配不上说明渲染管线（坐标/替换）与 RTL 数据不一致。
+- **标语滚动不用 OCR，改用位移不变性**：滚动偏移不是 8 的整数倍时，屏幕上同一格会横跨两个字符，按格切分读出的是字模表里不存在的图案 —— 那是校验方法的局限，不是 RTL 的问题。改用纯像素级判据：`scroll=N` 的笔画掩码必须等于 `scroll=0` 的掩码平移 N 像素（模 512）。这条比 OCR 更强，它不关心"字是什么"，只要求"滚 N 像素 = 真的平移了 N 像素"。
+- **比对时剔除两类干扰**：① 衬底压暗作用于底图而底图不随滚动平移，所以只比笔画掩码、不比背景；② 预览图里画的九宫格竖线（x=213/426）穿过标语带且不随滚动，属叠加层像素。
+
+写这套校验的过程本身抓到 3 个**预览脚本**（非 RTL）的缺陷，值得记下来，因为它们都是"看起来对但其实是近似"：
+1. 滚动按"一格 8 像素共用一个列号"渲染 → 非 8 倍数相位画出半个字。RTL 里 `ticker_src = active_x + scroll_px` 逐像素各算各的，天然没有这个问题。
+2. 标语只画 64 格（512 像素），而 RTL 的 `ticker_band` 是全宽 640 像素（80 格，靠列号取模回到表头）。
+3. `parse_font` 把 ROM 索引当成 ASCII 用（索引 0..31 实为 ASCII 0x40..0x5F），导致所有大写字母读成 `?`。
+
+### 五、改动清单
+
+- 新增 `rtl/osd/osd_font8x16.v`、`rtl/osd/osd_strings.v`、`rtl/osd/osd_caption.v`
+- 新增 `scripts/gen_osd_font8.py`、`scripts/gen_osd_strings.py`
+- 新增 `scripts/render_caption_preview.py`（按 RTL 数据渲染 640×480 预览图）、`scripts/verify_caption_preview.py`（OCR + 滚动位移不变性校验）
+- 新增 `sim/testbench/tb_osd_caption.v`
+- 改 `rtl/video/video_overlay.v`：新增 `caption_en`/`play_state`/`auto_play` 三个端口，例化 `osd_caption`，优先级链从 7 级扩到 9 级
+- 改 `rtl/top/dmz_eg4s20_hdmi_top.v`：`.caption_en(1'b1)`、`.play_state(playback_state)`、`.auto_play(auto_play)`
+- 改 `sim/testbench/tb_video_overlay.v`：补三个端口、`defaults` 补默认值、新增 V13 与 `count_rect` 工具
+- 改 `sim/scripts/run_frontend_regression.ps1`：源列表加 4 个文件，case 加 `osd_caption`
+- 改 `scripts/sync_src.ps1`：登记 `osd_strings.v` / `osd_caption.v` 的 TD 工程副本
+
+### 六、仍未完成（本轮不宣称的部分）
+
+1. **未上板**。字幕的实际观感（字号是否够大、白字在真实照片上是否够清楚、滚动速度是否合适）只能上板判断。
+   当前验证档位是**仿真 + 综合布线**，不是上板。
+2. **不支持汉字**。汉字需 16×16 点阵，可沿用 `science_font16` 的范式（约 40 LUT/汉字）。41 个 ASCII 字形已用掉一部分 LUT 余量。
+3. **字幕层开关常接 1'b1**。16 个键已全部占满（见按键冲突事故记录），字幕作为常驻状态信息不做独立开关。
+   需要对比"有/无字幕"时由 `tb_osd_caption` 的 C08 覆盖关断路径。
+
+---
+
+## S15：B2 换帧转场（2026-10-30 凌晨）
+
+前置：S10 双缓冲无缝切换已成立（装载写后台、消隐换帧首、失败保留旧帧），但换帧是硬切换，画面不撕裂却突兀。S15 补过渡。
+
+### 一、为什么不是交叉溶解
+
+这是本轮最重要的一次取舍，结论是**主动否决**，不是做不出来。
+
+交叉溶解要同时读旧帧与新帧，按 α 加权求和。但 `pix_reader` 只有一套读通路（一个读 FIFO、一组 `rd_req/rd_ack/rd_data`），`framebuf_arbiter` 只有一个 `rd_addr` 和一组 `rd_frame_base/rd_frame_last` 回绕边界。同时读两帧意味着：复制整套读通路、把仲裁器扩成双读口、重做信用记账与 `rd_restart` 语义。
+
+带宽账也过不去：
+
+| 项目 | 数值 |
+|---|---|
+| 输出像素率 | 640 × 480 × 59.52 Hz ≈ 18.3 M 像素/s |
+| 折算读字数（两像素一字） | 9.14 M 字/s |
+| 交叉溶解读需求 | 两路并发 → 18.3 M 字/s |
+| 叠加装载写需求 | 再 +9.14 M 字/s → **27.4 M 字/s**（占 40 MHz 的 68%） |
+
+而这还是平均值。`RD_GROUP_CYCLES = 13` 的读组首间隔保护会把实际可用带宽再压低，转场期正好是"边装新图边显示"的叠加窗口，读带宽翻倍必然把装载挤成饥饿。
+
+最要命的是：S10 的单读通路证据（`overlap_cycles=2,085,846`、`starve_cycles=0`）建立在现有结构上，一旦改双读口，那些证据全部作废。**为了一个过渡效果推翻一个已验证的结构，风险与收益不成比例。**
+
+### 二、淡出到黑绕开了这两堵墙
+
+关键观察：**如果混合的另一端恒为黑色，就永远只需要读一帧。**
+
+- 淡出阶段读旧帧，输出 = 旧帧 × α，α 从 1 降到 0；
+- 全黑那一帧读哪一帧都无所谓，因为乘数是 0；
+- 淡入阶段读新帧，输出 = 新帧 × α，α 从 0 升到 1。
+
+翻帧点被安排在全黑那一拍——全黑时两帧的加权和恒等于黑，**"翻帧"在数学上不可见**。这正好复用已有的 `vblank_rise` 换帧机制，读带宽零增量、BRAM 零增量、仲裁器零改动。
+
+代价是观感比交叉溶解"重"一点。对信息展示场景，这个取舍划算。
+
+### 三、混合器的两个坑
+
+**坑 1：必须逐通道缩放。** 把 16 位 RGB565 当一个整数右移，纯白 `16'hFFFF >> 8 = 16'h00FF`——绿色分量被挤进红/蓝位置，白变蓝。RGB565 是**打包在一个字里的三个独立数**，任何整体移位都会让高位通道的低位比特流进低位通道。`tb_fade_mixer` 的 F03 专门守这条：`level=128` + `F800`（纯红）必须输出 `7800`，蓝通道严格为 0。
+
+**坑 2：`gain = level + 1`。** 若直接用 `level` 当乘数，满档 `255/256 ≈ 0.996`，红通道 31 → 30，整幅画面永久偏暗一档。加 1 让 `level=255` 时 `gain=256`，`r × 256 >> 8 = r` **逐位恒等**；`level=0` 时 `gain=1`，各通道最多 6 位，右移 8 位必为 0，**精确全黑**。零成本修正（一个 9 位加法器）。
+
+### 四、转场状态机
+
+`fade_alpha` 只在 `vblank_rise` 推进——若在行消隐甚至逐像素更新，同帧上下亮度不同，屏幕上会出现横向亮度台阶滚动，比硬切换更难看。
+
+```verilog
+if (commit_pending) begin
+    if (!image_ready) begin          // 首帧没有可淡出的上一帧，直接提交并全亮
+        front_sel <= back_sel; image_ready <= 1'b1; commit_pending <= 1'b0;
+        fade_alpha <= 8'hFF; fade_state <= F_IDLE;
+    end else if (!FADE_ON) begin
+        if (vblank_rise) begin front_sel <= back_sel; commit_pending <= 1'b0; end
+    end else begin
+        if (vblank_rise) begin
+            if (fade_alpha > FADE_STEP) fade_alpha <= fade_alpha - FADE_STEP;
+            else fade_alpha <= 8'h00;
+        end
+        // 上一拍已把系数压到 0，这一次消隐就是全黑换帧点
+        if ((fade_alpha == 8'h00) && vblank_rise) begin
+            front_sel <= back_sel; commit_pending <= 1'b0; fade_state <= F_IN;
+        end else begin fade_state <= F_OUT; end
+    end
+end else if (fade_state == F_IN) begin
+    if (vblank_rise) begin
+        if (fade_alpha < (8'hFF - FADE_STEP)) fade_alpha <= fade_alpha + FADE_STEP;
+        else begin fade_alpha <= 8'hFF; fade_state <= F_IDLE; end
+    end
+end
+```
+
+`FADE_FRAMES = 8` → `FADE_STEP = 32`，17 个消隐周期 × 16.8 ms ≈ **286 ms**。
+
+**这里踩过一个真实的坑**：`C_SHOW` 重装分支原来没有清 `commit_pending`。转场期间它一直是 1（要等全黑才清），新请求进来时不清它，这次提交会在**新帧装载到一半**时翻帧首——屏幕上一半新一半旧。同时 `fade_state` 不重置的话，下一帧的淡入逻辑根本不执行，画面永久卡暗。两处都补了复位。
+
+### 五、验证证据（本轮实测）
+
+| 项 | 结果 |
+|---|---|
+| `tb_fade_mixer` | **14 条断言全过**（F01 满档恒等 / F02 零档全黑 / F03 通道独立 / F04 单调 / F05 逐通道公式 256 档 / F06 中间档） |
+| `tb_image_player` 默认档 | `checks=8270 errors=0`；`FADE: frames=4 flips_at_black=4 flips_in_grey=0 black_frames=8`；`starve_cycles=0` |
+| `tb_image_player` 单缓冲档 | `checks=8263 errors=0`；`FADE: flips_at_black=0 flips_in_grey=0 black_frames=0`（转场随 `SEAMLESS` 自然关闭） |
+| `tb_image_player` FULL 640×480 | `checks=1228817 errors=0`；`FADE: frames=2 flips_at_black=1 flips_in_grey=0 black_frames=2` |
+| 前端回归 | **20/20 case 全通过**，累计 825 条 PASS |
+| 整帧逐像素回归 | `checks=614405 errors=0 missing=0 mismatched=0 frameIdentical=True` |
+| `lint_verilog.py rtl` | 51 个文件，E0/E1/E2 全 0 |
+| TD 综合布线 | `B2_FADE_TIMING_PASSED: setup=1.935 hold=0.003`；bitgen 成功（423,141 bits），位流 629,640 字节 |
+| 组合环 | `There are 0 combinational loops.` |
+| 资源占用 | LUT 13,502/19,600 = 68.89%；寄存器 5,993 = 30.58%；BRAM9K 17/64；DSP 15/29；`u_fade` 实例行 **237 LUT + 2 DSP + 0 寄存器** |
+
+**TB 首轮曾报 `flips_in_grey=2` 假失败**。加 TRACE 打印真实波形后才看清：`front_sel_d` 比 `front_sel` 晚一拍，而首帧提交时 `image_ready` 恰好在同一拍才置 1，观测块读到的是"已就绪"，把**首帧首次发布**误记成一次转场翻帧。RTL 一直是对的。修法是 TB 补 `image_ready_d`（与 `front_sel_d` 同步晚一拍），首帧发布时它仍为 0，天然排除。
+
+顺带修了 `task terminal`：原来只等 `loading || commit_pending`，淡入阶段两者都是 0 会提前返回，导致 `check_frame` 比对到暗画面。
+
+### 六、仍未完成（本轮不宣称的部分）
+
+1. **未上板**。286 ms 的过渡在真实显示器上是否合适（会不会显拖沓、全黑帧是否真的看不见）只能上板判断。当前验证档位是**仿真 + 综合布线**。
+2. **连续换图时的策略未定**。淡出阶段显示旧帧，用户连按换图会连续看到几次"暗下去又亮起来"。是否要"转场中忽略新请求"取决于上板观感，本轮不做。
+3. **`FADE_FRAMES` 是编译期参数**。16 个键已全部占满，无空闲键位可调。
+4. **不解决 KEY0/KEY1 切图白色噪点**。那是独立缺陷，根因未定位。转场只是把换帧点藏进全黑，不改变欠载像素的来源。
+
+---
 
 | 日期 | 问题 | 影响 | 处理 | 状态 |
 |---|---|---|---|---|
-| 2026-10-28 | **【上板首测·根因】顶层 `image_player.sd_ready` 接成 `sd_ok`，导致 SD 总线交接竞态**：① `image_player` 的 `C_WAIT` 只看 `sd_ready && !blk_busy`、**不看 `load_req`**（`image_player.v:159`）；② `sd_ok` 在探针成功那一刻就拉高，而此时 `gallery_probe` 才刚开始扫描、`sd_owner_gallery=1`；③ 播放器约 20 拍后冲进 `C_LOAD` 发出单拍 `blk_start`，而 `sd_arb_start` 此刻选的是 `gallery_start` → **请求被直接丢弃、从未到达 `sd_spi_ctrl`**；④ `img_loader` 在 `T_FATRD`/`T_DATRD` 只等 `blk_done`、无超时也不重发 → 永久挂死；⑤ 4 秒后 `image_player` 的 `LOAD_TIMEOUT` 兜底报 `error_code=9` | 上板后数码管稳定显示 **`d810`**（`image_err=9` 装载超时），LED 只有 D4/D5/D7 亮、**D6(装载中) 灭**、`image_ready=0`；屏幕永远出不来图。**降频到 40MHz、文件放根目录、卡格式都无关** | `.sd_ready` 改接 `sd_owner_player`（`= sd_ok && (gallery_done || gallery_fail)`，正好表达「扫描已完结、总线归播放器」），并在顶层插入 30 行根因注释。**为什么历史 `image_dm_fix` 工程能出图**：它源文件清单里没有 `gallery_probe`，`sd_owner_gallery` 恒 0，播放器独占总线，竞态根本不存在 | ✅ 已修复（待上板复测） |
+| 2026-10-30 凌晨 | **B2 换帧转场落地**（S15） | 双缓冲换帧不再硬切换，改为淡出到黑 → 全黑时翻帧首 → 淡入，约 286 ms | 新增 `rtl/storage/fade_mixer.v`（纯组合逐通道缩放，`gain = level+1` 保证两端精确，237 LUT + 2 DSP + 0 寄存器）；`image_player` 新增 `FADE_EN`/`FADE_FRAMES` 参数、2 位转场状态与 8 位亮度系数，α 只在 `vblank_rise` 推进；**否决交叉溶解**（两路读需 27.4 M 字/s = 40 MHz 的 68%，且要复制 reader 与双读口仲裁器）；`tb_fade_mixer` 14 条 + `tb_image_player` 三档 8,270 / 8,263 / 1,228,817 全零错，前端回归 20/20，TD 综合布线 `B2_FADE_TIMING_PASSED: setup=1.935 hold=0.003` | ✅ 仿真 + 综合布线通过；**未上板**，见[B2 转场记录](fade_transition_2026-10-29.md) |
+| 2026-10-30 凌晨 | **转场期间用户换图会让画面卡在暗态，且可能在装载中途翻帧首** | 若只重置 α 不重置 `fade_state`，下一帧淡入逻辑不执行；转场期 `commit_pending` 一直为 1，新请求进来时不清它会在新帧装载一半时翻帧首 | `C_SHOW`/`C_FAIL` 重装分支补 `if (FADE_ON && commit_pending) commit_pending <= 1'b0;` + `fade_alpha <= 8'hFF; fade_state <= F_IDLE;`；看门狗分支同样补复位 | ✅ 已修复（`tb_image_player` CASE 7 覆盖） |
+| 2026-10-30 凌晨 | **`tb_image_player` 首轮报 `flips_in_grey=2` 假失败** | 险些误判 RTL 有缺陷 | 加 TRACE 后确认 `front_sel_d` 比 `front_sel` 晚一拍，首帧发布时 `image_ready` 同拍才置 1，观测块把首次发布误记成转场翻帧。TB 补 `image_ready_d`（同步晚一拍）排除首帧；另修 `task terminal` 等待条件加 `|| (dut.fade_state != 2'd0)`，否则淡入期提前返回导致 `check_frame` 比对暗画面 | ✅ 已修复 |
+| 2026-10-30 凌晨 | **`tb_fade_mixer` F03 首跑假失败 `0000`** | 纯组合模块断言读到未落定的输出 | 赋值后缺 `#1`。纯组合模块的 TB 断言前必须让组合逻辑落定 | ✅ 已修复 |
+| 2026-10-30 凌晨 | **`td.exe -batch -script` 不执行脚本，弹窗挂死**（CPU 只 11 秒却挂 25 分钟） | 综合布线流程看似卡住，产物目录被误刷新 | 唯一可用入口是 `D:\TD_6_24_APP\bin\td_commands_prompt.exe`，且**路径参数必须用正斜杠**（反斜杠被吞：`flow` 变 `low`，`\f` 变换页符） | ✅ 已规避 |
+| 2026-10-30 凌晨 | **`reports/noise_sci_fix_20261029/area.txt` 被误当 B2 前净基线** | 该目录 area.txt/timing.txt 曾被覆盖刷新，且已含 `u_fade` 行，两版 SHA 一致 | 不做顶层 LUT 差减；B2 净增量只由 `area.txt:203` 的 `u_fade` 实例行（237 LUT + 2 DSP + 0 寄存器）说明 | ✅ 已澄清 |
+| 2026-10-29 晚 | **【初始假设，现场尚未证实】**顶层旧选择逻辑把 `image_ready`（帧级）与 `image_pixel_valid`（像素级）压进同一个三目；推测换图时读欠载回退到纯白测试彩条 | 按 KEY0/KEY1 换图时闪白色噪点/白条 | 增加 mux：图片已就绪但像素无效时输出黑色；该窄条件仿真通过，但用户已烧录该位流并确认噪点仍在；完整链路根因未定位，见[交接报告](handover_2026-10-29_noise_unresolved.md) | 🔴 未解决 |
+| 2026-10-29 晚 | **【科普态不可见·根因】KEY3 三态里日常与科普画面完全相同**，唯一区别藏在 KEY12 信息条的 `info_mode` 位，不按 KEY12 就无从判断 | 按 KEY3 无任何可见反馈，用户无法确认是否生效 | `video_overlay` 新增 `px_sci`：`info_mode==2'b01` 时画顶部 8 像素通栏 + 左上 24×24 块（`24'h00C8E0`），置于九宫格之下、信息方块之上，**不参与亮度与反色** | ✅ 已修，待板上复验 |
+| 2026-10-29 晚 | **本轮回归与重建** | — | 前端 13/13、**612 条 PASS**（`tb_video_overlay` 64→90、`tb_key_action` 40→42）；lint 79 文件 E0=E1=E2=0；`flow_noise_sci_fix.tcl` 打印 `NOISE_SCI_FIX_TIMING_PASSED: setup=1.935 hold=0.003`，EXIT 0；位流 `reports/noise_sci_fix_20261029/hdmi_noise_sci_fix.bit`（19:35:06，629,640 B）；LUT 10,905 / REG 5,798 / LE 11,843 | ✅ 已验证 |
+| 2026-10-29 | **【显示异常·根因】`framebuf_arbiter` 相邻读组首间隔 12 个 40 MHz 周期不足**：APUG011 真实核在 bank/row 边界上，组首相隔 12 拍会漏发 bank ACT | 深蓝区出现**周期窄白条**，画面内容整体正确但有规律性坏点 | `RD_GROUP_CYCLES` 默认 **12 → 13**（40 MHz 下 325 ns）。负测试：12 拍 10 检查 / 5 错、退出码 1；13 拍 + 数据手册时序 10 检查 / 0 错、退出码 0；102 场景扫描中 18 个 <13 拍场景全部失败 | ✅ 已验证（用户确认解决） |
+| 2026-10-29 | **【显示异常·根因】刷新宏表达式缺括号**：`global_def.v` 的 `SELF_REFRESH_INTERVAL` 宏展开后为 0，减 10 得 **−10** | 刷新间隔实际未生效；历史「有效 1250 拍」的结论不成立 | 配置统一到 `ip/config/sdram/global_def.v` 并**完整加括号**；40 MHz → **625 拍**名义间隔。`scripts/sync_src.ps1` 负责同步到被忽略的 `ip/local/sdram/global_def.v` | ✅ 已修复 |
+| 2026-10-29 | **【显示异常·根因】核内自动刷新与手动刷新交叠**，产生相邻 **25 ns 双 AREF**，违反 70 ns tRC | 与根因 1 叠加，表现为周期白条 | `sdram_ctrl_wrap` **关闭核自动刷新**；完整四字组边界排空读返回后**静默 16 拍**再发单拍手动刷新；握手看门狗 1024 拍；粘滞 `refresh_error` 需复位，映射为 SDRAM 错误码 **8** | ✅ 已验证 |
+| 2026-10-29 | **【上板·成功】正式顶层在 DMZ-EG4S20 板上显示 SD 卡图片**，用户确认显示异常解决 | — | 位流 `reports/display_fix_20261029/hdmi_display_fix.bit`（08:14:50，629,640 B，SWNS +1.935 / HWNS +0.035 / STNS·HTNS 0，LUT 10,888 / REG 5,825 / BRAM 17）；44 个构建输入哈希前后未变 | ✅ 已上板确认 |
+| 2026-10-29 | **HDMI 内嵌音频过响**，用户要求降低 | 音量为原幅度 1/64 | 顶层新增 `HDMI_AUDIO_ATTEN_SHIFT = 6`，左右声道入口**算术右移 6 位**（≈ −36.12 dB）；3.5 mm 与画面电平/波形保持原幅度；KEY6 同时静音两路。位流 `reports/hdmi_audio_quiet_20261029/hdmi_audio_quiet.bit`（17:17:54，629,640 B，HWNS +0.003），打印 `HDMI_AUDIO_QUIET_TIMING_PASSED: setup=1.935 hold=0.003` | 🔶 待板上试听 |
+| 2026-10-28 | **【上板首测·根因】顶层 `image_player.sd_ready` 接成 `sd_ok`，导致 SD 总线交接竞态**：① `image_player` 的 `C_WAIT` 只看 `sd_ready && !blk_busy`、**不看 `load_req`**（`image_player.v:159`）；② `sd_ok` 在探针成功那一刻就拉高，而此时 `gallery_probe` 才刚开始扫描、`sd_owner_gallery=1`；③ 播放器约 20 拍后冲进 `C_LOAD` 发出单拍 `blk_start`，而 `sd_arb_start` 此刻选的是 `gallery_start` → **请求被直接丢弃、从未到达 `sd_spi_ctrl`**；④ `img_loader` 在 `T_FATRD`/`T_DATRD` 只等 `blk_done`、无超时也不重发 → 永久挂死；⑤ 4 秒后 `image_player` 的 `LOAD_TIMEOUT` 兜底报 `error_code=9` | 上板后数码管稳定显示 **`d810`**（`image_err=9` 装载超时），LED 只有 D4/D5/D7 亮、**D6(装载中) 灭**、`image_ready=0`；屏幕永远出不来图。**降频到 40MHz、文件放根目录、卡格式都无关** | `.sd_ready` 改接 `sd_owner_player`（`= sd_ok && (gallery_done \|\| gallery_fail)`，正好表达「扫描已完结、总线归播放器」），并在顶层插入 30 行根因注释。**为什么历史 `image_dm_fix` 工程能出图**：它源文件清单里没有 `gallery_probe`，`sd_owner_gallery` 恒 0，播放器独占总线，竞态根本不存在 | ✅ 已修复（2026-10-29 上板确认出图） |
 | 2026-10-28 | **`img_loader` / `fat32_reader` 等 `blk_done` 无超时保护**：`img_loader.v` 的 `T_FATRD`/`T_DATRD` 与 `fat32_reader.v` 的 `S_RX` 三处只等握手，请求被丢弃时既不报错也不重发 | 静默挂死只能靠上层 4 秒 `LOAD_TIMEOUT` 兜底，而该超时把「等初始化」「等写完成」「等 SD」三种情况全合并成同一个 `error_code=9`，现场无法定位 | 新增 `BLK_TIMEOUT` 参数（2,097,152 拍 ≈ 84ms @25MHz，**必须大于 `sd_spi_ctrl` 的 `TOKEN_TIMEOUT` 1,048,576 拍 ≈ 42ms**，保证控制器自己超时先发生）；`img_loader` 超时报新码 **`E_BLKTMO = 4'd10` → 数码管 `dA`**（取 10 而非 6：6 已被 `image_player` 占用为"SD 失败"）；`fat32_reader` 超时仍报 `4'd5`（上层映射表已饱和） | ✅ 已加固 |
 | 2026-10-28 | **修复后重新综合布线，时序与资源均未退化** | — | `S6_TIMING_PASSED` / EXIT 0；`SWNS +1.935ns / STNS 0.000ns`、`HWNS +0.003ns`（修复前 +0.011）；bit 629,640 B @17:41:37；lint 77 文件 E0/E1/E2=0 | ✅ 已验证 |
 | 2026-10-27 | **`sdram_pll` 的 C1/C2 输出没有走全局时钟网**：只有 C0 经 `bufg_feedback` 进 BUFG，驱动 844 个负载的 C1 走普通布线（延迟 2.410 ns），C2 被判 local routing | `PHY-5079` + `USR-6135` 两条 CRITICAL-WARNING；`clkc[1]` 自身域余量仅 +0.240 ns | C1/C2 各补一级 `EG_LOGIC_BUFG`；`#gclk` 2→4、余量 +0.240→+0.326 ns、两条 CRITICAL-WARNING 归零 | ✅ 已修复 |

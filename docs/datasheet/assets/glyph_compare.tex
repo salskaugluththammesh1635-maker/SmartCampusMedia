@@ -1,0 +1,68 @@
+% 8x8 vs 8x16 粒度对比 —— 由 gen_datasheet_assets.py 生成
+\begin{tikzpicture}[x=0.155cm,y=0.155cm]
+  % --- 8x8 栅格化的 A ---
+  \fill[dsgrid] (0,0) rectangle ++(8,8);
+  \fill[dsink] (3,6) rectangle ++(2,1);
+  \fill[dsink] (3,5) rectangle ++(2,1);
+  \fill[dsink] (3,4) rectangle ++(1,1);
+  \fill[dsink] (5,4) rectangle ++(1,1);
+  \fill[dsink] (2,3) rectangle ++(4,1);
+  \fill[dsink] (2,2) rectangle ++(1,1);
+  \fill[dsink] (5,2) rectangle ++(1,1);
+  \node[below,font=\scriptsize\ttfamily] at (4,-0.2) {A};
+  \begin{scope}[shift={(0,-11)}]
+    \dsglyph{1}
+  \end{scope}
+  % --- 8x8 栅格化的 B ---
+  \fill[dsgrid] (11,0) rectangle ++(8,8);
+  \fill[dsink] (13,6) rectangle ++(4,1);
+  \fill[dsink] (13,5) rectangle ++(2,1);
+  \fill[dsink] (16,5) rectangle ++(1,1);
+  \fill[dsink] (13,4) rectangle ++(4,1);
+  \fill[dsink] (13,3) rectangle ++(2,1);
+  \fill[dsink] (16,3) rectangle ++(1,1);
+  \fill[dsink] (13,2) rectangle ++(4,1);
+  \node[below,font=\scriptsize\ttfamily] at (15,-0.2) {B};
+  \begin{scope}[shift={(11,-11)}]
+    \dsglyph{2}
+  \end{scope}
+  % --- 8x8 栅格化的 8 ---
+  \fill[dsgrid] (22,0) rectangle ++(8,8);
+  \fill[dsink] (25,6) rectangle ++(3,1);
+  \fill[dsink] (24,5) rectangle ++(2,1);
+  \fill[dsink] (27,5) rectangle ++(1,1);
+  \fill[dsink] (25,4) rectangle ++(3,1);
+  \fill[dsink] (24,3) rectangle ++(2,1);
+  \fill[dsink] (27,3) rectangle ++(1,1);
+  \fill[dsink] (25,2) rectangle ++(3,1);
+  \node[below,font=\scriptsize\ttfamily] at (26,-0.2) {8};
+  \begin{scope}[shift={(22,-11)}]
+    \dsglyph{56}
+  \end{scope}
+  % --- 8x8 栅格化的 D ---
+  \fill[dsgrid] (33,0) rectangle ++(8,8);
+  \fill[dsink] (35,6) rectangle ++(4,1);
+  \fill[dsink] (35,5) rectangle ++(1,1);
+  \fill[dsink] (38,5) rectangle ++(1,1);
+  \fill[dsink] (35,4) rectangle ++(1,1);
+  \fill[dsink] (38,4) rectangle ++(1,1);
+  \fill[dsink] (35,3) rectangle ++(1,1);
+  \fill[dsink] (38,3) rectangle ++(1,1);
+  \fill[dsink] (35,2) rectangle ++(3,1);
+  \node[below,font=\scriptsize\ttfamily] at (37,-0.2) {D};
+  \begin{scope}[shift={(33,-11)}]
+    \dsglyph{4}
+  \end{scope}
+  % --- 8x8 栅格化的 0 ---
+  \fill[dsgrid] (44,0) rectangle ++(8,8);
+  \fill[dsink] (47,6) rectangle ++(3,1);
+  \fill[dsink] (46,5) rectangle ++(4,1);
+  \fill[dsink] (46,4) rectangle ++(4,1);
+  \fill[dsink] (46,3) rectangle ++(2,1);
+  \fill[dsink] (49,3) rectangle ++(1,1);
+  \fill[dsink] (47,2) rectangle ++(3,1);
+  \node[below,font=\scriptsize\ttfamily] at (48,-0.2) {0};
+  \begin{scope}[shift={(44,-11)}]
+    \dsglyph{48}
+  \end{scope}
+\end{tikzpicture}

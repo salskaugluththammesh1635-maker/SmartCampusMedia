@@ -1,7 +1,18 @@
 # HDMI 音频嵌入（A4 / 基础验收 5）
 
-日期：2026-10-26
-范围：把原来只有视频的 HDMI 输出改成**带内嵌音频**的 HDMI 1.4b 输出；把原来固定 440 Hz 的 PWM 测试音换成**按播放状态变化的真实 PCM**，并让 HDMI 内嵌音频与 3.5 mm 接口共用同一份样本。
+> **当前状态（2026-10-29）：** 用户要求 HDMI 音量调到很小。顶层在 HDMI 发射核入口将左右声道有符号 PCM 算术右移 6 位，幅度降为 **1/64（−36.12 dB）**；当前音源峰值约 ±32768 / 24 bit 满幅。3.5 mm 与画面电平/波形仍用原音源幅度。48 kHz 采样、ACR 和 KEY6 静音保持当前逻辑。低音量版构建通过，下载与试听结果待反馈。
+
+初版日期：2026-10-26；维护更新：2026-10-29。本文说明 HDMI 内嵌音频、状态音源及 PWM 共用音源的结构；§7.2 的初版负余量和面积保留为历史数据。
+
+## 当前试听版本
+
+[低音量位流](../reports/hdmi_audio_quiet_20261029/hdmi_audio_quiet.bit) 生成于 **2026-10-29 17:17:54**，629640 B，SHA256：
+
+`F6F3F44E61095492738BEA635F69C238CC5CFD6CFC39AF939538C9B5A2FC1863`
+
+[构建清单](../reports/hdmi_audio_quiet_20261029/manifest.json)绑定源码与产物；TD v6.2.168116 退出 0，setup **+1.935 ns**、hold **+0.003 ns**、TNS 均 0，覆盖率 99.87%。LUT 10890 / 19600、REG 5809 / 19600。显示修复基线已获用户确认，详见[显示修复记录](display_fix_2026-10-29.md)；该反馈不等于低音量版试听通过。
+
+下载本版并硬件复位后，在显示器打开音频的条件下试听，再按 KEY6 检查静音/恢复。记录是否出声、音量是否合适、显示器型号以及使用的位流；完整步骤见[板端验证手册](board_verification_2026-10-27.md)。本板无 DDC/EDID，实际接收端音频兼容性仍需现场结果。
 
 ---
 
@@ -56,12 +67,12 @@ hdmi_1_4b_transmitter_core_wrapper #(
 
 | 模块 | 行数 | 作用 | 关键设计点 |
 |---|---|---|---|
-| [`audio_tone_gen`](../../rtl/audio/audio_tone_gen.v) | 160 | 48 kHz / 24 bit PCM 音源 | 分数分频使能；8 音 LUT；三角波（比方波柔和，谐波按平方衰减）；**静音时仍发 `valid`**（核要求输入速率 = 采样率） |
-| [`audio_arc`](../../rtl/video/hdmi/audio_arc.v) | 71 | ACR 包的 CTS/N | `ACR_N=6144`，`AUDIO_DIV=48`（每 48 样本一包）；`cts` 每拍自增、发包容错后清零 |
-| [`video_rgb_to_axis`](../../rtl/video/hdmi/video_rgb_to_axis.v) | 81 | RGB+DE+VS → AXIS | VS 跳变后行首发一次 `user`；`x_cnt==639` 发 `last` |
-| [`hdmi_phy`](../../rtl/video/hdmi/hdmi_phy.v) | 62 | 4 路 10 bit TMDS 串化 | 输入先全位反序 |
-| [`lane_lvds_10_1`](../../rtl/video/hdmi/lane_lvds_10_1.v) | 87 | 单 lane 2 bit/拍移位 + ODDR | `EG_LOGIC_ODDR(d1=data[0], d0=data[1])`；串化域不复位（与官方一致） |
-| [`pcm_to_pwm`](../../rtl/audio/pcm_to_pwm.v) | 69 | 24 bit PCM → 1 bit sigma-delta | 一阶噪声整形；静音输出恒 0（保持 F3 原语义） |
+| [`audio_tone_gen`](../rtl/audio/audio_tone_gen.v) | 160 | 48 kHz / 24 bit PCM 音源 | 分数分频使能；8 音 LUT；三角波（比方波柔和，谐波按平方衰减）；**静音时仍发 `valid`**（核要求输入速率 = 采样率） |
+| [`audio_arc`](../rtl/video/hdmi/audio_arc.v) | 71 | ACR 包的 CTS/N | `ACR_N=6144`，`AUDIO_DIV=48`（每 48 样本一包）；`cts` 每拍自增、发包容错后清零 |
+| [`video_rgb_to_axis`](../rtl/video/hdmi/video_rgb_to_axis.v) | 81 | RGB+DE+VS → AXIS | VS 跳变后行首发一次 `user`；`x_cnt==639` 发 `last` |
+| [`hdmi_phy`](../rtl/video/hdmi/hdmi_phy.v) | 62 | 4 路 10 bit TMDS 串化 | 输入先全位反序 |
+| [`lane_lvds_10_1`](../rtl/video/hdmi/lane_lvds_10_1.v) | 87 | 单 lane 2 bit/拍移位 + ODDR | `EG_LOGIC_ODDR(d1=data[0], d0=data[1])`；串化域不复位（与官方一致） |
+| [`pcm_to_pwm`](../rtl/audio/pcm_to_pwm.v) | 69 | 24 bit PCM → 1 bit sigma-delta | 一阶噪声整形；静音输出恒 0（保持 F3 原语义） |
 
 ### 3.1 一个必须说清的坑：`x_cnt` 语义
 
@@ -99,14 +110,16 @@ SD 未扫描完            → ST_SCAN(1)   C4 长鸣
 其余                   → ST_IDLE(0)   静音
 ```
 
-**同一份 `audio_left` 同时送两处**：
+**同源 PCM 分别送往 HDMI 与 PWM，HDMI 支路固定衰减**：
 
 ```verilog
-hdmi_1_4b_transmitter_core_wrapper ... .I_audio_left_data(audio_left) ...
+wire signed [23:0] hdmi_audio_left  = audio_left  >>> 6;
+wire signed [23:0] hdmi_audio_right = audio_right >>> 6;
+// HDMI 核左右声道分别接 hdmi_audio_left / hdmi_audio_right
 pcm_to_pwm u_pwm_audio (... .sample_in(audio_left), .pwm_out(audio_pwm));
 ```
 
-这就是"音视频联动"的实质——不是"有个声音在响"，而是"HDMI 里的声音和板子上 3.5 mm 里的声音是同一份数据，且内容由画面状态决定"。
+音源由画面播放状态选择音调，左右声道同时送 HDMI；PWM 和图层使用原样本，HDMI 使用固定衰减后的样本，因此两路内容相同、幅度不同。KEY6 静音在音源侧生效，两路一起静音。
 
 ### 4.1 可观测性
 
@@ -131,7 +144,7 @@ pcm_to_pwm u_pwm_audio (... .sample_in(audio_left), .pwm_out(audio_pwm));
 
 这不影响核发流：EDID 读取是显式触发式的（`I_edid_read_trig` 单拍触发一次读 128 字节），文档里没有任何"读不到 EDID 就不能工作"的表述；核内部自建 Video Source 靠相位匹配机制与外部视频对齐，锁上后拉高 `O_video_locked`。
 
-**待上板确认的唯一事项**：显示器能否正确解出音频。部分显示器在缺少 EDID 协商时仍能解音频（因为它默认用 ACR 恢复时钟），部分可能不出声——这条只有上板才能定论。
+**音频待上板确认事项**：显示器能否正确解出音频、低音量是否合适，以及 KEY6 静音/恢复是否符合预期。部分显示器在缺少 EDID 协商时仍能解音频（因为它默认用 ACR 恢复时钟），部分可能不出声——这条只有上板才能定论。
 
 ## 6. 时钟方案：为什么不加 12.288 MHz PLL
 
@@ -145,7 +158,7 @@ APUG092 文档原文：**"HDMI1.4b Transmitter Core 的四个接口 EDID Interfa
 
 ### 7.1 仿真（已通过）
 
-`sim/scripts/run_audio_regression.ps1`，2 个用例全绿、24 条 PASS：
+最新归档为 [audio_result.json](../reports/hdmi_audio_quiet_20261029/audio_result.json)：`sim/scripts/run_audio_regression.ps1` 两个用例通过，共 24 条 PASS。该回归编译音源、ACR 与 PWM，**没有编译顶层新增的算术移位接线**；后者已做接线复核并通过完整 TD 构建。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File sim/scripts/run_audio_regression.ps1
@@ -168,7 +181,9 @@ powershell -ExecutionPolicy Bypass -File sim/scripts/run_audio_regression.ps1
 | ST_IDLE 静音 | valid 照发、样本恒 0 | `valid=4800 nonzero=0` |
 | mute 后 PWM | 恒 0 | PASS |
 
-### 7.2 综合布线（已通过，时序与基线一致）
+### 7.2 初版综合布线（2026-10-26 历史记录）
+
+本节记录当日 150 MHz SDRAM 版本：构建生成候选 bit，但时序未通过。后续已降为 40 MHz 并修复显示链，当前构建以开头的低音量版清单为准。以下 `reports/s6_integration` 路径是当时输出位置，属于可能被重跑覆盖的工作目录，不作为当前版本身份依据。
 
 ```powershell
 & D:/TD_6_24_APP/bin/td_commands_prompt.exe ./project/flow_s6_bit.tcl
@@ -218,23 +233,25 @@ End Point   : u_sdram_sip_syn_1.bpad (clk1 = u_sdram_pll clkc[1], 150 MHz 0°)
 Slack       : -7.232 ns   ← 改造前后数值相同
 ```
 
-这是 SiP SDRAM 的器件接口路径，与本次音频改动**无因果关系**。本次改动**没有引入新的时序违例**——时序不收敛是既有问题（README 已记录，属 P0）。
+这是 SiP SDRAM 的器件接口路径，与本次音频改动**无因果关系**。本次改动**没有引入新的时序违例**——当日时序不收敛是既有问题（已在后续 40 MHz 版本收敛）。
 
 两个版本的构建都给出**完全相同的 −7.232 ns 与完全相同的 Begin/End 端点**，这条路径从 `git show :reports/s6_integration/timing.txt` 的基线报告起就没变过。这也反向证明：音频通路全部落在 25 MHz 的 `clk_pixel` 域（clk0 SWNS **+24.731 ns**、clk2 125 MHz SWNS **+4.752 ns**，均为正裕量），**没有把时序压力加到已经失败的那个域上**。
 
-### 7.3 上板（**未做**）
+### 7.3 上板状态（2026-10-29）
 
-本轮没有任何上板证据。正式顶层从未上板，音频是否真的从显示器喇叭出来**尚未验证**。按项目的三档验证口径，此功能当前状态是"**仿真 + 综合布线通过，上板未验证**"，不能宣称"能出声"。
+正式顶层已显示 SD 卡图片，用户确认显示条纹问题解决。HDMI 低音量版已经交付，当前还没有下载及试听结果；不能据此宣称显示器已正常出声、静音已现场验证或完整音视频验收通过。试听记录按[板端验证手册](board_verification_2026-10-27.md)填写。
 
 ## 8. 边界与已知限制
 
-1. **加密核无法仿真。** `hdmi_1_4b_transmitter_core_wrapper.enc.v` 是 Anlogic RSA + AES128-CBC 加密件，ModelSim ASE 无对应私钥，无法编译。因此仿真覆盖到"交给核的三组信号（AXIS / audio / ACR）正确"为止，**核内部行为（TMDS 编码、音频包插入、相位匹配）未被仿真验证**。
+1. **仿真能力取决于工具。** 初版 ModelSim ASE 无法编译该加密核；后续已用本机 Questa / AMS、真实编码核和生产串行 RTL 完成原图视频回归，见[串行结果](../reports/display_diag_20261028/evidence/serializer_content_result.json)。该项关闭音频/ACR，检查视频编码与串化，不构成 HDMI 音频数据包或接收端出声的验证。音频回归目前仍覆盖音源、ACR 与 PWM。
 2. **音频内容是合成音，不是音乐文件。** 当前用 8 音 LUT + 三角波按状态选音高，没有 WAV/MP3 解码，也没有 SD 卡音频素材。
 3. **无 DDC/EDID 协商**（见 §5），这是**硬件缺失**，不是软件偷懒。
-4. **无音量控制。** KEY6 只有静音开关，没有音量分级。
+4. **HDMI 为编译期固定低音量。** 顶层 `>>> 6` 将幅度降为 1/64；KEY6 提供静音开关，尚无运行时音量分级，PWM 与图层幅度不受这次 HDMI 衰减影响。
 5. **旧模块保留但不再使用。** `rtl/audio/pwm_audio_out.v` 与 `rtl/video/hdmi/hdmi_tx.vhd` 留在源码树里作历史参照与回退路径，但已不参与构建（`project/hdmi_td.al` 的 VHDL 段已清空）。它们的 testbench（`tb_pwm_audio_out.v`）仍纳入回归，保证回退路径不被破坏。
 
-## 9. 文件清单
+## 9. 初版文件清单与当前构建入口
+
+下列“新增/修改”及行数对应 2026-10-26 初版差异；当前源清单以 `project/hdmi_td.al` 和 `scripts/sync_src.ps1` 为准。
 
 **新增 RTL**
 
@@ -266,5 +283,7 @@ Slack       : -7.232 ns   ← 改造前后数值相同
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/sync_src.ps1          # 同步 + lint
 powershell -ExecutionPolicy Bypass -File sim/scripts/run_audio_regression.ps1   # 仿真回归
-& D:/TD_6_24_APP/bin/td_commands_prompt.exe ./project/flow_s6_bit.tcl   # 综合布线
+& D:/TD_6_24_APP/bin/td_commands_prompt.exe ./project/flow_hdmi_audio_quiet.tcl # 当前低音量版综合布线
 ```
+
+构建入口读取当前工作区源码；重新运行不会自动复现历史位流的哈希。最新构建仍有 SIP 位置、PLL 本地反馈和部分 IO 延迟约束告警，详见构建日志与覆盖报告。
