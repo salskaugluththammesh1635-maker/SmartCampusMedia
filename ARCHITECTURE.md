@@ -134,13 +134,13 @@ px_sci = (info_mode == 2'b01) && ((active_y <= 7) || ((active_x <= 23) && (activ
 
 **只做缩小，不做放大**——这在本架构下不是取舍而是不可行：源侧每字节间隔约 16 个 25 MHz 拍（12.5 MHz SCK 的 8 bit = 640 ns），即每 16 拍才到 1 个源像素；目标侧每拍最多出 1 个。32×24 的源图要铺满 640×480，等于要求 400 倍于输入的输出能力，只能靠"先整图缓存再重扫"，而帧缓存正被显示通路占用。因此源图小于 640×480 时按 1:1 居中——顺带保证小图不失真。
 
-算法用 Bresenham 正向累加 `phase += STEP; if (phase >= THRESH) { phase -= THRESH; 采样 }`，初值 `THRESH-1` 保证第 0 个像素必被采样。因为保持宽高比时 `dst_w/src_w == dst_h/src_h`，行列可共用**同一组** `(STEP, THRESH)`：
+算法用 Bresenham 正向累加 `phase += STEP; if (phase >= THRESH) { phase -= THRESH; 采样 }`，初值 `THRESH-1` 保证第 0 个像素必被采样。**行与列各用一组独立的 `(STEP, THRESH)`**（`r_step/r_thr` 与 `c_step/c_thr`）：缩放时行、列各自的取整比例并不相等，共用一组参数会在非精确等比缩放下丢行（实测 96×64→64×42 丢最后 2 行）。四组参数按模式配置如下：
 
-| 情况 | STEP | THRESH |
+| 情况 | 行 STEP / THRESH | 列 STEP / THRESH |
 |---|---|---|
-| 需缩小且源更宽 | 640 | `src_w` |
-| 需缩小且源更高 | 480 | `src_h` |
-| 不需缩小（1:1） | 1 | 1 |
+| 需缩小且源更宽（`dst_w = 640`） | `dst_h` / `src_h` | 640 / `src_w` |
+| 需缩小且源更高（`dst_h = 480`） | 480 / `src_h` | `dst_w` / `src_w` |
+| 不需缩小（1:1） | 1 / 1 | 1 / 1 |
 
 `STEP <= THRESH` 恒成立，所以一次累加至多跨一个阈值、每个源像素至多命中一次，主通路里**没有任何循环、也不需要行缓冲**。模式判据用交叉乘 `src_w*480 > src_h*640`，避免 24 位乘法器。
 
@@ -148,7 +148,7 @@ px_sci = (info_mode == 2'b01) && ((active_y <= 7) || ((active_x <= 23) && (activ
 
 **为什么是 8 像素对齐而不是偶数对齐**：`image_player` 把 `word_addr` 截成 `word_addr[20:2]` 交给仲裁器，仲裁器按**四字突发组**（组基址 + 组内相位）寻址。8 像素 = 4 个字，因此行字数（`out_w/2`）与行首字地址（`out_off_x/2`）都必须落在 4 字边界上。只做偶数对齐时，行的组相位会逐行漂移，整帧错位。实现上是 `dw_c = {dw_c[15:3], 3'b000}`，`out_off_x` 同样对齐；代价是奇数宽源图丢最后一列。
 
-黑边（letterbox）区域 `img_scaler` **不写**——它留在帧缓存里是上一张图的旧数据，必须由 `image_window_mask` 在送显前按 `out_w/out_h/out_off_x/out_off_y` 屏蔽成黑，否则会看到残影。
+黑边（letterbox）区域 `img_scaler` **不写**——它留在帧缓存里是上一张图的旧数据，必须由 `image_window_mask` 在送显前屏蔽成黑，否则会看到残影。屏蔽要用**两组几何的交集**：①`image_player` 的 `out_w/out_h/out_off_x/out_off_y`（= 已提交前台帧的 `display_*`，回答"帧缓存里哪一块真被写过"）；②`ratio_map` 的 Key9 档位窗口（回答"这一档允许显示屏幕上的哪一块"）。只判前者 Key9 五档失效；只判后者小图四周露残影。
 
 ### 3.6 换帧转场：为什么是"淡出到黑"而不是交叉溶解
 
@@ -358,17 +358,17 @@ wire sd_arb_start     = sd_owner_gallery ? gallery_start
 | `sd_probe` | 上电后自动 `init_start`，`PROBE_DELAY_CYCLES=200_000` 等卡上电；`sd_ok` 是**持续电平** |
 | `fat32_reader` | 输入扇区，输出文件簇链；支持 MBR 分区卷与 LBA0 无分区卷 |
 | `bmp_parser` | 默认仅 640×480 / 24 bit / 无压缩；`CHECK_SIZE=1`（当前生产配置）放行任意尺寸交给 `img_scaler`，但仍挡 0 尺寸；处理 BGR 顺序与自底向上行序；输出 RGB565 |
-| `img_scaler` | 串在 `bmp_parser` 与 `img_loader` 之间，由 `image_player` 例化。只缩不放、保持宽高比、居中；21 位恢复余数除法器 3 段流水、3 拍出商；Bresenham 行列共用一组 `(STEP,THRESH)` 且 `STEP<=THRESH` 恒成立；`dst_w` 与 `out_off_x` 强制 8 像素对齐；黑边本模块不写（见 §3.5） |
+| `img_scaler` | 串在 `bmp_parser` 与 `img_loader` 之间，由 `image_player` 例化。只缩不放、保持宽高比、居中；21 位恢复余数除法器 3 段流水、3 拍出商；Bresenham **行、列各一组** `(STEP,THRESH)` 且 `STEP<=THRESH` 恒成立；`dst_w` 与 `out_off_x` 强制 8 像素对齐；黑边本模块不写（见 §3.5） |
 | `img_loader` | `CHAIN_MAX=4096`；两像素拼 32 bit；地址 = `y*320 + (x>>1)`；`BLK_TIMEOUT=2,097,152`≈84 ms@25 MHz，**必须大于** `sd_spi_ctrl` 的 `TOKEN_TIMEOUT=1,048,576`≈42 ms，超时报 `E_BLKTMO=4'd10` |
 | `image_player` | 索引 0-based；`pending`/`pending_index` 锁存跨所有权交接的请求；`LOAD_TIMEOUT=100_000_000` 是**单扇区无进度**上限（每 `blk_done` 喂狗）；`error_code` 分段 8=SDRAM / 9=装载无进度 / 11=等 SDRAM 初始化 / 12=等写完成 |
 | `fade_mixer` | 读侧第一级，纯组合按通道缩放，`gain = level + 1`；2 位状态 `F_IDLE/F_OUT/F_IN` + 8 位 α，α **只在 `vblank_rise` 推进**；`FADE_FRAMES=8 → FADE_STEP=32`，全程约 286 ms；综合 237 LUT + 2 DSP + 0 寄存器（见 §3.6） |
-| `image_window_mask` | 按 `out_w/out_h/out_off_x/out_off_y` 把 letterbox 区域屏蔽成黑。`img_scaler` 不写黑边，少了这一级上一张图的残影会露出来 |
+| `image_window_mask` | 把 letterbox 区域屏蔽成黑。判决是**两组几何的交集**：`win_*`（Key9 档位窗口，来自 `ratio_map`）与 `img_*`（本次前台帧实际写入的矩形，来自 `image_player.out_*`）。`img_scaler` 不写黑边，少了这一级上一张图的残影会露出来 |
 | `framebuf_arbiter` | 读优先、防写饥饿；完整四字组、相邻读组首至少 13 拍；精确在飞计数与重启排空，回绕边界随 `rd_base` 重算；DQM 规则见 §8 |
 | `sdram_ctrl_wrap` | 写通道无 ready；以 `ref_vld` 避让，`sdr_rd_en` 接受返回；生产用手动刷新与粘滞 `refresh_error`，行为模型的固定 10 拍读延迟不代替真核验证 |
 | `pix_reader` | 按行预取，异步读 FIFO 平滑突发到像素流 |
 | `video_timing_gen` | 800×525 总时序 @25 MHz ≈ 59.52 Hz；消隐期坐标归零 |
 | `video_rgb_to_axis` | 每拍 `valid<=de`、`data<=rgb`；VS 跳变后下一行首拍发一次 `user`；`x_cnt==639` 那拍发 `last`。**核要求一行数据连续输入**，DE 直通天然满足 |
-| `video_overlay` | 纯组合、零延迟。合成顺序：图像 → **字幕** → 信息条 → 波形 → 电平条 → 信息方块 → 科普标记 → 九宫格。亮度与反色只作用于图像层，UI 层颜色固定。字幕层由内部例化的 `osd_caption` 产出 |
+| `video_overlay` | 纯组合、零延迟。合成顺序：图像 → **字幕** → 信息条 → 波形 → 电平条 → 信息方块 → 科普标记 → 九宫格。亮度与反色只作用于图像层，UI 层颜色固定。字幕层由内部例化的 `osd_caption` 产出。信息条底条只占 12 格自身的 `x∈[8,103] / y∈[468,475]`（2026-11-03 前为 `y>=464` 全宽通栏，因紧贴字幕带形成黑条而收窄） |
 | `osd_font8x16` | 8×16 点阵字模 ROM，41 个字形（` -./0-9:A-Z`）。纯组合 `case ({char_code, row})`，未收录字符输出 0（空白，不画乱码）。**由 `scripts/gen_osd_font8.py` 生成，不手改** |
 | `osd_strings` | 16 行 × 64 列字符码表，只列非空格。`#`/`*` 是序号十位/个位占位符，替换逻辑在 `osd_caption` 里。**由 `scripts/gen_osd_strings.py` 生成，不手改** |
 | `osd_caption` | 字幕渲染：四路文字共用一套 ROM（单路渲染，因像素任一时刻只属于一处）；标题/序号/状态/标语四条 y 带互不重叠；标语用 9 bit `scroll_px` 滚动（512 像素 = 64 字符 = 整轮，回绕无跳变）；衬底带把图像压到 1/4 亮度 |
