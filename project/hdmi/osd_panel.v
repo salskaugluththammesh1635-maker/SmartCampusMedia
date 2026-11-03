@@ -15,9 +15,13 @@
 //
 //        +----------------------------------+
 //        | PARAM OSD                        |   <- 标题，亮青
-//        | BRI:3 INV:1 RATE:X2              |   <- 用户可调参数，淡白
+//        | B:8 V:6 R:4 P:4                  |   <- 四个可调档位，淡白
 //        | MODE:NORMAL  IMG:05/12           |   <- 播放状态，淡白
 //        +----------------------------------+//
+//   行 1 的标签是单字母缩写（B=brightness 亮度、V=volume 音量、
+//   R=resolution 分辨率、P=ratio 屏占比），因为 COLS 只有 22 列，
+//   全称 "BRI:n VOL:n RES:n RAT:n" 要 23 列放不下（见【三之二】）。
+//   反色/轮播倍率两组只在非默认值时才占列（列 16..18 与 20..21）。
 // 【二】为什么放右上角（不是左上）
 //   左上角已经被科普标记占了：`info_mode==2'b01` 时 `video_overlay` 在
 //   `active_y<=7` 画通栏、在 `active_x<=23 && active_y<=31` 画色块。
@@ -32,6 +36,29 @@
 //     文字区   : x 451..626, y 13..60
 //   640 - 8(右边距) - 186 = 446，所以面板右边距屏幕边缘正好 8 像素，
 //   与信息条左边距 8 像素对称。
+//
+// 【三之二】列宽为什么停在 22（t16 加参数项时算过的边界）
+//   PANEL_X1 = PANEL_X0 + 2*PAD + COLS*8 - 1 = 446 + 10 + COLS*8 - 1
+//            = 455 + COLS*8
+//   PANEL_Y1 = PANEL_Y0 + 2*PAD + LINES*16 - 1 = 17 + LINES*16
+//       COLS = 22 → PANEL_X1 = 631（右边距 8，现值）
+//       COLS = 23 → PANEL_X1 = 639（恰好贴边，可扩的最大值）
+//       COLS = 24 → PANEL_X1 = 647（越界，会盖到 639 之后不存在的像素）
+//   行数不是瓶颈（LINES=4 → PANEL_Y1=81，远小于 479），列数才是。
+//   想在 PANEL_X0=446 不动的前提下再宽一格就会越界，所以行 1 用单字母缩写
+//   而不是全称 —— 这是 t16 在"加两个参数项"和"不动几何"之间选的后者：
+//   几何一改，tb 里针对面板四边的边界像素断言、以及面板/图号区的相对位置
+//   全要重算，收益只有标签好看一点。
+//
+//   顺带记一个既有事实（不是本次引入）：PANEL_X1=631 >= 图号区 INDEX_X1=623、
+//   PANEL_Y1=65 >= 图号区底 31，所以面板 x∈[446,631] y∈[8,65] **本来就完全
+//   包含**右上角 "IMG #n" 图号区，弹面板时图号被盖 2.5 秒。这是设计如此
+//   （面板是用户主动召唤、2.5 秒自灭），别当成 t16 弄坏的。
+//
+//   ★ 乘法必须显式给足位宽的教训（原【三】末尾那条，扩展到新常量同样适用）：
+//   COLS 是 5 位，22*8=176 早已超出 5 位，写成 `COLS * 5'd8` 会在 5 位内
+//   回绕成 16，面板宽度缩成 1/10。任何新加进来的 `*` 表达式都要检查右操作数
+//   位宽是否够装乘积（下面用 11'd8 / 6'd16），别只盯着 COLS 自己的位宽。
 //
 // 【四】取模范式（照抄 science_page 的做法，已验证）
 //       text_x[7:3] -> col    (0..21)
@@ -58,6 +85,27 @@
 //   video_overlay 的约定是 `rgb_out = de ? 内容 : 0`。本模块保持这个约定：
 //   消隐期输出 0，而不是"原样透传 rgb_in"—— 因为 rgb_in 在消隐期已经是 0，
 //   但显式写出来，后面加模块的人不会误以为本模块在消隐期还带数据。
+//
+// 【八】t16 端口变更（亮度的 3 位窄口 + 三个新档位）
+//   一、bright_sel[2:0] → bright_lvl[3:0]
+//     根因不在本模块，而在"这条链上谁都可以截位"：key_router 的
+//     `bright_lvl` 本来是 reg [3:0]、量程 0..9（十档），顶层为了接
+//     video_overlay 的 12 格位图条（那里确实只需要 3 位）写了一句
+//     `wire [2:0] bright_sel = bright_lvl[2:0];`，然后同一根 3 位线又被
+//     接到本模块。于是档 8 → 3'b000 → 面板显示 "0"，档 9 → 3'b001 → "1"。
+//     改法：本模块端口直接吃 4 位并改名为 bright_lvl（与 key_router 同名，
+//     接线时不会再有人"顺手截一下"）。顶层那一句 3 位截位**保持不变**，
+//     因为 video_overlay 的 3 格位图仍需要它 —— 两条信号从此分开：
+//         video_overlay ← bright_lvl[2:0]  （3 格位图，语义是"哪几格亮"）
+//         osd_panel     ← bright_lvl       （4 位全值，语义是"第几档"）
+//   二、新增 vol_lvl[3:0] / res_sel[2:0] / ratio_sel[2:0]
+//     对应 Key7 音量 / Key8 分辨率 / Key9 屏占比 三档（0..9、0..4、0..4）。
+//     改造前它们只被 key_router 记住、从不显示，用户按了看不到任何反馈。
+//     三个端口一路透传给 osd_param_text，本模块不参与解码（只决定"摆在哪"）。
+//   三、端口宽度选择依据：档位值的位宽取 key_router 里的**原宽**，不取
+//     "最大值需要几位"。音量 0..9 需要 4 位，分辨率 0..4 只需 3 位，
+//     屏占比 0..4 只需 3 位。按原宽接线的额外好处是将来 MAX 调大时
+//     不用再改端口（key_router 那边加宽即可，本模块自动跟着走）。
 // ============================================================================
 module osd_panel #(
     // 面板外框左上角（含边框）
@@ -76,10 +124,21 @@ module osd_panel #(
     input  wire [9:0]  active_y,
     input  wire [23:0] rgb_in,        // 来自 video_overlay 的已合成画面
     input  wire        panel_on,      // 面板使能（= 手动开 或 参数变化自动弹）
-    input  wire [2:0]  bright_sel,    // KEY7 亮度档 0..4
-    input  wire        invert_en,     // KEY8 反色
-    input  wire [1:0]  auto_sw_sel,   // KEY9 轮播倍率档 0..3
-    input  wire [1:0]  info_mode,     // KEY3 三态
+    // ★ 端口名 bright_sel → bright_lvl、位宽 3 → 4（t16 改动，见文件头【八】）
+    //   原名带 sel 后缀、只有 3 位，照着它来接线的人会自然写成
+    //   `bright_sel = bright_lvl[2:0]` —— 顶层历史上正是这么写的，于是
+    //   key_router 的 10 档（0..9）过这道 3 位窄口时档 8/9 被截成 0/1，
+    //   面板显示的数字在按到第 9 下时突然回到 0。改名 + 加宽一起做，
+    //   让"这里必须是完整档位值、不能截位"变成端口契约的一部分。
+    //   注意 video_overlay 信息条第 8/9/10 格的位图仍用 3 位 bright_sel[2:0]（v1 那 3 格属 KEY12 信息条开关），
+    //   那是 3 格二进制位图（多一位会多亮一格），与这里是**两条不同信号**。
+    input  wire [3:0]  bright_lvl,    // Key6 亮度档 0..9（0 = 最亮 32/32，9 = 最暗 3/32）
+    input  wire [3:0]  vol_lvl,       // Key7 音量档 0..9（0 = 静音，9 = 最大）
+    input  wire [2:0]  res_sel,       // Key8 分辨率档 0..4
+    input  wire [2:0]  ratio_sel,     // Key9 屏占比档 0..4
+    input  wire        invert_en,     // Key13（P2）反色
+    input  wire [1:0]  auto_sw_sel,   // 【v2 已停用】轮播倍率档（D-02：固定 3 s/张，顶层恒接 2'd0）
+    input  wire [1:0]  info_mode,     // 模式（v2：由 Key2 模式循环驱动）
     input  wire [4:0]  img_index,     // 当前图号
     input  wire [4:0]  gallery_count, // 图库张数
     output wire [23:0] rgb_out
@@ -134,7 +193,10 @@ module osd_panel #(
     wire [7:0] glyph_row;
 
     osd_param_text u_text (
-        .bright_sel    (bright_sel),
+        .bright_lvl    (bright_lvl),
+        .vol_lvl       (vol_lvl),
+        .res_sel       (res_sel),
+        .ratio_sel     (ratio_sel),
         .invert_en     (invert_en),
         .auto_sw_sel   (auto_sw_sel),
         .info_mode     (info_mode),

@@ -4,7 +4,24 @@
 // WIDTH 必须为 8 的倍数；两时钟域必须共同复位；SD 服务必须有块超时。
 // 仅在完整像素数、所有写命令落盘后切换前台；装载失败保留上一帧。
 // SEAMLESS=0 退回单帧缓冲：重载时共同复位存储数据通路，失败不保留旧帧。
-`timescale 1ns / 1ps
+//
+// ---------------------------------------------------------------------------
+// v2 增补（ARCH_ADDENDUM_VIDEO_PATH.md §3.2 / §3.3 / §18）：外部写口
+// ---------------------------------------------------------------------------
+// 新增 ext_wr_* 一组端口，让 rle_decoder 把解压后的视频帧直写 A/B 帧缓冲，
+// 与 BMP 装载共用同一个 framebuf_arbiter，靠 ext_wr_mode 单信号互斥：
+//   ext_wr_mode=0 → 写口归 BMP 装载通路（原有行为，一字不改）
+//   ext_wr_mode=1 → 写口归外部 RLE 写口，BMP FIFO 消费与装载请求全部冻结
+// 三条硬性质（接错都不会报错，只会偶发横向撕裂或画面不动）：
+//   1) ext_wr_addr[1:0] 恒 2'b00 —— 仲裁器在 WR_ADDR_FROM_FIFO=1 模式下只在
+//      组首拍采本路地址、其后三拍用锁存值，地址必须落在 4 字对齐组首；
+//   2) ext_wr_busy 为高（本拍未回 ack）时外部不得推进地址或改数据；
+//   3) 换帧仍只由 vblank_rise 触发 —— ext_wr_done 只置 commit_pending，
+//      翻帧点仍复用原有三处，欠载时不置位即天然保持上一帧、不插黑。
+// ext_no_fade=1 时把淡入淡出整段旁路（既强制混合系数全亮，也让提交通道走
+// 消隐期硬切换分支）；视频模式必须为 1，否则每帧都要淡出到黑再淡入，帧率
+// 会被压成 1/FADE_FRAMES。
+// `timescale 1ns / 1ps
 module image_player #(
 	parameter WIDTH = 640,
 	parameter HEIGHT = 480,
@@ -13,7 +30,9 @@ module image_player #(
 	parameter MEM_WORDS = 262_144,
 	parameter SEAMLESS = 1,             // 1=双缓冲无缝切换，0=单帧缓冲
 	parameter FADE_EN = 1,              // 1=换帧走淡出到黑再淡入，0=消隐期硬切换
-	parameter FADE_FRAMES = 8           // 每个方向的渐变帧数，1 表示关闭转场
+	parameter FADE_FRAMES = 8,          // 每个方向的渐变帧数，1 表示关闭转场
+	parameter ARBITER_TURN_GAP = 3,     // SDRAM 读写换向保护拍数；APUG011 并发回归以 3 拍无 bank 错误
+	parameter FIFO_SECTOR_RESERVE = 96 // 512B BMP 扇区最多约 86 个 RGB565 字，另留流水余量
 ) (
 	input wire pix_clk, rst_n_pix,
 	input wire sdr_clk, sdr_clk_sft, rst_n_sdr,
@@ -35,14 +54,49 @@ module image_player #(
 	output reg image_ready,
 	output wire loading,
 	output reg failed,
-	output reg [3:0] error_code,         // 1..5,10=loader；6=SD；7=像素数；8=SDRAM；9=装载无进度；11=SDRAM 初始化超时；12=写完成超时
+	output reg [3:0] error_code,         // 1..5,10=loader；6=SD；7=像素数；8=SDRAM；9=装载无进度；11=SDRAM 初始化超时；12=写完成超时；13=loader 未接收 start；14=loader 文件定位无进度
 	output wire [2:0] reader_status,
 	output wire sdram_clk, sdram_cke, sdram_cs_n,
 	output wire sdram_ras_n, sdram_cas_n, sdram_we_n,
 	output wire [1:0] sdram_ba,
 	output wire [10:0] sdram_addr,
 	output wire [3:0] sdram_dm,
-	inout wire [31:0] sdram_dq
+	inout wire [31:0] sdram_dq,
+	// v2：外部写口（rle_decoder 视频帧直写）。ext_wr_mode=0 时全部不起作用。
+	input wire ext_wr_mode,              // 0=BMP 装载（现状）1=RLE 直写
+	input wire ext_wr_valid,             // 单拍写请求
+	input wire [20:0] ext_wr_addr,       // SDRAM 字地址（必须 4 字对齐组首）
+	input wire [31:0] ext_wr_data,       // 2 像素/word，高 16bit 为左像素
+	input wire [3:0] ext_wr_dm,          // 字节掩码
+	input wire ext_wr_done,              // 单拍：本帧最后一字已写完
+	output wire ext_wr_ack,              // 单拍：本次写已被 arbiter 接受
+	output wire ext_wr_busy,             // 高：尚未回 ack，外部不得推进地址
+	output wire ext_frame_ready,         // 单拍：本帧已提交（vblank 翻页完成）
+	output wire [1:0] ext_frame_sel,     // 当前前台缓冲（0=A 1=B）
+	input wire ext_no_fade,              // 1=禁用淡入淡出（视频模式必须为 1）
+	output wire ext_loader_want_blk,     // 高：u_loader 正在请求 SD 块
+	// v2：逻辑分辨率（五档 320x240/400x300/512x384/576x432/640x480），透传给 pix_reader
+	input wire [15:0] src_w,
+	input wire [15:0] src_h,
+	// v2 Key9：显示窗口矩形（绝对坐标，640x480 画布）。由顶层 ratio_map 五档给出，
+	// 本模块不消费，只原样透传给 pix_reader，供其做窗口内水平降采样。
+	// ★ 顶层必须把**同一组**信号同时接到 image_window_mask（位置门控）与本模块
+	//   （采样范围）。两处接成不同来源就会「窗口位置与采样范围错位」，
+	//   现象是画面被切一半、不报任何错。
+	input wire [15:0] win_w,
+	input wire [15:0] win_h,
+	input wire [15:0] win_off_x,
+	input wire [15:0] win_off_y,
+	// v2 Key9：本拍有效区列坐标（0..639），与 de 同拍。pix_reader 用它判定
+	// 「本拍落在窗口内吗」，是降采样 DDA 的时间基准。
+	// ★ 必须接 video_timing_gen 的 active_x，不得接常量 0 —— 接 0 会让
+	//   pix_reader 内部的 in_win_x 恒假（active_x16 < win_off_x），
+	//   非满屏档窗口内一个像素都取不到、画面在窗口区全黑。
+	input wire [10:0] active_x
+	// ★ 本模块不引 key9_out_valid / out_valid 之类的第 6 类输出端口，也不需要：
+	//   本模块 pixel_valid 已逐拍等于 pix_reader.out_valid
+	//   （pix_reader.v:185-186 `assign out_valid = ...; assign pix_valid = out_valid;`
+	//    同一表达式驱动），再引一根会让顶层出现两个恒等信号。
 );
 	localparam [3:0] C_WAIT=0, C_RESET=1, C_MEM=2, C_START=3,
 		C_LOAD=4, C_COMMIT=5, C_SHOW=6, C_FAIL=7;
@@ -65,13 +119,32 @@ module image_player #(
 	// 单帧模式下 back_sel 恒为 0，读写都落在第 0 帧，行为与旧设计等价。
 	reg front_sel;
 	reg commit_pending;                  // 后台帧已就绪，等垂直消隐再换帧首
+	// 窗口参数必须与当前 front_sel 一起提交。scale_* 属于正在装载的
+	// 后台帧；若直接透传，loader 复位期间它们会先清零，把仍在显示的旧帧
+	// 整幅判成 letterbox 区域。
+	reg [15:0] display_w, display_h, display_off_x, display_off_y;
 	wire back_sel = SEAMLESS ? ~front_sel : 1'b0;
 	wire [20:0] back_off = back_sel ? FRAME_SPAN : 21'd0;
 	wire [20:0] rd_base;                 // 当前显示帧首，rd_restart 那拍必须稳定
 	// 装载通路每次重载都要清空；显示通路只在无有效帧时才复位，双缓冲不得打断前台。
-	wire loader_enable = (state != C_WAIT) && (state != C_RESET);
+	// 【2026-10-31】使能必须是寄存器输出，不能是 state 的组合译码：它们下面直接
+	// 驱动异步复位。二进制 state 在 C_START(0011)→C_LOAD(0100) 一次翻 3 位，
+	// 组合译码在硅片上可能瞬间出现 0000/0001 的毛刺，把刚接到 start 的 loader
+	// 异步清回 T_IDLE，之后整条装载链静默不动，只剩 4 s 兜底报 9(d8)。
+	// RTL 仿真里没有毛刺，所以仿真全过而上板 d810——与 10-31 现象一致。
+	// 寄存后整体晚一拍：C_RESET 要停 16 拍、C_MEM 要等 init_sync，均不受影响。
+	wire loader_enable_d = (state != C_WAIT) && (state != C_RESET);
 	wire store_keep = SEAMLESS && image_ready;
-	wire store_enable = loader_enable || store_keep;
+	reg loader_enable, store_enable;
+	always @(posedge pix_clk or negedge rst_n_pix) begin
+		if (!rst_n_pix) begin
+			loader_enable <= 1'b0;
+			store_enable <= 1'b0;
+		end else begin
+			loader_enable <= loader_enable_d;
+			store_enable <= loader_enable_d || store_keep;
+		end
+	end
 	wire loader_async_pix = rst_n_pix && rst_n_sdr && loader_enable;
 	wire loader_async_sdr = rst_n_pix && rst_n_sdr && loader_enable;
 	wire store_async_pix = rst_n_pix && rst_n_sdr && store_enable;
@@ -89,7 +162,11 @@ module image_player #(
 	reg [1:0] init_sync, complete_sync, arb_error_sync;
 	wire init_done, ref_vld, arb_error, refresh_error, writes_complete;
 	wire loader_start = (state == C_START);
-	wire loader_done, loader_fail;
+	// v2：视频模式冻结 BMP 装载请求。写通道归外部后若还让 u_loader 发起扇区
+	// 请求，两路会争 SD 总线、并把半帧写入后台缓冲，换帧时表现为整帧花屏。
+	wire bmp_load_req = load_req && !ext_wr_mode;
+	wire loader_done, loader_fail, loader_busy;
+	reg [3:0] idle_cnt;                  // C_LOAD 中 loader 既不忙也未结束的连续拍数
 	wire [3:0] loader_error;
 	wire [31:0] pixel_count;
 	localparam [9:0] HEIGHT_IN = HEIGHT;
@@ -99,7 +176,15 @@ module image_player #(
 	wire [15:0] bmp_img_w, bmp_img_h, scale565, scale_x, scale_y;
 	wire [15:0] scale_w, scale_h, scale_off_x, scale_off_y;
 	wire [31:0] scale_pixels;
-
+	// v2 external write port: all of these are declared up here because the
+	// commit_pending block below references them long before the write-port mux
+	// section; late declarations would only compile on tools that pre-scan.
+	reg ext_wr_done_d;
+	wire ext_wr_done_sync;
+	reg ext_frame_ready_r;
+	wire [15:0] reader_src_y;
+	wire reader_row_hold;
+	wire reader_map_ident;
 
 	// 装载通路：清空 loader、BMP 解析、写 FIFO 与组计数，避免旧事务污染下一张图。
 	always @(posedge pix_clk or negedge loader_async_pix) begin
@@ -151,6 +236,7 @@ module image_player #(
 			state <= C_WAIT;
 			timer <= 0;
 			drain_cnt <= 3'd0;
+			idle_cnt <= 4'd0;
 			pending <= 1'b0;
 			pending_index <= 9'd1;
 			selected_index <= 9'd1;
@@ -158,13 +244,19 @@ module image_player #(
 			failed <= 1'b0;
 			error_code <= 0;
 			front_sel <= 1'b0;
+			display_w <= 16'd0;
+			display_h <= 16'd0;
+			display_off_x <= 16'd0;
+			display_off_y <= 16'd0;
 			commit_pending <= 1'b0;
 			vblank_d <= 1'b0;
 			fade_state <= F_IDLE;
 			fade_alpha <= 8'hFF;
+			ext_frame_ready_r <= 1'b0;
 		end else begin
 			vblank_d <= ext_vblank;
-			if (load_req) begin
+			ext_frame_ready_r <= 1'b0; // 单拍脉冲，下面三处翻帧点置位
+			if (bmp_load_req) begin
 				pending <= 1'b1;
 				pending_index <= image_index;
 			end
@@ -173,18 +265,35 @@ module image_player #(
 			// 尚无有效帧时无需等待，直接提交即可开始首次显示。
 			// 已有旧帧时先按帧淡出到黑，全黑那一拍才翻帧首，再逐帧淡入；
 			// 混合目标恒为黑，所以全程只需读一帧，不额外占用读带宽。
-			if (commit_pending) begin
+			// 【v2】视频通路的提交请求不走 C_COMMIT（外部写口不进 BMP 装载状态机），
+			// 而是由 ext_wr_done 在这一级并列置位。优先级最高：动画帧一到就先记账，
+			// 其余分支都在它不成立时才可能清它，保证 done 不会被同拍的清理吞掉。
+			if (ext_wr_mode && ext_wr_done_sync) begin
+				commit_pending <= 1'b1;
+			end else if (commit_pending) begin
 				if (!image_ready) begin
 					// 首帧没有可淡出的上一帧，直接提交并全亮。
 					front_sel <= back_sel;
+					display_w <= scale_w;
+					display_h <= scale_h;
+					display_off_x <= scale_off_x;
+					display_off_y <= scale_off_y;
 					image_ready <= 1'b1;
 					commit_pending <= 1'b0;
 					fade_alpha <= 8'hFF;
 					fade_state <= F_IDLE;
-				end else if (!FADE_ON) begin
+					ext_frame_ready_r <= 1'b1;
+				end else if (!FADE_ON || ext_no_fade) begin
+					// 视频模式（ext_no_fade=1）走消隐期硬切换，不淡出到黑：
+					// 否则每一帧都要额外花 FADE_FRAMES 帧淡出+淡入，帧率被压成 1/8。
 					if (vblank_rise) begin
 						front_sel <= back_sel;
+						display_w <= scale_w;
+						display_h <= scale_h;
+						display_off_x <= scale_off_x;
+						display_off_y <= scale_off_y;
 						commit_pending <= 1'b0;
+						ext_frame_ready_r <= 1'b1;
 					end
 				end else begin
 					if (vblank_rise) begin
@@ -196,6 +305,7 @@ module image_player #(
 						front_sel <= back_sel;
 						commit_pending <= 1'b0;
 						fade_state <= F_IN;
+						ext_frame_ready_r <= 1'b1;
 					end else begin
 						fade_state <= F_OUT;
 					end
@@ -211,23 +321,37 @@ module image_player #(
 			end
 			case (state)
 				C_WAIT: if (sd_ready && !blk_busy) begin
-					selected_index <= load_req ? image_index : (pending ? pending_index : 9'd1);
+					selected_index <= bmp_load_req ? image_index : (pending ? pending_index : 9'd1);
 					pending <= 1'b0;
 					timer <= 0;
 					state <= C_RESET;
 				end else if (sd_failed) begin
 					failed <= 1'b1; error_code <= 6; state <= C_FAIL;
 				end
+				// 【2026-10-31】装载前段与 C_LOAD 都复查 sd_ready：SD 总线被扫描器收回时
+				// 顶层仲裁不再路由本模块的 blk_start，继续装载只会静默等到超时。
+				// 退回 C_WAIT 并保留请求，等总线重新归属后从头重装同一张图。
+				C_RESET, C_MEM, C_START, C_LOAD: if (!sd_ready) begin
+					pending <= 1'b1;
+					if (!bmp_load_req) pending_index <= selected_index;
+					timer <= 0;
+					state <= C_WAIT;
+				end else case (state)
 				C_RESET: if (timer >= 16) begin
 					timer <= 0; state <= C_MEM;
 				end
 				C_MEM: if (init_sync[1]) begin
 					timer <= 0; state <= C_START;
 				end
-				C_START: begin timer <= 0; drain_cnt <= 3'd0; state <= C_LOAD; end
+				C_START: begin timer <= 0; drain_cnt <= 3'd0; idle_cnt <= 4'd0; state <= C_LOAD; end
 				// 看门狗按进度计时：每完成一个扇区就清零，LOAD_TIMEOUT 变为“单扇区无进度”上限，
 				// 慢卡整帧装载超过 4 s 不再误报；真正停滞的扇区仍会触发错误码 9。
-				C_LOAD: if (loader_fail) begin
+				// 【2026-10-31】loader 在 start 那一拍就置 busy，之后只会以 done/fail 结束。
+				// 连续 16 拍既不 busy 也没 done/fail，说明 start 没被接收或 loader 被意外复位，
+				// 立即报 13(dd)，与"装载中途无进度 9(d8)"区分。
+				default: if (!loader_busy && !loader_done && !loader_fail && (idle_cnt == 4'd15)) begin
+					failed <= 1'b1; error_code <= 4'd13; state <= C_FAIL;
+				end else if (loader_fail) begin
 					failed <= 1'b1; error_code <= loader_error; state <= C_FAIL;
 				end else if (loader_done) begin
 					// 缩放器输出比源像素晚一拍，最后一个目标像素可能在 loader_done
@@ -242,11 +366,12 @@ module image_player #(
 						state <= C_COMMIT;
 					end
 				end
+				endcase
 				C_COMMIT: if (complete_sync[1]) begin
 					commit_pending <= 1'b1; state <= C_SHOW;
 				end
-				C_SHOW, C_FAIL: if ((pending || load_req) && sd_ready && !blk_busy) begin
-					selected_index <= load_req ? image_index : pending_index;
+				C_SHOW, C_FAIL: if ((pending || bmp_load_req) && sd_ready && !blk_busy) begin
+					selected_index <= bmp_load_req ? image_index : pending_index;
 					pending <= 1'b0;
 					// 双缓冲保留在显帧直到新帧提交；单帧必须立刻退掉，因为马上要覆盖它。
 					if (!SEAMLESS) image_ready <= 1'b0;
@@ -263,6 +388,10 @@ module image_player #(
 			endcase
 			// 扇区完成即喂狗（写在 case 之后，覆盖本拍的 timer+1）。
 			if ((state == C_LOAD) && blk_done) timer <= 0;
+			// start 接收检查计数：只在 C_LOAD 内累计，loader 一忙/一结束就清零（饱和于 15）。
+			if ((state == C_LOAD) && !loader_busy && !loader_done && !loader_fail) begin
+				if (idle_cnt != 4'd15) idle_cnt <= idle_cnt + 4'd1;
+			end else if (state != C_START) idle_cnt <= 4'd0;
 			// 主动复位时等旧故障同步值消退；双缓冲旧帧仍在显示时继续监视。
 			if ((loading && (timer >= LOAD_TIMEOUT)) || (((loading && (state != C_RESET)) || image_ready) && arb_error_sync[1]) ||
 				(((state == C_LOAD) || (state == C_COMMIT) || image_ready) && !sdr_online[1])) begin
@@ -286,20 +415,21 @@ module image_player #(
 	wire [15:0] bmp_w, bmp_h, pixel565, pixel_y;
 	wire [7:0] byte_data;
 	wire bmp_pixel_valid, fifo_wr_en, fifo_full;
+	wire fifo_sector_full;
 	wire [31:0] fifo_wr_data;
 	wire [3:0] fifo_wr_dm;
 	// loader 的 pix_count 现在统计缩放后的有效像素数，供 C_LOAD 与 out_pixels 比对。
 	img_loader #(.CHAIN_MAX(4096)) u_loader (
 		.clk(pix_clk), .rst_n(loader_rst_pix), .start(loader_start),
 		.img_index(selected_index), .cfg_w(WIDTH[15:0]), .cfg_h(HEIGHT[15:0]),
-		.busy(), .done(loader_done), .fail(loader_fail), .err_code(loader_error),
+		.busy(loader_busy), .done(loader_done), .fail(loader_fail), .err_code(loader_error),
 		.pix_count(pixel_count), .blk_start(blk_start), .blk_addr(blk_addr),
 		.blk_done(blk_done), .blk_err(blk_err), .data_byte(data_byte), .data_valid(data_valid),
 		.bmp_start(bmp_start), .bmp_exp_w(bmp_w), .bmp_exp_h(bmp_h),
 		.byte_valid(byte_valid), .byte_data(byte_data), .byte_sof(byte_sof),
 		.bmp_hdr_fail(hdr_fail), .pix_valid(scale_valid), .pix_rgb565(scale565),
 		.fifo_wr_en(fifo_wr_en), .fifo_wr_data(fifo_wr_data),
-		.fifo_wr_dm(fifo_wr_dm), .fifo_wr_full(fifo_full)
+		.fifo_wr_dm(fifo_wr_dm), .fifo_wr_full(fifo_sector_full)
 	);
 	// CHECK_SIZE(0)：缩放模式下任意分辨率都能映射进 WIDTH×HEIGHT，
 	// 不再要求源图恰好等于容器尺寸；img_w/img_h 仍照常输出给缩放器。
@@ -319,10 +449,10 @@ module image_player #(
 		.out_w(scale_w), .out_h(scale_h), .out_off_x(scale_off_x), .out_off_y(scale_off_y),
 		.out_cfg_ok(scale_cfg_ok), .out_pixels(scale_pixels)
 	);
-	assign out_w = scale_w;
-	assign out_h = scale_h;
-	assign out_off_x = scale_off_x;
-	assign out_off_y = scale_off_y;
+	assign out_w = display_w;
+	assign out_h = display_h;
+	assign out_off_x = display_off_x;
+	assign out_off_y = display_off_y;
 	// 缩放器的 dst_x/dst_y 在无效拍保持上一像素的坐标 —— loader 拼字后那一拍
 	// 仍需按刚完成的奇像素算字地址，坐标必须稳定，不能每拍刷新。
 	// 双缓冲下写到后台帧，前台继续读旧帧，两者地址互不重叠。
@@ -331,16 +461,23 @@ module image_player #(
 	wire fifo_empty, wr_ack;
 	reg [56:0] write_head;
 	reg write_head_valid;
-	wire fifo_pop = !fifo_empty && (!write_head_valid || wr_ack);
+	// v2：视频模式下仲裁器的 ack 属于外部写口，不得回头吃掉 BMP 通路的状态。
+	// 否则 ext 每写一字就会弹一次 BMP FIFO 队头、并让组计数/已写字数虚增。
+	wire bmp_wr_ack = wr_ack && !ext_wr_mode;
+	wire fifo_pop = !ext_wr_mode && !fifo_empty && (!write_head_valid || bmp_wr_ack);
 	// 异步 RAM 队头先寄存，避免大扇入读复用器直接串入 SDRAM 命令路径。
 	always @(posedge sdr_clk or negedge loader_rst_sdr) begin
 		if (!loader_rst_sdr) begin write_head <= 0; write_head_valid <= 1'b0; end
 		else if (fifo_pop) begin write_head <= fifo_out; write_head_valid <= 1'b1; end
-		else if (wr_ack) write_head_valid <= 1'b0;
+		else if (bmp_wr_ack) write_head_valid <= 1'b0;
 	end
-	async_fifo #(.DATA_WIDTH(57), .ADDR_WIDTH(FIFO_AW)) u_write_fifo (
+	// Loader 每个 512B 扇区内不能暂停像素流；将 almost-full 提前 96 字拉高，
+	// 让 img_loader 在扇区边界等待，给最多 86 字及流水尾部预留空间。
+	async_fifo #(.DATA_WIDTH(57), .ADDR_WIDTH(FIFO_AW),
+		.ALMOST_FULL_MARGIN(FIFO_SECTOR_RESERVE)) u_write_fifo (
 		.wr_clk(pix_clk), .wr_rst_n(loader_rst_pix), .wr_en(fifo_wr_en),
-		.wr_data({word_addr[20:2], 2'b00, fifo_wr_dm, fifo_wr_data}), .wr_full(fifo_full),
+		.wr_data({word_addr[20:2], 2'b00, fifo_wr_dm, fifo_wr_data}),
+		.wr_full(fifo_full), .wr_almost_full(fifo_sector_full),
 		.rd_clk(sdr_clk), .rd_rst_n(loader_rst_sdr),
 		.rd_en(fifo_pop), .rd_data(fifo_out), .rd_empty(fifo_empty)
 	);
@@ -355,7 +492,7 @@ module image_player #(
 	// 只跨域完整四字组的格雷码。组计数不等即有完整组，省去解码和宽减法。
 	wire [15:0] produced_group_next = produced[17:2] + 16'd1;
 	wire [15:0] consumed_group_next = consumed[17:2] + 16'd1;
-	wire write_request = write_head_valid && (batch_left != 0);
+	wire write_request = write_head_valid && (batch_left != 0) && !ext_wr_mode;
 	always @(posedge pix_clk or negedge loader_rst_pix) begin
 		if (!loader_rst_pix) begin produced <= 0; produced_gray <= 0; end
 		else if (fifo_wr_en && !fifo_full) begin
@@ -391,13 +528,18 @@ module image_player #(
 			prod_meta <= produced_gray; prod_sync <= prod_meta;
 			// 先锁定一个完整组，再对仲裁器提出请求，比较器不串入 FIFO 接受路径。
 			if ((batch_left == 0) && (prod_sync != consumed_gray)) batch_left <= 3'd4;
-			else if (wr_ack) begin
+			else if (bmp_wr_ack) begin
 				consumed <= consumed + 18'd1;
 				if (batch_left == 1)
 					consumed_gray <= consumed_group_next ^ (consumed_group_next >> 1);
 				batch_left <= batch_left - 3'd1;
 			end
-			if (app_wr_en && !ref_vld) begin written <= written + 18'd1; write_settle <= 0; end
+			// written counts real FIFO words accepted by the arbiter. app_wr_en can
+			// also represent a masked DM=F pad beat when a group loses its head;
+			// counting that beat could falsely complete a frame with missing data.
+			// v2：视频模式下这些 ack 属于外部写口，不能计入 BMP 帧的完成判据。
+			if (bmp_wr_ack) written <= written + 18'd1;
+			if (app_wr_en && !ref_vld) write_settle <= 0;
 			else if (write_settle != 15) write_settle <= write_settle + 1'b1;
 		end
 	end
@@ -405,12 +547,40 @@ module image_player #(
 	wire rd_req, rd_ack, rd_valid, rd_idle, rd_restart, rd_restart_done;
 	wire [31:0] rd_data, sdr_rd_dout;
 	wire sdr_rd_en;
+	// -----------------------------------------------------------------------
+	// v2 外部写口：写口归属 mux + ack/busy 反馈
+	// ext_wr_mode=1 时 BMP 通路的 write_request 与 FIFO 消费一并冻结，外部独占
+	// 仲裁器写口。组内补拍（wr_fire 且 !wr_req）会以 DM=4'hF 屏蔽写，本路 ack
+	// 只在真数据那拍出现，因此外部可逐字推进地址而不会多计数。
+	// -----------------------------------------------------------------------
+	always @(posedge pix_clk or negedge rst_n_pix) begin
+		if (!rst_n_pix) ext_wr_done_d <= 1'b0;
+		else ext_wr_done_d <= ext_wr_done;
+	end
+	// 上升沿检出而不是 OR 打宽：OR 会让脉冲持续两拍，而本分支位于 commit_pending
+	// 优先级链最前，恰在 vblank_rise 那拍会压住翻帧、并把已提交的帧重新置位。
+	assign ext_wr_done_sync = ext_wr_done & ~ext_wr_done_d;
+	wire        arb_wr_req  = ext_wr_mode ? ext_wr_valid : write_request;
+	wire [20:0] arb_wr_addr = ext_wr_mode ? ext_wr_addr  : write_head[56:36];
+	wire [31:0] arb_wr_data = ext_wr_mode ? ext_wr_data  : write_head[31:0];
+	wire [3:0]  arb_wr_dm   = ext_wr_mode ? ext_wr_dm    : write_head[35:32];
+	assign ext_wr_ack  = ext_wr_mode && arb_wr_req && wr_ack;
+	assign ext_wr_busy = ext_wr_mode && ext_wr_valid && !ext_wr_ack;
+	assign ext_frame_sel = {1'b0, front_sel};
+	assign ext_loader_want_blk = loader_busy;
+	// 视频模式必须旁路淡入淡出：否则每帧都要淡出到黑再淡入，帧率被压成 1/FADE_FRAMES。
+	wire [7:0] fade_level = ext_no_fade ? 8'hFF : fade_alpha;
+	// 换帧完成脉冲：front_sel 真正翻转的那一拍拉高一拍，外部据此知道上一帧
+	// 已经上屏、可以开始写下一帧的后台缓冲。三个翻帧点（首帧/无淡入淡出/
+	// 全黑点）都在主状态机里置位。
+	assign ext_frame_ready = ext_frame_ready_r;
 	// 显示侧帧首跨到 sdr 域后采样，rd_restart 那拍必须稳定。
 	assign rd_base = front_sync_sdr[1] ? FRAME_SPAN : 21'd0;
-	framebuf_arbiter #(.WR_ADDR_FROM_FIFO(1), .FRAME_WORDS(FRAME_WORDS)) u_arb (
+	framebuf_arbiter #(.WR_ADDR_FROM_FIFO(1), .FRAME_WORDS(FRAME_WORDS),
+		.BUS_TURN_GAP(ARBITER_TURN_GAP)) u_arb (
 		.clk(sdr_clk), .rst_n(store_rst_sdr), .sdr_init_done(init_done), .ref_vld(ref_vld),
-		.wr_req(write_request), .wr_word_addr(write_head[56:36]),
-		.wr_data(write_head[31:0]), .wr_dm(write_head[35:32]), .wr_ack(wr_ack),
+		.wr_req(arb_wr_req), .wr_word_addr(arb_wr_addr),
+		.wr_data(arb_wr_data), .wr_dm(arb_wr_dm), .wr_ack(wr_ack),
 		.rd_req(rd_req), .rd_ack(rd_ack), .rd_data(rd_data), .rd_valid(rd_valid), .rd_idle(rd_idle),
 		.rd_restart(rd_restart), .rd_base(rd_base), .rd_restart_done(rd_restart_done),
 		.app_wr_en(app_wr_en), .app_wr_addr(app_wr_addr), .app_wr_din(app_wr_din), .app_wr_dm(app_wr_dm),
@@ -430,10 +600,21 @@ module image_player #(
 		.rd_req(rd_req), .rd_ack(rd_ack), .rd_data(rd_data), .rd_valid(rd_valid), .rd_idle(rd_idle),
 		.rd_restart(rd_restart), .rd_base(rd_base), .rd_restart_done(rd_restart_done),
 		.pix_clk(pix_clk), .rst_n_pix(store_rst_pix && image_ready), .de(de), .active_y(scan_y),
+		// 【v2】R-07：新增端口必须显式接线。顶层五档源高经本模块透传，
+		// 漏接会让 src_h 悬空成 x 并向整条像素通路扩散。
+		.src_w(src_w), .src_h(src_h),
+		// 【v2 Key9】窗口矩形与列坐标纯透传。不接（或接常量 0）会让 pix_reader 内部的
+		// h_ident/win_bad 判定失真：接 0 时 win_bad=1 回落到恒等，Key9 静默失效。
+		// 这两行同时消掉综合侧的 HDL-5317（win_off_y[15] 悬空）/HDL-5323（active_x[10] 悬空）。
+		.active_x(active_x),
+		.win_w(win_w), .win_h(win_h), .win_off_x(win_off_x), .win_off_y(win_off_y),
+		.src_y(reader_src_y), .src_row_hold(reader_row_hold), .map_ident(reader_map_ident),
 		.pix_rgb565(reader565), .pix_valid(pixel_valid), .stat(reader_status)
 	);
+	// v2 行映射观测口：本模块不消费，留给顶层探针/仿真观测，未接时综合掉。
 	// 转场混合必须与 de 同拍：reader 是组合输出，中间不能插寄存器，否则像素整拍错位。
-	fade_mixer u_fade (.rgb_in(reader565), .level(fade_alpha), .rgb_out(rgb565));
+	// level 由 fade_level 给：ext_no_fade=1 时恒 8'hFF（直通），视频模式不再淡入淡出。
+	fade_mixer u_fade (.rgb_in(reader565), .level(fade_level), .rgb_out(rgb565));
 	sdram_ctrl_wrap #(.SIM_MEM_WORDS(MEM_WORDS)) u_sdram (
 		.clk(sdr_clk), .clk_sft(sdr_clk_sft), .rst_n(store_rst_sdr),
 		.init_done(init_done), .ref_vld(ref_vld), .busy(),

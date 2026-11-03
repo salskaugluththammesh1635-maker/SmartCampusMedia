@@ -6,35 +6,43 @@
 // ============================================================================
 // 【一】系统功能
 //   B3 要求"按键调参数，画面同步显示参数"。参数面板（osd_panel）由谁触发？
-//   本工程 16 个键**已经全部占满**：
+//   v2 有 Key0~Key10 共 11 个主功能键，Key11~Key15 为 P2 备用（P2_EN=0 时恒 0）。
+//   本模块的触发源不靠抢键号，而是监视参数值变化（见【二】）。
+//   完整键表见 docs/plan_v2/KEYMAP.md §2
 //
-//       KEY0/1  上一张/下一张      KEY8   反色
-//       KEY2    轮播开关           KEY9   轮播倍率
-//       KEY3    三态模式           KEY10  图库重扫
-//       KEY4/5  测试图案           KEY11  九宫格
-//       KEY6    音频静音           KEY12  信息条
-//       KEY7    亮度               KEY13  音频图层
-//                                 KEY14  蜂鸣器静音
-//                                 KEY15  应急直达
-//
-//   再抢任何一个键都会违反"一个键号只有一个消费者"的既有原则（这条原则
-//   来自 KEY0/KEY1 双占用事故，见 docs/progress.md）。所以本模块换了个思路：
-//   **不新增按键，而是让面板在参数变化时自己弹出来**。
+//   不新增按键这个思路在 v2 依然成立：面板在参数变化时自己弹出来，用户
+//   不需要再按一个键才能看参数。一个键号只有一个消费者这条原则（来自 v1 的
+//   KEY0/KEY1 双占用事故，见 docs/progress.md），本模块因此从不占用任何键号。
 //
 // 【二】本模块功能
-//   监视 4 个"用户可调参数"，任一发生变化就拉起一个保持窗口：
+//   监视 7 个"用户可调参数"，任一发生变化就拉起一个保持窗口：
 //
-//       bright_sel / invert_en / auto_sw_sel / info_mode 变化
+//       bright_lvl / vol_lvl / res_sel / ratio_sel /
+//       invert_en  / auto_sw_sel / info_mode        任一变化
 //           -> 面板显示 HOLD_MS 毫秒 -> 自动消失
 //
-//   于是"按 KEY7 调亮度"这个动作本身就同时完成了两件事：参数变了、画面
+//   于是"按 Key6 调亮度"这个动作本身就同时完成了两件事：参数变了、画面
 //   右上角出现文字确认。用户不需要记任何额外按键。
 //
+//   t16 之前只监视 4 个（bright_sel/invert_en/auto_sw_sel/info_mode），
+//   后三个档位（音量/分辨率/屏占比）虽被 key_router 记住却从不触发面板 ——
+//   用户按 Key7 循环到音量那几档时画面毫无反应，这是 E4 缺口的一部分。
+//   纳入监视后，六个参数项全部有反馈。
+//
+// 【二之二】为什么不用 key_router 的 osd_pop_req 而自己再做一次电平监视
+//   key_router 那边确实有个 `osd_pop_req` 单拍脉冲（按键时给一拍），
+//   但本模块是**电平监视**：它比对的是"本拍值 vs 上一拍值"，天然覆盖
+//   "参数被按键改"与"参数被别处改"两种来源，也不依赖按键事件是否漏采。
+//   若改成吃脉冲，还要额外处理"脉冲来了但值没变"、"值变了但脉冲丢了"
+//   这类边沿对齐问题，等于把简单问题复杂化。两种机制并存不冲突：
+//   osd_pop_req 在 v2 只剩少量消费者（如 Key11 图库重扫后的提示）；信息条已
+//   改常显（见顶层 info_en = 1'b1），不再由按键开关。
+//
 // 【三】为什么不监视 img_index
-//   img_index 是播放器自动递增的（轮播每 5 秒一张）。若把它纳入触发条件，
+//   img_index 是播放器自动递增的（轮播每 3 秒一张，D-02 固定）。若把它纳入触发条件，
 //   面板会每 5 秒弹一次、几乎常驻，反而变成噪声。所以只监视"人按出来的"
-//   那 4 个参数。图号仍然显示在面板里（MODE 行的 IMG:nn/nn），只是它自己
-//   变化不触发弹窗 —— 用户想看图号时按任意参数键即可，或直接开 KEY12。
+//   那 7 个参数。图号仍然显示在面板里（MODE 行的 IMG:nn/nn），只是它自己
+//   变化不触发弹窗 —— 用户想看图号时按任意参数键即可让面板重新弹出。
 //
 // 【四】保持窗口
 //   默认 HOLD_MS = 2500，即 2.5 秒。取值理由：
@@ -54,13 +62,22 @@
 //   直接覆盖，不会出现"flag 残留导致面板永不消失"这类 bug。
 //
 // 【六】上电行为
-//   复位后 delay 寄存器全 0、cnt 全 0 -> panel_on = 0。参数在复位后第一拍
-//   被赋值成默认值（也是 0），与 delay 相同，不产生"变化"事件。所以上电
-//   画面与改造前**逐像素一致**，面板不会无缘无故弹出来。
+//   复位后 delay 寄存器被赋成**与被监视信号相同的复位值**（不是全 0），
+//   cnt 全 0 -> panel_on = 0。参数在复位后第一拍也是那些值，与 delay 相同，
+//   不产生"变化"事件。所以上电画面与改造前**逐像素一致**，面板不会无缘无故
+//   弹出来。
+//
+//   ★ 这条在 t16 加三个参数项时差点被破掉：新增的 vol_lvl / res_sel /
+//   ratio_sel 在 key_router 里的复位值是 4'd6 / 3'd4 / 3'd4（音量取 50%、
+//   分辨率取原生 640x480、屏占比取满屏），**不是 0**。若照"延迟副本复位
+//   全 0"的老写法，复位释放后第一拍这三个信号全部 ≠ 0 -> changed=1 ->
+//   面板上电自弹 2.5 秒。所以复位段是逐个对齐写死的，tb_osd_autopop 里有
+//   一条专门断言"复位释放后第一拍 panel_on === 0"守这个不变式。
 //
 // 【七】资源代价
-//   4 个参数各一份延迟副本（3+1+2+2 = 8 个寄存器）+ 26 位计数器。
-//   约 35 个寄存器、40 LUT。无 BRAM、无 DSP。
+//   7 个参数各一份延迟副本（4+4+3+3+1+2+2 = 19 个寄存器）+ 26 位计数器。
+//   约 45 个寄存器、45 LUT（t16 前是 8 个副本 / 35 寄存器 / 40 LUT，
+//   本项增量约 +11 个寄存器、+5 LUT）。无 BRAM、无 DSP。
 // ============================================================================
 module osd_autopop #(
     parameter CLK_FREQ_HZ = 25_000_000,  // clk_pixel 频率
@@ -68,8 +85,21 @@ module osd_autopop #(
 )(
     input  wire       clk,
     input  wire       rst_n,
-    // —— 被监视的 4 个用户可调参数 ——
-    input  wire [2:0] bright_sel,
+    // —— 被监视的 7 个用户可调参数 ——
+    //   t16 追加后三个（vol_lvl / res_sel / ratio_sel）：改造前本模块只盯
+    //   亮度/反色/倍率/模式四根线，于是 Key7 调音量时参数变了、面板却不弹，
+    //   用户按了完全没反馈。凡是"人按出来的参数"都必须纳入监视，否则
+    //   osd_param_text 里新加的那几列永远没人看得见。
+    //
+    //   ★ 复位值必须与被监视信号在 key_router 里的复位值**逐个对齐**
+    //   （见下面 always 块复位段），否则上电第一拍全部判成"变化"，
+    //   面板会自己弹出来 2.5 秒。这不是纸面推理：key_router 的音量复位是
+    //   4'd6（约 50%，不是 0）、分辨率与屏占比复位是 3'd4（原生 640x480 /
+    //   满屏，不是 0），照抄"复位值全 0"的做法会直接踩到。
+    input  wire [3:0] bright_lvl,   // 亮度档 0..9（与 key_router.bright_lvl 同宽同名）
+    input  wire [3:0] vol_lvl,      // 音量档 0..9（复位 6）
+    input  wire [2:0] res_sel,      // 分辨率档 0..4（复位 4）
+    input  wire [2:0] ratio_sel,    // 屏占比档 0..4（复位 4）
     input  wire       invert_en,
     input  wire [1:0] auto_sw_sel,
     input  wire [1:0] info_mode,
@@ -82,16 +112,27 @@ module osd_autopop #(
     localparam integer CNT_MAX = (CLK_FREQ_HZ / 1000) * HOLD_MS;
 
     // ---- 参数延迟副本：用来检测"变化" ----------------------------------
-    //   复位值全 0，与各参数的复位值一致 —— 见头注释【六】。
-    reg [2:0] bright_d;
+    //   复位值**逐个对齐 key_router 的复位值**（key_router.v:155-158）：
+    //       bright_lvl <= 4'd0   vol_lvl   <= 4'd6
+    //       res_sel    <= 3'd4    ratio_sel <= 3'd4
+    //       invert_en  <= 1'b0    auto_sw_sel <= 2'd0   info_mode <= 2'd0
+    //   用 0 覆盖全部会踩三个坑（音量/分辨率/屏占比复位后立刻判成变化，
+    //   上电画面多一块面板）——见头注释【六】的改写说明。
+    reg [3:0] bright_d;
+    reg [3:0] vol_d;
+    reg [2:0] res_d;
+    reg [2:0] ratio_d;
     reg       invert_d;
     reg [1:0] autosw_d;
     reg [1:0] mode_d;
 
     // 任一参数与上一拍不同即视为"有变化"。用 XOR 归约，一位一行，无优先级。
-    wire changed = (bright_sel != bright_d) ||
-                   (invert_en  != invert_d)  ||
-                   (auto_sw_sel!= autosw_d)  ||
+    wire changed = (bright_lvl != bright_d) ||
+                   (vol_lvl    != vol_d)    ||
+                   (res_sel    != res_d)    ||
+                   (ratio_sel  != ratio_d)  ||
+                   (invert_en  != invert_d) ||
+                   (auto_sw_sel!= autosw_d) ||
                    (info_mode  != mode_d);
 
     // ---- 倒计数器 -------------------------------------------------------
@@ -99,14 +140,22 @@ module osd_autopop #(
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            bright_d  <= 3'd0;
+            // ★ 这些初值必须与 key_router 的复位值逐个相等，不是"全 0 省事"。
+            //   写成全 0 的功能后果：上电第一拍 changed=1 -> 面板自动弹 2.5 s。
+            bright_d  <= 4'd0;
+            vol_d     <= 4'd6;
+            res_d     <= 3'd4;
+            ratio_d   <= 3'd4;
             invert_d  <= 1'b0;
             autosw_d  <= 2'd0;
             mode_d    <= 2'd0;
             cnt       <= 26'd0;
         end else begin
             // 延迟副本无条件跟随：变化检测永远是"本拍 vs 上一拍"
-            bright_d  <= bright_sel;
+            bright_d  <= bright_lvl;
+            vol_d     <= vol_lvl;
+            res_d     <= res_sel;
+            ratio_d   <= ratio_sel;
             invert_d  <= invert_en;
             autosw_d  <= auto_sw_sel;
             mode_d    <= info_mode;

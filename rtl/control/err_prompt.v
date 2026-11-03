@@ -66,12 +66,13 @@
 //                            8=MBR 签名不是 0x55AA（sd_probe 自定义）
 //   输入  sd_cd          : SD 卡检测，无卡=1（异步输入，本模块内两级同步）
 //   输入  gallery_fail   : 图库扫描失败（电平，自锁）
-//   输入  gallery_err[3:0]: fat32_reader 透传的 1~6
+//   输入  gallery_err[3:0]: fat32_reader 透传的 1~7（7=握手超时→dA，2026-10-31）
 //   输入  gallery_done   : 图库扫描完成（电平，自锁）
 //   输入  gallery_count[4:0]: 扫描到的图片张数（0~31）
 //   输入  image_failed   : 图片装载失败（电平）
 //   输入  image_err[3:0] : 1..5,10=img_loader 透传；6=SD 失败；7=像素数；8=SDRAM；
 //                            9=装载无进度(d8)；11=SDRAM 初始化超时(dB)；12=写完成超时(dC)
+//                            13=loader 未接收 start(dd)；14=文件定位无进度(dE)（2026-10-31）
 //   输出  err_active     : 1 = 当前有面向用户的错误（驱动 LED bit7 / 数码管切换）
 //   输出  prompt_hi[3:0] : 数码管 dig3 = 助记字母类（C/F/0/b/d）
 //   输出  prompt_lo[3:0] : 数码管 dig2 = 类内子码（0~9）
@@ -247,6 +248,12 @@ module err_prompt #(
                     prompt_hi = CH_DATA;
                     prompt_lo = 4'd3;
                 end
+                4'd7: begin
+                    // 【2026-10-31 新增】等 blk_done 握手超时（fat32_reader 码 7）→ dA，
+                    //   与 image 侧码 10 同义：请求没被 sd_spi_ctrl 接收
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd10;
+                end
                 default: begin
                     prompt_hi = CH_DATA;
                     prompt_lo = 4'd9;
@@ -315,6 +322,17 @@ module err_prompt #(
                     // 【2026-10-30 新增】image_player 码 12: C_COMMIT 等写完成超时 → dC
                     prompt_hi = CH_DATA;
                     prompt_lo = 4'd12;
+                end
+                4'd13: begin
+                    // 【2026-10-31 新增】image_player 码 13: loader 未接收 start（C_LOAD 内
+                    //   连续 16 拍既不 busy 也无 done/fail，start 丢失或 loader 被意外复位）→ dd
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd13;
+                end
+                4'd14: begin
+                    // 【2026-10-31 新增】img_loader 码 14: T_FATLOC 文件定位无进度 → dE
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd14;
                 end
                 default: begin
                     // 含 6（SD 失败透传，正常会被 sd_fail 分支先接住）

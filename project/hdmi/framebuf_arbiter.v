@@ -16,6 +16,7 @@ module framebuf_arbiter #(
 	parameter WR_STARVE_LIMIT = 256,   // 写请求优先等待阈值
 	parameter RD_TIMEOUT = 1024,       // 连续无回包看门狗，1..65535
 	parameter RD_GROUP_CYCLES = 13,    // 相邻读组首的最小周期数，1..255
+	parameter WR_GROUP_CYCLES = 13,    // 相邻写组首的最小周期数，1..255（2026-10-31 新增）
 	parameter FRAME_BASE = 21'd0,      // 四字对齐帧首地址
 	parameter FRAME_WORDS = 18'd153600 // 帧字数，须为四的倍数
 ) (
@@ -72,6 +73,7 @@ module framebuf_arbiter #(
 	reg wr_starve_reached;            // 阈值提前一拍比较，避免比较器串入接受路径
 	reg [7:0] gap_cnt;                // 换向空拍计数
 	reg [7:0] rd_group_wait;          // 独立于组内四拍的读组首节拍保护
+	reg [7:0] wr_group_wait;          // 独立于组内四拍的写组首节拍保护（2026-10-31 新增）
 	wire bus_ok;                     // 当前边沿可接受命令
 	wire wr_starved;                 // 写侧已等待过久
 	wire wr_last_beat;               // 写组第四拍
@@ -83,6 +85,7 @@ module framebuf_arbiter #(
 	wire rd_fire;                    // 真实读命令
 	wire rd_timeout;                 // 当前无回包且已超时
 	wire wr_may_exit;                // 不在写组内且不再开组
+	wire wr_grp_start;               // 写组首拍（2026-10-31 新增）
 	wire rd_may_exit;                // 不在读组内且已排空
 	wire restart_apply;              // 当前可安全执行已捕获重启
 	wire unexpected_return;          // 无在飞命令却收到回包
@@ -91,7 +94,13 @@ module framebuf_arbiter #(
 	assign wr_starved = wr_req && wr_starve_reached; // 不保留虚假饥饿
 	assign wr_last_beat = (wr_beat == 2'd3); // 四拍后才换向
 	assign rd_last_beat = (rd_beat == 2'd3); // 四拍后才换向
-	assign wr_new_allowed = wr_req && (!rd_req || wr_starved || rd_fault); // 读优先并防写饥饿
+	// 2026-10-31：写侧此前完全没有组首间隔保护，装载时写组可在读空闲窗口内
+	// 背靠背连续开组（组首间隔只剩 4 拍）。同族读侧注释已记录"12 拍间隔在真核
+	// 复现漏 ACT"，写侧裸奔是与同一颗核打交道的同类风险，故按同值补上。
+	// 只限制组首，已开启的四拍组保持连续，与读侧语义一致。
+	assign wr_grp_start = wr_fire && !wr_grp_active; // 写组首拍
+	assign wr_new_allowed = wr_req && (wr_group_wait == 8'd0)
+		&& (!rd_req || wr_starved || rd_fault); // 读优先并防写饥饿
 	assign rd_new_allowed = rd_req && !wr_starved && !rd_rst_pend && !rd_restart
 		&& (rd_outstanding <= 5'd27) && (rd_group_wait == 8'd0); // 组首预留四个信用
 	assign wr_fire = (st == A_WR) && bus_ok && (wr_grp_active || wr_new_allowed); // 单一接受谓词
@@ -125,6 +134,13 @@ module framebuf_arbiter #(
 		if (!rst_n) rd_group_wait <= 8'd0;
 		else if (rd_ack) rd_group_wait <= RD_GROUP_CYCLES - 1;
 		else if (rd_group_wait != 8'd0) rd_group_wait <= rd_group_wait - 8'd1;
+	end
+
+	// 写组首计数：计组首拍而非 wr_ack（每拍都给，用它装载会被本组四拍不断重置）。
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) wr_group_wait <= 8'd0;
+		else if (wr_grp_start) wr_group_wait <= WR_GROUP_CYCLES - 1;
+		else if (wr_group_wait != 8'd0) wr_group_wait <= wr_group_wait - 8'd1;
 	end
 
 	// 状态寄存器：状态选择与寄存分开。
@@ -162,7 +178,9 @@ module framebuf_arbiter #(
 			if (wr_real || !wr_req) begin
 				wr_starve <= 16'd0;
 				wr_starve_reached <= (WR_STARVE_LIMIT == 0);
-			end else if (bus_ok && (wr_starve != 16'hFFFF)) begin
+			// 等待写组首间隔期间不计饥饿：那不是"读抢了写"，而是写自己被节流。
+			// 若照计，wr_starved 会虚假置位并反向卡死读侧（rd_new_allowed 含 !wr_starved）。
+			end else if (bus_ok && (wr_group_wait == 8'd0) && (wr_starve != 16'hFFFF)) begin
 				wr_starve <= wr_starve + 16'd1;
 				wr_starve_reached <= (WR_STARVE_LIMIT == 0) || (wr_starve >= WR_STARVE_LIMIT-1);
 			end

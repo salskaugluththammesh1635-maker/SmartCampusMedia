@@ -21,6 +21,9 @@
 //     · 根目录支持跨簇：本簇读完后沿 FAT 链取下一簇，
 //       遍历深度由 FAT_CHAIN_MAX 限制，超限报错而不是死循环
 //     · 大小写不敏感：兼容把短名存成小写的卡（NT 标志情形）
+//     · 【v2】短名参数化：target_name[87:0] 支持任意 8.3 名，
+//       且首字节预筛与逐字节比较共用同一份 exp_byte 译码，
+//       从结构上消灭"改了一处漏另一处"的失效模式
 //     · 全程无静默挂起：每一处等待都以「完成/失败」二选一收场，失败带错误码
 //
 // 【三、接口与内部结构】
@@ -33,6 +36,12 @@
 //     clk/rst_n            主时钟 25MHz / 异步复位低有效
 //     start(输入脉冲)       启动一次定位，1 拍脉冲
 //     img_index[8:0](输入) 目标序号 1~999（对应 IMGnnn.BMP 的 nnn）
+//                          【v2】仅在 target_name 全 0（自动模式）时使用
+//     target_name[87:0](输入) 【v2 新增】显式 8.3 短名，11 字节按目录项存储顺序
+//                          （8 字节名 + 3 字节扩展，中间无点，空格补齐）。
+//                          非全 0（判据 target_name[7:0]!=0）时走通用模式，
+//                          可定位任意 8.3 名: "BGM     WAV" / "SCI     RLE" 等。
+//                          全 0 时回退自动模式，行为与 v1 完全一致。
 //     busy(输出电平)        定位进行中
 //     found(输出电平)       定位成功（保持到复位或下次 start）
 //     fail(输出电平)        定位失败（保持同上）
@@ -50,11 +59,12 @@
 //     4 = 未找到目标文件（遍历到目录结束标记或簇链尾）
 //     5 = 底层读块失败（透传 sd_spi_ctrl 的错误码语义）
 //     6 = 参数非法（img_index 为 0，没有 IMG000.BMP）
+//     7 = 等 blk_done 握手超时（请求未被 sd_spi_ctrl 接收，也没有 blk_err；2026-10-31 从 5 拆出）
 //   内部逻辑块（共 4 块，按信号流顺序）:
 //     [1] 主序列机     always @(posedge clk)（S_IDLE→S_REQ→S_RX→S_EVAL→终态）
 //     [2] 字节捕获器   always @(posedge clk)（按 stage 分发，锁存各字段）
-//     [3] 序号拆分     always @(*)（img_index → 百/十/个位十进制数字）
-//     [4] 短名期望译码 always @(*)（项内偏移 → 期望短名字节）
+//     [3] 序号拆分     always @(*)（img_index → 百/十/个位十进制数字，仅自动模式）
+//     [4] 短名期望译码 always @(*)（项内偏移 → 期望短名字节，双模: target_name / 序号拼）
 //
 // 【四、设计思路与范式】
 //   范式定位: 有限状态机（FSM）+ 按阶段的字段抽取
@@ -92,10 +102,22 @@ module fat32_reader #(
     input  wire        rst_n,          // 异步复位，低有效
     // —— 上层控制 ——
     input  wire        start,          // 脉冲: 启动一次定位
-    input  wire [8:0]  img_index,      // 电平: 目标序号 1~999
+    input  wire [8:0]  img_index,      // 电平: 目标序号 1~999（仅自动模式用）
+    // 【2026-11-01 v2 新增】显式 8.3 短名（11 字节，按目录项存储格式：8 字节名
+    //   + 3 字节扩展，**中间没有点**，名不足 8 字节用空格补齐）。
+    //   target_name[7:0]   = 第 0 字节（名字首字符）
+    //   target_name[87:80] = 第 10 字节（扩展名末字符）
+    //   例: "IMG001  BMP" / "BGM     WAV" / "SCI     RLE" / "NARR    SRT"
+    //   双模语义（见下方 name_auto）:
+    //     · target_name 非全 0 → 用它逐字节比较（通用模式，可读任意 8.3 名）
+    //     · target_name 全 0   → 回退到 img_index 拼 "IMGnnn  BMP"（既有行为）
+    //   为什么保留双模而不是一刀切删 img_index:
+    //     既有上层 img_loader / gallery_probe 与 tb_fat32_reader 的 18 个场景
+    //     全部按序号寻址，一刀切会让已验证模块集体返工；双模对它们零影响。
+    input  wire [87:0] target_name,
     output reg         busy,           // 电平: 定位进行中
-    output reg         found,          // 电平: 定位成功（保持）
-    output reg         fail,           // 电平: 定位失败（保持）
+    output wire        found,          // 电平: 定位成功（保持到下次 start）
+    output wire        fail,           // 电平: 定位失败（保持到下次 start）
     output reg  [3:0]  err_code,       // 电平: 失败原因（见文件头错误码表）
     output reg  [31:0] file_size,      // 电平: 目标文件字节大小
     output reg  [31:0] first_cluster,  // 电平: 目标文件首簇号
@@ -147,6 +169,13 @@ module fat32_reader #(
     // 【2026-10-28 新增】等 blk_done 的看门狗：S_RX 只等握手，旧版无超时。
     //   若 blk_start 因顶层 SD 总线归属切换被丢弃，会永久挂死。
     reg  [31:0] blk_wait_cnt;
+    // [t26] 终态收到 start 时锁存，由 S_IDLE 消费。
+    //   start 是单拍脉冲（wav 侧 fat_start 实测恒 1 拍高电平），
+    //   终态若只把 st 拨回 S_IDLE 而不锁存，下一拍 start 已掉，
+    //   第二次启动会被漏掉，症状与原来的自锁完全相同。
+    reg         start_seen;
+    // [t26] 结果电平的内部寄存器；对外由组合屏蔽后的 found/fail 输出。
+    reg         found_q, fail_q;
 
     // —— [2] 字节捕获寄存器（全部只由块[2]驱动）——
     reg  [9:0]  byte_cnt;     // 【块内字节计数】0~512，512 = 块收完
@@ -180,6 +209,13 @@ module fat32_reader #(
     // —— [4] 短名期望译码（块④ 输出）——
     reg  [7:0]  exp_byte;     // 当前项内偏移处期望的短名字节（大写形式）
     wire        sector0_is_fat32;
+    // 【v2 新增】target_name 全 0 → 自动模式（按 img_index 拼 IMGnnn.BMP）；
+    //   非全 0 → 通用模式（按 target_name 逐字节比对）。
+    //   判断点放在名字首字节：8.3 短名的第 0 字节不可能是 0x00
+    //   （0x00 是目录结束标记、0xE5 是已删除项），所以
+    //   "target_name[7:0] == 0" 是一个无歧义的"未指定"编码。
+    //   只判断首字节而不是 88 位全零，可省 87 个或门，且语义等价。
+    wire        name_auto = (target_name[7:0] == 8'h00);
 
     // —— 对外暴露的簇链遍历参数 ——
     //   这三个值是 img_loader 自己算扇区地址的唯一依据：
@@ -190,6 +226,18 @@ module fat32_reader #(
     assign out_data_begin = data_begin;
     assign out_fat_begin  = fat_begin;
     assign out_spc        = spc;
+
+    // ---------------- [t26] 结果电平屏蔽 ----------------
+    //   【为什么需要】调用方（wav_stream_player:717 W_FATLOC）在发出 start 的
+    //   下一拍就采 fat_found/fat_fail。若这里只靠寄存器在终态里清，
+    //   非阻塞赋值要到再下一拍才生效，调用方会采到上一轮残留的 1，
+    //   于是锁存到陈旧的簇号/长度并直接跳过定位（实测：第二次换源仍播旧文件、
+    //   err_code 还是 0，比报错更难查）。
+    //   【做法】终态 + 当拍 start 时，把两根结果线组合压成 0，零延迟生效。
+    //   这一拍本来就意味着"上一轮结果作废"，压 0 不会丢有效信息。
+    wire term_reentry = start && ((st == S_DONE) || (st == S_FAIL));
+    assign found = found_q && !term_reentry;   // [t26] 电平屏蔽
+    assign fail  = fail_q  && !term_reentry;   // [t26] 电平屏蔽
     // A 55AA signature alone does not distinguish MBR from VBR. Require a
     // consistent 512-byte FAT32 BPB before accepting a volume at card LBA 0.
     assign sector0_is_fat32 = bytes_per_sec == 16'd512 &&
@@ -222,24 +270,28 @@ module fat32_reader #(
             blk_start     <= 1'b0;
             blk_addr      <= 32'd0;
             busy          <= 1'b0;
-            found         <= 1'b0;
-            fail          <= 1'b0;
+            found_q       <= 1'b0;
+            fail_q        <= 1'b0;
             err_code      <= 4'd0;
             file_size     <= 32'd0;
             first_cluster <= 32'd0;
             blk_wait_cnt  <= 32'd0;
+            start_seen    <= 1'b0;
         end else begin
             // 两个脉冲信号默认 0：需要时在各分支拉高 1 拍
             blk_start <= 1'b0;
             cap_clr   <= 1'b0;
             case (st)
-                // 空闲: 等启动脉冲。顺序号 0 无意义（没有 IMG000.BMP），直接拒
+                // 空闲: 等启动脉冲。
+                //   自动模式下序号 0 无意义（没有 IMG000.BMP），直接拒；
+                //   通用模式（显式 target_name）不看 img_index，故不拒。
                 S_IDLE: begin
-                    if (start) begin
-                        found    <= 1'b0;
-                        fail     <= 1'b0;
+                    if (start || start_seen) begin
+                        start_seen <= 1'b0;   // [t26] 启动这拍即清，避免残留到下一轮
+                        found_q  <= 1'b0;
+                        fail_q   <= 1'b0;
                         err_code <= 4'd0;
-                        if (img_index == 9'd0) begin
+                        if (name_auto && img_index == 9'd0) begin
                             err_code <= 4'd6;           // 参数非法
                             st       <= S_FAIL;
                         end else begin
@@ -270,9 +322,10 @@ module fat32_reader #(
                         st <= S_EVAL;                   // 隔一拍再判定，见文件头
                     end else if (blk_wait_cnt >= BLK_TIMEOUT[31:0]) begin
                         // 【2026-10-28 新增】握手超时：blk_start 已被丢弃，永无回应。
-                        //   仍报 4'd5（底层读块失败），因为上层 err_prompt 的
-                        //   image_err 映射表只区分 1~5/7/8/9/10，多一个码意义不大。
-                        err_code <= 4'd5;
+                        // 【2026-10-31 改】单独报 4'd7，不再与 5（控制器报了 blk_err）混用：
+                        //   d810 排查要求"请求没被接收"与"读块出错"在数码管上可区分。
+                        //   img_loader 把 7 映射成自己的 E_BLKTMO(10→dA)，gallery_probe 透传 7→dA。
+                        err_code <= 4'd7;
                         st       <= S_FAIL;
                     end else begin
                         blk_wait_cnt <= blk_wait_cnt + 32'd1;
@@ -335,7 +388,7 @@ module fat32_reader #(
                         // ---- DIR: 判断是否命中，否则顺延到下一扇区 ----
                         ST_DIR: begin
                             if (dir_hit) begin
-                                found         <= 1'b1;
+                                found_q       <= 1'b1;
                                 first_cluster <= {hit_clu_hi, hit_clu_lo};
                                 file_size     <= hit_size;
                                 busy          <= 1'b0;
@@ -394,11 +447,31 @@ module fat32_reader #(
                 // 终态自锁: 成功/失败都保持到下次 start 或整板复位
                 S_DONE: begin
                     busy  <= 1'b0;
-                    found <= 1'b1;
+                    // [t26] S_DONE 收到 start: 回 S_IDLE 重定位。
+                    //   结果寄存器必须**同拍**拉低：调用方（wav_stream_player）
+                    //   在 start 之后立刻采 fat_found，若保持上一轮的 1，
+                    //   它会锁存到陈旧的簇号/长度后直接跳过定位。
+                    //   用 if/else 互斥——同一 always 块里两次对同一变量赋非阻塞值
+                    //   会后者覆盖前者，写成顺序两条语句是错的。
+                    if (start) begin
+                        found_q      <= 1'b0;   // [t26] 同拍作废旧结果
+                        st         <= S_IDLE;
+                        start_seen <= 1'b1;
+                    end else begin
+                        found_q <= 1'b1;
+                    end
                 end
                 S_FAIL: begin
                     busy <= 1'b0;
-                    fail <= 1'b1;
+                    // [t26] S_FAIL 收到 start: 回 S_IDLE 重定位。
+                    //   fail 同拍拉低，理由同 S_DONE（调用方立刻采电平）。
+                    if (start) begin
+                        fail_q       <= 1'b0;   // [t26] 同拍作废旧结果
+                        st         <= S_IDLE;
+                        start_seen <= 1'b1;
+                    end else begin
+                        fail_q <= 1'b1;
+                    end
                 end
                 default: st <= S_IDLE;
             endcase
@@ -498,9 +571,16 @@ module fat32_reader #(
                             end else if (data_byte == 8'hE5) begin
                                 nm_bad  <= 1'b1;            // 已删除项，短名无效
                             end else begin
-                                // 首字节参与短名比较: 'I'(0x49) 或 'i'(0x69)
-                                nm_bad  <= (data_byte != 8'h49) &&
-                                           (data_byte != 8'h69);
+                                // 【v2 改进】首字节不再硬编码 'I'/'i'，而是与 exp_byte
+                                //   在偏移 0 处的期望值比较（自动模式 = 'I'，
+                                //   通用模式 = target_name[7:0]）。
+                                //   历史教训: 旧版这里写死 (data_byte != 8'h49) &&
+                                //   (data_byte != 8'h69)，只改块④的 exp_byte 而漏改这里，
+                                //   "SCI     RLE" 首字节 'S'=0x53 会在第 0 字节就被判
+                                //   nm_bad，后续 10 字节全白比对，现象酷似"参数化没生效"。
+                                //   统一到 exp_byte 后，"只改一处会漏"这个失效模式消失。
+                                nm_bad  <= (data_byte != exp_byte) &&
+                                           (data_byte != (exp_byte | 8'h20));
                             end
                         end else if (byte_cnt[4:0] <= 5'd10) begin
                             // 第 2~11 字节: 与期望短名逐字节比对（大小写不敏感）
@@ -587,28 +667,48 @@ module fat32_reader #(
 
     // ------------- always 块 ④ / 共 4 块: 短名期望字节译码 ----------------
     // 功能: 项内偏移 (byte_cnt[4:0], 0~31) → 该位置应当是哪个短名字节
-    //       期望值 = "IMGnnn  BMP"（8.3 格式: 8 字节名 + 3 字节扩展）
-    //   偏移 0~2  : 'I','M','G'
-    //   偏移 3~5  : 序号三位十进制字符
-    //   偏移 6~7  : 空格填充（名为 6 字符，8 字节域补 2 个空格）
-    //   偏移 8~10 : 'B','M','P'
-    // 输入: byte_cnt[4:0]、idx_h/idx_t/idx_o
+    //   【v2 双模】name_auto=1（target_name 全 0）时用序号拼 "IMGnnn  BMP"，
+    //              name_auto=0 时直接用 target_name 的第 n 字节。
+    //   8.3 格式: 8 字节名域 + 3 字节扩展名域，全部大写存储，
+    //             名不足 8 字符用空格(0x20)补齐，扩展不足 3 字符同理。
+    //   偏移 0~7  : 名域 8 字节
+    //   偏移 8~10 : 扩展名 3 字节
+    // 输入: byte_cnt[4:0]、idx_h/idx_t/idx_o、target_name
     // 输出: exp_byte
+    // 注: 非名字区（偏移 11~31）返回 0x00，但调用点只在偏移 0~10 查表，
+    //     default 只是兜底，不参与实际比较。
     always @(*) begin
-        case (byte_cnt[4:0])
-            5'd0:    exp_byte = 8'h49;                       // 'I'
-            5'd1:    exp_byte = 8'h4D;                       // 'M'
-            5'd2:    exp_byte = 8'h47;                       // 'G'
-            5'd3:    exp_byte = 8'h30 + {4'd0, idx_h};       // '0'+百位
-            5'd4:    exp_byte = 8'h30 + {4'd0, idx_t};       // '0'+十位
-            5'd5:    exp_byte = 8'h30 + {4'd0, idx_o};       // '0'+个位
-            5'd6:    exp_byte = 8'h20;                       // 空格
-            5'd7:    exp_byte = 8'h20;                       // 空格
-            5'd8:    exp_byte = 8'h42;                       // 'B'
-            5'd9:    exp_byte = 8'h4D;                       // 'M'
-            5'd10:   exp_byte = 8'h50;                       // 'P'
-            default: exp_byte = 8'h00;                       // 非名字区，不参与比较
-        endcase
+        if (!name_auto) begin
+            case (byte_cnt[4:0])
+                5'd0:    exp_byte = target_name[7:0];
+                5'd1:    exp_byte = target_name[15:8];
+                5'd2:    exp_byte = target_name[23:16];
+                5'd3:    exp_byte = target_name[31:24];
+                5'd4:    exp_byte = target_name[39:32];
+                5'd5:    exp_byte = target_name[47:40];
+                5'd6:    exp_byte = target_name[55:48];
+                5'd7:    exp_byte = target_name[63:56];
+                5'd8:    exp_byte = target_name[71:64];
+                5'd9:    exp_byte = target_name[79:72];
+                5'd10:   exp_byte = target_name[87:80];
+                default: exp_byte = 8'h00;
+            endcase
+        end else begin
+            case (byte_cnt[4:0])
+                5'd0:    exp_byte = 8'h49;                       // 'I'
+                5'd1:    exp_byte = 8'h4D;                       // 'M'
+                5'd2:    exp_byte = 8'h47;                       // 'G'
+                5'd3:    exp_byte = 8'h30 + {4'd0, idx_h};       // '0'+百位
+                5'd4:    exp_byte = 8'h30 + {4'd0, idx_t};       // '0'+十位
+                5'd5:    exp_byte = 8'h30 + {4'd0, idx_o};       // '0'+个位
+                5'd6:    exp_byte = 8'h20;                       // 空格
+                5'd7:    exp_byte = 8'h20;                       // 空格
+                5'd8:    exp_byte = 8'h42;                       // 'B'
+                5'd9:    exp_byte = 8'h4D;                       // 'M'
+                5'd10:   exp_byte = 8'h50;                       // 'P'
+                default: exp_byte = 8'h00;                       // 非名字区，不参与比较
+            endcase
+        end
     end
 
 endmodule

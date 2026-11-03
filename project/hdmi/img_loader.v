@@ -26,9 +26,10 @@
 //
 //  ★ 背压说明（本模块最关键的约束）★
 //    bmp_parser 是纯流式模块，**没有反压能力** —— 一旦喂字节就必须产出像素。
-//    因此本模块采用**扇区级粗粒度背压**：每个扇区开始前若 FIFO 已满就原地等待。
-//    一个 512 字节扇区最多产出 512/3 ≈ 171 像素 ≈ 86 个 32 位字，而 FIFO
-//    深度 511，因此只要「扇区开始前 FIFO 不满」就能保证整扇区不丢像素。
+//    因此本模块采用**扇区级粗粒度背压**：每个扇区开始前预留足够 FIFO 空间。
+//    一个 512 字节扇区最多产出 512/3 ≈ 171 像素 ≈ 86 个 32 位字；FIFO
+//    深度 511，调用方须在剩余空间低于保留门限时暂停，否则当前扇区的无回压
+//    像素流会静默丢字。
 //    代价是 FIFO 偶尔短暂空转，换来 bmp_parser 无需改造。
 //
 //  错误码:
@@ -45,6 +46,13 @@
 //    现在本模块自己就能在 BLK_TIMEOUT(≈84ms) 后报出码 10 →
 //    数码管显示 dA，与"读块失败(d4)""簇链异常(d5)"明确区分开。
 //    取码 10 而非 6：6 已被 image_player 占用为"SD 失败"，语义不同。
+//
+//  【2026-10-31 补记】T_FATLOC 也纳入看门狗（见 docs/d810_fix_2026-10-31.md）
+//    - fat32_reader 的单块握手超时改报自己的码 7，本模块翻译为 E_BLKTMO(10→dA)，
+//      不再与"文件定位失败 E_FATLOC(1→F4)"混在一起。
+//    - T_FATLOC 自己再加一层无进度上限 FATLOC_TIMEOUT(=2×BLK_TIMEOUT)：
+//      连续这么久没有任何 blk_done 且 fat32_reader 也没报错 → E_FATLMO(14→dE)。
+//      取 14：11/12 已被 image_player 占用（4 bit 错误码是同一命名空间）。
 //
 //  时钟域: 全程 25MHz（与 sd_spi_ctrl / fat32_reader / bmp_parser 同域）。
 //          跨到 150MHz 的 SDRAM 侧由 async_fifo 承担，本模块不碰跨时钟域。
@@ -96,7 +104,7 @@ module img_loader #(
     output reg         fifo_wr_en,      // 写使能（1 拍脉冲）
     output reg  [31:0] fifo_wr_data,    // {奇数x像素, 偶数x像素}
     output reg  [3:0]  fifo_wr_dm,      // 字节掩码，全写时为 4'h0
-    input  wire        fifo_wr_full     // 满标志（寄存器输出，与 wr_en 同域）
+    input  wire        fifo_wr_full     // 剩余空间不足以容纳完整扇区时拉高
 );
 
     // ------------------------------------------------------------------------
@@ -112,7 +120,17 @@ module img_loader #(
                      //   典型成因是顶层 SD 总线归属切换时单拍 blk_start 被丢弃。
                      //   取 10 而非 6：6 已被 image_player 占用为"SD 失败"，
                      //   两者语义完全不同，不能混用同一个码。
-                     E_BLKTMO  = 4'd10;
+                     E_BLKTMO  = 4'd10,
+                     // 【2026-10-31 新增】T_FATLOC 无进度超时（d810 交接 §4 步骤 2）：
+                     //   委托 fat32_reader 定位期间连续 FATLOC_TIMEOUT 拍没有任何 blk_done，
+                     //   且 fat32_reader 自己也没报 found/fail（例如它根本没收到 fat_start）。
+                     //   取 14 而非 11：11/12 已被 image_player 占用（dB/dC），四位码共用一个空间。
+                     E_FATLMO  = 4'd14;
+    // fat32_reader 的握手超时码（见 fat32_reader.v 错误码表），映射成 E_BLKTMO。
+    localparam [3:0] FAT_E_BLKTMO = 4'd7;
+    // T_FATLOC 无进度上限：取两倍 BLK_TIMEOUT，保证 fat32_reader 自己的单块超时(码 7)先发生，
+    // 本超时只兜住"fat32_reader 没在走"这种无子看门狗的情况。
+    localparam [31:0] FATLOC_TIMEOUT = BLK_TIMEOUT * 2;
 
     // ------------------------------------------------------------------------
     //  状态机
@@ -286,6 +304,7 @@ module img_loader #(
                     sof_hold     <= 1'b0;
                     fat_index    <= img_index;
                     fat_start    <= 1'b1;
+                    blk_wait_cnt <= 32'd0;
                     st           <= T_FATLOC;
                 end
             end
@@ -301,8 +320,16 @@ module img_loader #(
                     blk_owner    <= 1'b1;
                     st           <= T_CHKSPC;
                 end else if (fat_fail) begin
-                    err_code <= E_FATLOC;
+                    // 握手超时单独报 dA，其余定位失败仍是 F4。
+                    err_code <= (fat_err == FAT_E_BLKTMO) ? E_BLKTMO : E_FATLOC;
                     st       <= T_FAIL;
+                end else if (blk_done) begin
+                    blk_wait_cnt <= 32'd0;     // 定位期每读完一个扇区就算有进度
+                end else if (blk_wait_cnt >= FATLOC_TIMEOUT) begin
+                    err_code <= E_FATLMO;
+                    st       <= T_FAIL;
+                end else begin
+                    blk_wait_cnt <= blk_wait_cnt + 32'd1;
                 end
             end
             // ------------------------------------------------------------
@@ -312,7 +339,7 @@ module img_loader #(
                 if (bytes_left == 32'd0) begin
                     st <= T_FINISH;
                 end else if (fifo_wr_full) begin
-                    // 粗粒度背压：满就原地等，超时判下游卡死
+                    // 为整个扇区留出 FIFO 空间；长时间等不到空间则报下游卡死
                     if (stall_cnt >= WR_TIMEOUT[31:0]) begin
                         err_code <= E_WRSTALL;
                         st       <= T_FAIL;
@@ -520,12 +547,17 @@ module img_loader #(
     // ------------------------------------------------------------------------
     fat32_reader #(
         .CLK_FREQ_HZ   (CLK_FREQ_HZ),
-        .FAT_CHAIN_MAX (64)
+        .FAT_CHAIN_MAX (64),
+        // 与本模块同一块超时：FATLOC_TIMEOUT=2×BLK_TIMEOUT 的先后关系依赖它。
+        .BLK_TIMEOUT   (BLK_TIMEOUT)
     ) u_fat (
         .clk            (clk),
         .rst_n          (rst_n),
         .start          (fat_start),
         .img_index      (fat_index),
+        // 【v2】本模块走自动模式：target_name 恒 0 → 回退按 img_index 拼
+        //   "IMGnnn  BMP"。图库通路不改行为，避免牵动已验证的 18 个 tb 场景。
+        .target_name    (88'd0),
         .busy           (fat_busy),
         .found          (fat_found),
         .fail           (fat_fail),
