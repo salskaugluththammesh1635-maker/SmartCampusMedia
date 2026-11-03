@@ -1,5 +1,5 @@
 ﻿{
-    "startedAt":  "2026-11-02T18:45:04.3909345+08:00",
+    "startedAt":  "2026-11-03T21:04:44.0235334+08:00",
     "status":  "passed",
     "sources":  [
                     {
@@ -11,7 +11,7 @@
                         "path":  "rtl/storage/sd_probe.v"
                     },
                     {
-                        "sha256":  "F8E4F3E947DEF117894A3D24F2D0BEECF6DAA7950EC85DD84A3DBCFC865313DB",
+                        "sha256":  "6FF5669922D69DDAF09E72DEBF2F4B1EE5DE9A065EFB307A4A691E288D347E14",
                         "path":  "rtl/storage/fat32_reader.v"
                     },
                     {
@@ -31,7 +31,7 @@
                         "path":  "rtl/control/player_ctrl.v"
                     },
                     {
-                        "sha256":  "E64BAD34FDFFE59BECF7D8EDB69C27A25FD290EF2F554E0E6FCC1D25D2EFE314",
+                        "sha256":  "1B10B1908CE1CAB1BA432572C9D591D9018E076F4097FD7861D9FFAFB6C28447",
                         "path":  "rtl/control/err_prompt.v"
                     },
                     {
@@ -47,7 +47,7 @@
                         "path":  "rtl/video/audio_waveform.v"
                     },
                     {
-                        "sha256":  "EBA2707E1DC1873FC9997537E5214D08601C81ABA4EDBD33B5CF18731378A20D",
+                        "sha256":  "B2B448EC1FA969839213A64A0651318A2A5A7CC2FC657BC05E67A50031FC4AE3",
                         "path":  "rtl/video/video_overlay.v"
                     },
                     {
@@ -63,7 +63,7 @@
                         "path":  "sim/testbench/tb_sd_probe.v"
                     },
                     {
-                        "sha256":  "A71A00B8CC094C31414315471E955BC57715E73CB9E3FEFE795E01EC753DF958",
+                        "sha256":  "E966B332ECD23F5E3433B590205C19B95085E67B6565D777CF9A347E679F8CD8",
                         "path":  "sim/testbench/tb_fat32_reader.v"
                     },
                     {
@@ -83,7 +83,7 @@
                         "path":  "sim/testbench/tb_player_ctrl.v"
                     },
                     {
-                        "sha256":  "D4563FE47BFD3B082D47015D585B3FA2188B9A98A00FBC4431DBB9CADA87701B",
+                        "sha256":  "742DA7E65C89782B36FF30637A54C9693498492B6D3C474E3CBA4872A7DFC004",
                         "path":  "sim/testbench/tb_err_prompt.v"
                     },
                     {
@@ -95,7 +95,7 @@
                         "path":  "sim/testbench/tb_key_action.v"
                     },
                     {
-                        "sha256":  "6FE0F95AA819C15B1343F82F98695E7C840EA50D455EDF2CD5A403379FDE56E2",
+                        "sha256":  "56B7A3212A291EE81292C737AD83A2E07C054AD282DCE0BE9CE7D819E2FCC906",
                         "path":  "sim/testbench/tb_video_overlay.v"
                     },
                     {
@@ -115,11 +115,11 @@
                         "path":  "rtl/osd/osd_font8x16.v"
                     },
                     {
-                        "sha256":  "895D75336BAE2008FE3EB6B75EBF6C0E5311E74A91071E969A67BD676A78CAF8",
+                        "sha256":  "C356774AA231B306878C0767FDB50B8F3DAD8B0811C1D0A183239A668C184983",
                         "path":  "rtl/osd/osd_strings.v"
                     },
                     {
-                        "sha256":  "BE71E939ECBC16E5421FC6D6B2CC1FC5FCE26D2892FB394F423B6A638E637A73",
+                        "sha256":  "47D3087081B3331D77104813FD73D0FF70936ECBD3EDBBEFCBAA275680046B02",
                         "path":  "rtl/osd/osd_caption.v"
                     },
                     {
@@ -127,11 +127,11 @@
                         "path":  "rtl/osd/cjk16_font.v"
                     },
                     {
-                        "sha256":  "75CB85D2AAC830290B086725F57459C573FD79F926F12645ACD25AD6EEA20D51",
+                        "sha256":  "906F539615F981A7B11AEDD46EB9C3DA1256CFCC3DC85E219FBA8595502D8A1E",
                         "path":  "sim/testbench/tb_osd_caption.v"
                     },
                     {
-                        "sha256":  "50AF2C4DCC5BFFA13D81D4621359CB5EA49535C8A39EFFB5C52F8283D819A197",
+                        "sha256":  "9938432BC56D63AD0CD9FE48BE79C5E032A3DB4AB16F6BB202995102ACBE6202",
                         "path":  "sim/testbench/tb_osd_caption_cjk.v"
                     },
                     {
@@ -143,7 +143,7 @@
                         "path":  "rtl/osd/osd_param_text.v"
                     },
                     {
-                        "sha256":  "8C80A39670F9C4E581D3A00AF5C7B170029234EC896FD64D0914FF3437C238F2",
+                        "sha256":  "17100ED4D5185D493D8BF5BAB5BC948A1263D4323FAA0761B302716303A8DAF4",
                         "path":  "rtl/osd/osd_panel.v"
                     },
                     {
@@ -248,7 +248,7 @@
                       "passed":  true,
                       "name":  "fat32_reader",
                       "exitCode":  0,
-                      "passLines":  52,
+                      "passLines":  64,
                       "arguments":  [
                                         "-c",
                                         "-quiet",
@@ -328,7 +328,7 @@
                       "passed":  true,
                       "name":  "err_prompt",
                       "exitCode":  0,
-                      "passLines":  49,
+                      "passLines":  59,
                       "arguments":  [
                                         "-c",
                                         "-quiet",
@@ -376,7 +376,7 @@
                       "passed":  true,
                       "name":  "video_overlay",
                       "exitCode":  0,
-                      "passLines":  106,
+                      "passLines":  107,
                       "arguments":  [
                                         "-c",
                                         "-quiet",
@@ -517,5 +517,8 @@
                       "log":  "fade_mixer.txt"
                   }
               ],
-    "finishedAt":  "2026-11-02T18:48:15.8637991+08:00"
+    "ran":  21,
+    "passedCount":  21,
+    "expectedCaseCount":  21,
+    "finishedAt":  "2026-11-03T21:06:44.9187673+08:00"
 }

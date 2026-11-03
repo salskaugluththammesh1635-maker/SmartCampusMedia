@@ -1,9 +1,9 @@
 ﻿{
-    "startedAt":  "2026-11-02T18:19:45.3147997+08:00",
+    "startedAt":  "2026-11-03T21:07:38.3603719+08:00",
     "status":  "passed",
     "sources":  [
                     {
-                        "sha256":  "08C0D49B152E100CD16A6EE5F0C9FD03D7DE2895FF967EA4B985F9428CC3A2A8",
+                        "sha256":  "32127C9C055461024623F2E08FDBF2C0A99387279AFB65029C882B5B04EBCB98",
                         "path":  "rtl/common/async_fifo.v"
                     },
                     {
@@ -11,7 +11,7 @@
                         "path":  "rtl/video/video_timing_gen.v"
                     },
                     {
-                        "sha256":  "FBDC9D4915238D186BD38D00879EF1F8D551588552FB072F14AAE7E69217AB39",
+                        "sha256":  "D2C18F224847FC6913ECCDE464FC1BE7B91AF97B2BCB8632983F12BDA2B38F8A",
                         "path":  "rtl/video/image_window_mask.v"
                     },
                     {
@@ -23,7 +23,7 @@
                         "path":  "rtl/storage/sdram_ctrl_wrap.v"
                     },
                     {
-                        "sha256":  "D1EC2E8D3179D51E00147ECE73F4079092923452AFC49BD933382375876B4FB9",
+                        "sha256":  "CB986ACB16F7A920C75113B60381ECFA86390924BF1118EB95309999674E1E15",
                         "path":  "rtl/storage/pix_reader.v"
                     },
                     {
@@ -31,7 +31,7 @@
                         "path":  "rtl/storage/fade_mixer.v"
                     },
                     {
-                        "sha256":  "F8E4F3E947DEF117894A3D24F2D0BEECF6DAA7950EC85DD84A3DBCFC865313DB",
+                        "sha256":  "6FF5669922D69DDAF09E72DEBF2F4B1EE5DE9A065EFB307A4A691E288D347E14",
                         "path":  "rtl/storage/fat32_reader.v"
                     },
                     {
@@ -43,15 +43,15 @@
                         "path":  "rtl/storage/img_loader.v"
                     },
                     {
-                        "sha256":  "D1BA590F4AD7EC0C23C18777FC11DEE7C17AAE66A80B2E44CAE4A893BA6DBF50",
+                        "sha256":  "2BB7A3C8A06ADE632891B79504373317FA3350890E9D28313C3A45C06BBF4C94",
                         "path":  "rtl/storage/img_scaler.v"
                     },
                     {
-                        "sha256":  "411E30DF46F375611BE98FE618228465C678E435CB2EC195C9F1CBE1B886B1F7",
+                        "sha256":  "9750517D4ED62A8C3E333FA079B09F206E33CBBCF02FC8724136FD7445A553D4",
                         "path":  "rtl/storage/image_player.v"
                     },
                     {
-                        "sha256":  "CA6032112BC9E7E535284360FC89771227381D60E1000BA290795E5B80069884",
+                        "sha256":  "B23BF4538C61AD6CEA1723D203F89ADCD489B305CA592FDE282ACCE5D76CB025",
                         "path":  "sim/testbench/tb_image_player.v"
                     },
                     {
@@ -71,7 +71,7 @@
                       "log":  "image_player.txt",
                       "exitCode":  0,
                       "name":  "image_player",
-                      "checks":  11365,
+                      "checks":  11374,
                       "passed":  true
                   },
                   {
@@ -82,5 +82,8 @@
                       "passed":  true
                   }
               ],
-    "finishedAt":  "2026-11-02T18:21:27.9545528+08:00"
+    "ran":  3,
+    "passedCount":  3,
+    "expectedCaseCount":  3,
+    "finishedAt":  "2026-11-03T21:08:49.7673744+08:00"
 }
