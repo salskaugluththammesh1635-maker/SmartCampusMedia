@@ -71,3 +71,110 @@ __pycache__/
 Thumbs.db
 vide.toml
 .vide/
+
+
+# ===========================================================================
+# v2 素材链与诊断产物的忽略规则（2026-11-03 建立可回退基线时补全）
+#
+# 判定原则：scripts/ 下的生成器能逐字节重新产出的 → 忽略；
+#           人类手写、不可再生的（RTL 源码、文档、生成器、母版文案与字库基线）→ 跟踪。
+# 注意：本文件只作用于未跟踪文件；已被历史提交跟踪的文件不会因下列规则被移除。
+# ===========================================================================
+
+# --- v2 SD 卡素材包 -------------------------------------------------------
+# scripts/gen_assets_v2_sdcard.py 从 assets/v2/masters/ 派生，逐字节可复现。
+# 内含 SCI.RLE（78.55 MiB ×2）、NARR.WAV（11.55 MiB ×3）、BGM（3.4–4.6 MiB ×3）
+# 与五档分辨率 BMP，单文件远超仓库体积上限，且每次重跑都会重写。
+assets/v2/sdcard/
+# v2 五档分辨率派生中间产物（assets/v2/README.md 规划的目录，当前尚未生成，预防性忽略）。
+assets/v2/derived/
+
+# --- v2 母版中由生成器重渲染的部分 ----------------------------------------
+#   masters/images/  ← gen_assets_v2_images.py（含 reference_upscaled/ 对照图，约 5 MB）
+#   masters/audio/   ← gen_assets_v2_audio.py（numpy 程序化合成，脚本自带 SHA256 自检）
+#   masters/video/frames/ 与 narration.wav ← gen_assets_v2_video.py（抽帧 + 音频标准化）
+#   masters/font/cjk16_preview.png ← gen_assets_v2_font.py（仅供目视核对的拼版图）
+# 明确保留跟踪的母版：
+#   masters/text/*.txt（手写滚动文案与 UI 文案，无法再生）
+#   masters/font/{cjk16_bitmap.hex,cjk16_bitmap.json,cjk16_charset.txt,cjk16_font.v}
+#     （字库冻结基线，scripts/verify_cjk16_freeze.py 与 rtl/osd/cjk16_font.v 均以其为准）
+#   masters/video/{narration.srt,video_stats.json}（人工校对的字幕与实测带宽表）
+assets/v2/masters/images/
+assets/v2/masters/audio/
+assets/v2/masters/video/frames/
+assets/v2/masters/video/narration.wav
+assets/v2/masters/font/cjk16_preview.png
+
+# --- 旧素材包 -------------------------------------------------------------
+# assets/external/：scripts/fetch_external_assets.py 抓取的外部参考素材（视频+抽帧，144 MB）。
+assets/external/
+# assets/campus_media/：scripts/generate_campus_media.py 生成的图库与演示片（需 Pillow/OpenCV）；
+# 仅保留 README.md 说明如何再生。
+assets/campus_media/preview/
+assets/campus_media/sd_card/
+
+# --- reports 根目录的转储文件 ---------------------------------------------
+# flow_*.tcl 与 sim/scripts/*.ps1 每次运行都会在 reports/ 根目录重写 timing/area/构建日志
+# 与波形截图；历史已跟踪的少数 .txt/.png 不受影响。
+reports/*.txt
+reports/*.hex
+reports/*.ppm
+reports/*.png
+
+# --- reports 下按日期新建的一次性诊断/构建证据目录 ------------------------
+# 内容为 timing/area/coverage 报告与仿真转储，可由对应 project/flow_*.tcl 重跑得到。
+# 人工撰写的证据目录（plan_v2、display_diag_20261028、display_fix_20261029、
+# flashable_20261030、hdmi_audio_quiet_20261029、noise_sci_fix_20261029、
+# s6_integration）不在此列，另行按扩展名筛掉其中的转储文件。
+reports/diag_*/
+reports/b2_fade_20261029/
+reports/b3_param_osd_20261029/
+reports/c2_scaler_20261030/
+reports/d810_fix_20261031/
+reports/handover_black_band_*/
+reports/handover_image_regression_20261101/
+reports/key1_fix_20261031/
+reports/t7b_bit_*/
+reports/watchdog_20261030/
+
+# 精选证据目录内只留人工撰写的 .md 与 manifest/result 类 .json，
+# area/build/coverage/timing 与 frontend 仿真日志属可重跑产物。
+reports/display_fix_20261029/*.txt
+reports/flashable_20261030/*.txt
+reports/hdmi_audio_quiet_20261029/*.txt
+reports/noise_sci_fix_20261029/**/*.txt
+
+# s6_integration 是既有的已跟踪仿真证据集：本轮只更新已跟踪文件的内容，
+# 新增的 frontend/simulation 日志属可重跑的仿真转储，与位图/字库转储一并忽略
+# （.hex 与 rtl/osd/cjk16_bitmap.hex 重复，.ppm 为 900 KB 波形截图）。
+reports/s6_integration/**/*.ppm
+reports/s6_integration/**/*.hex
+reports/s6_integration/fade_check/
+reports/s6_integration/frontend/*.txt
+reports/s6_integration/simulation/*.txt
+
+# --- 仿真工作库与一次性捕获目录 -------------------------------------------
+# sim/scripts/*.ps1 与 ModelSim 每次运行重建；仓库历史从未跟踪任何 work_* / _* 目录。
+sim/work_*/
+sim/mut_scaler/
+sim/_*/
+
+# --- TD 实验/探针工程与备份 -----------------------------------------------
+# 每次诊断会新建 project/t<NN>_<用途>/，内含 .db/.qor/.bit 与整套加密源副本，
+# 体积大且可重跑；正式的 flow_*.tcl 脚本与 project/hdmi/ 源副本仍全部跟踪。
+project/t[0-9]*_*/
+project/fifo_probe/
+project/backup_t2/
+project/*.al.bak_*
+project/t7a_*.tcl
+project/t7b*.tcl
+project/t7b_rerun.ps1
+project/flow_t7a_elaborate.tcl
+
+# --- 一次性本地改写脚本 ---------------------------------------------------
+# scripts/_*.py 为一次性文档/测试台批量改写脚本，含硬编码绝对路径，不可复用。
+scripts/_*.py
+
+# --- LaTeX 编译中间产物 ---------------------------------------------------
+docs/datasheet/*.aux
+docs/datasheet/*.toc

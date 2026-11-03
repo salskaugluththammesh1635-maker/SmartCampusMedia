@@ -1,0 +1,2 @@
+# Bitstreams and vendor databases stay local. Track the final identity manifest.
+!manifest.json
