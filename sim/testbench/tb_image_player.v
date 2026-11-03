@@ -78,7 +78,22 @@ module tb_image_player #(parameter FULL=0, parameter SEAMLESS=1, parameter SCALE
         .out_w(out_w), .out_h(out_h), .out_off_x(out_off_x), .out_off_y(out_off_y),
         .image_ready(image_ready), .loading(loading), .failed(failed), .error_code(error_code),
         .reader_status(reader_status), .sdram_clk(), .sdram_cke(), .sdram_cs_n(),
-        .sdram_ras_n(), .sdram_cas_n(), .sdram_we_n(), .sdram_ba(), .sdram_addr(), .sdram_dm(), .sdram_dq());
+        .sdram_ras_n(), .sdram_cas_n(), .sdram_we_n(), .sdram_ba(), .sdram_addr(), .sdram_dm(), .sdram_dq(),
+        // v2 新增（T4）：本测试只跑 BMP 装载路，外部写口全部按缺省「关闭」接。
+        .ext_wr_mode(1'b0), .ext_wr_valid(1'b0), .ext_wr_addr(21'd0), .ext_wr_data(32'd0),
+        .ext_wr_dm(4'd0), .ext_wr_done(1'b0), .ext_no_fade(1'b0),
+        .ext_wr_ack(), .ext_wr_busy(), .ext_frame_ready(), .ext_frame_sel(), .ext_loader_want_blk(),
+        // v2 新增（T4）：日常档逻辑分辨率 = 容器尺寸，垂直行映射为恒等旁路。
+        .src_w(W[15:0]), .src_h(H[15:0]),
+        // v2 新增（t20 / Key9）：窗口矩形与列坐标透传端口。
+        // 本 tb 的既有断言全部建立在「满屏恒等档」上（out_w/out_h = 整幅、无偏移），
+        // 故这里也按恒等档接：win_w = W、win_h = H、off = 0。
+        // 这样 pix_reader 内部 h_ident = 1 → use_key9 = 0，Key9 水平 DDA 完全不参与，
+        // 像素通路与加端口之前逐拍一致，194 条基线不受影响。
+        // active_x 接 video_timing_gen 的真列坐标（不能接常量 0：那样会让
+        // map_key9_ident 恒真，属「用常量消告警」的反面教材）。
+        .win_w(W[15:0]), .win_h(H[15:0]), .win_off_x(16'd0), .win_off_y(16'd0),
+        .active_x(x));
     // letterbox 屏蔽是顶层 image_window_mask 的职责，image_player 本身不写、
     // 也不清零窗口外区域（真机上那块是上一帧残影，仿真里是未初始化 X）。
     // 因此这里把屏蔽器一并例化，按「送显前的最终像素」判定，才是真实链路。
@@ -694,6 +709,42 @@ module tb_image_player #(parameter FULL=0, parameter SEAMLESS=1, parameter SCALE
         memory_online=1;
         request_image(1); terminal; chk(image_ready && !failed,"memory lock recovery permits a complete reload");
         check_frame;
+        // 【2026-10-31】CASE 13：装载中途 SD 归属被收回（sd_ready=0）。
+        //   必须退回 C_WAIT 并保留请求，归属恢复后重装同一张图，不能静默等到 9(d8)。
+        $display("CASE 13: SD ownership lost mid-load returns to wait and reloads");
+        begin : sd_owner_drop
+            integer g;
+            request_image(1);
+            g=0;
+            while(dut.state!=4'd4 && g<200000) begin @(negedge clk); g=g+1; end
+            chk(dut.state==4'd4,"load reached C_LOAD before ownership loss");
+            repeat(3000) @(negedge clk);
+            sd_ready=0;
+            repeat(4) @(negedge clk);
+            chk(dut.state==4'd0 && dut.pending && !failed,"ownership loss returns to C_WAIT with request kept");
+            repeat(3000) @(negedge clk);
+            chk(dut.state==4'd0 && !failed,"no load progress or error while bus is not owned");
+            sd_ready=1;
+            terminal;
+            chk(image_ready && !failed,"reload completes after ownership returns");
+            check_frame;
+        end
+        // 【2026-10-31】CASE 14：start 脉冲丢失（模拟 loader 未接收 start）。
+        //   必须在几十拍内报 13(dd)，不是等 LOAD_TIMEOUT 后报 9(d8)。
+        $display("CASE 14: lost loader start reports error 13 quickly");
+        begin : lost_start
+            time t0;
+            integer cyc;
+            force dut.loader_start = 1'b0;
+            t0=$time;
+            request_image(1); terminal;
+            cyc=($time-t0)/40;
+            release dut.loader_start;
+            chk(failed && error_code==13,"lost start reports error 13 (dd)");
+            chk(cyc < 20000,"lost start detected far before LOAD_TIMEOUT");
+            request_image(1); terminal; chk(image_ready && !failed,"retry after lost start loads normally");
+            check_frame;
+        end
         chk(oob_hits==0,"no out-of-range sector requests");
         // CASE 12 必须验证「按进度喂狗」而不是「总时长放宽」：
         // 让每字节拉长到 121 拍（单扇区约 6.2 万拍，远小于 20 万拍看门狗），

@@ -43,6 +43,23 @@ $manifest = [ordered]@{
 }
 $manifestPath = Join-Path $out 'result.json'
 $failed = $false
+
+# ---- A4 分母断言（t9 加）---------------------------------------------------
+# 只断言「没有失败」在「一个 case 都没跑」时同样成立，而「一个 case 都没跑」
+# 恰恰是最该报警的状态。收尾必须同时断言分母三件事：
+#   1) $script:A4Ran -gt 0               真的跑了
+#   2) $script:A4Ran -eq $ExpCaseCount   跑够没有（与下面的期望数比，不同源自证）
+#   3) $script:A4Passed -eq $script:A4Ran  全过了没有
+# 必须用 $script: 前缀：将来若把主循环包进函数，函数里的 += 改的是局部副本，
+# 外层判据会永远看到 0 → 照样打印 PASS（scripts\run_tb_baseline.ps1 头注记着这坑）。
+# 期望数是**硬编码**的、刻意不用 @($cases).Count：后者是同源自证，case 表被误删
+# 时期望值会跟着一起变小，断言永远成立、永远抓不到。
+# storage 的 case 数由 -Suite / -FullVga 两个参数决定。这里**独立**
+# 重算期望数（不读 $tests），所以 tests 表被误删一条时期望数不变 → 断言红。
+$ExpCaseCount = $(if ($Suite -eq 'All') { 4 } else { 1 }) + $(if ($FullVga) { 1 } else { 0 })
+$script:A4Ran    = 0
+$script:A4Passed = 0
+
 Push-Location $out
 try {
     if (-not (Test-Path -LiteralPath 'work')) {
@@ -75,6 +92,7 @@ try {
         }
     }
     foreach ($test in $tests) {
+        $script:A4Ran++
         $clock = [Diagnostics.Stopwatch]::StartNew()
         $logPath = Join-Path $out ($test.name + '.log')
         $do = 'onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0'
@@ -102,7 +120,7 @@ try {
         $manifest.tests += $result
         Write-Output ('{0}: {1}; exit={2}; checks={3}; errors={4}; cases={5}; log={6}' -f
             $test.name, $result.status, $exit, $result.checks, $result.errors, $result.cases, $logPath)
-        if (-not $passed) { $failed = $true }
+        if ($passed) { $script:A4Passed++ } else { $failed = $true }
     }
     # 编译和运行期间源文件不得漂移，否则证据不能绑定到最终源码。
     foreach ($source in $sourceHashes) {
@@ -110,6 +128,24 @@ try {
             throw "验证期间源文件被并发修改：$($source.path)；本轮证据失效，请重跑。"
         }
     }
+    # ---- A4 分母断言（t9 加）--------------------------------------------
+    if ($script:A4Ran -eq 0) {
+        Write-Output ('  A4-GATE: ran=0（一个 case 都没跑却要打印通过，这是最该报警的状态）')
+        $failed = $true
+    }
+    if ($script:A4Ran -ne $ExpCaseCount) {
+        Write-Output ('  A4-GATE: ran=' + $script:A4Ran + ' 与期望 case 数 ' + $ExpCaseCount + ' 不符（case 表被改过？）')
+        $failed = $true
+    }
+    if ($script:A4Passed -ne $script:A4Ran) {
+        Write-Output ('  A4-GATE: passed=' + $script:A4Passed + ' / ran=' + $script:A4Ran)
+        $failed = $true
+    }
+    Write-Output ('  A4-GATE: ran=' + $script:A4Ran + ' passed=' + $script:A4Passed + ' expected=' + $ExpCaseCount)
+
+    $manifest.ran = $script:A4Ran
+    $manifest.passedCount = $script:A4Passed
+    $manifest.expectedCaseCount = $ExpCaseCount
     $manifest.status = $(if ($failed) { 'failed' } else { 'passed' })
 }
 catch {

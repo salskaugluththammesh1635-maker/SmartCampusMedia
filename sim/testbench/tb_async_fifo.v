@@ -72,6 +72,7 @@ module tb_async_fifo;
         .wr_en    (wr_en),
         .wr_data  (wr_data),
         .wr_full  (wr_full),
+        .wr_almost_full (),
         .rd_clk   (rd_clk),
         .rd_rst_n (rd_rst_n),
         .rd_en    (rd_en),

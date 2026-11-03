@@ -196,6 +196,8 @@ module tb_err_prompt;
         chk_prompt(1'b1, CH_DATA, 4'd2, "C3 gallery_err=5 read block -> d2");
         @(negedge clk); gallery_err = 4'd6; @(negedge clk);
         chk_prompt(1'b1, CH_DATA, 4'd3, "C3 gallery_err=6 bad arg -> d3");
+        @(negedge clk); gallery_err = 4'd7; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd10, "C3 gallery_err=7 block handshake timeout -> dA");
         @(negedge clk); gallery_err = 4'd0; @(negedge clk);
         chk_prompt(1'b1, CH_DATA, 4'd9, "C3 gallery_err=default -> d9");
 
@@ -223,6 +225,13 @@ module tb_err_prompt;
         chk_prompt(1'b1, CH_DATA, 4'd11, "C4 image_err=11 sdram init timeout -> dB");
         @(negedge clk); image_err = 4'd12; @(negedge clk);
         chk_prompt(1'b1, CH_DATA, 4'd12, "C4 image_err=12 write commit timeout -> dC");
+        // 【2026-10-31 新增】start 未被接收 / 文件定位无进度 / 块握手超时，必须与 d8 区分。
+        @(negedge clk); image_err = 4'd13; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd13, "C4 image_err=13 loader start lost -> dd");
+        @(negedge clk); image_err = 4'd14; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd14, "C4 image_err=14 fat locate no progress -> dE");
+        @(negedge clk); image_err = 4'd10; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd10, "C4 image_err=10 block handshake timeout -> dA");
 
         // ================= C5 卡好但零张图（改造前的交互盲区）=================
         clear_all;

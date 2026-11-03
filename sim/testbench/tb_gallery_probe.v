@@ -65,6 +65,13 @@ module tb_gallery_probe;
     wire [4:0]  gp_count;
     wire        gp_first_req;
     wire [3:0]  gp_err;
+    // 【v2/t19】SCI.RLE 定位结果:
+    //   这四根线从 t19 起由 gallery_probe 输出（原先 u_fat 的五个输出全空连接）。
+    //   tb 必须真的接出来并断言 —— 只编译不接，等于这条新通路完全没被测过。
+    wire [31:0] gp_rle_lba;
+    wire [31:0] gp_rle_size;
+    wire        gp_rle_found;
+    wire        gp_rle_fail;
 
     gallery_probe #(
         .CLK_FREQ_HZ (25_000_000),
@@ -84,7 +91,11 @@ module tb_gallery_probe;
         .fail          (gp_fail),
         .count         (gp_count),
         .first_img_req (gp_first_req),
-        .err_code      (gp_err)
+        .err_code      (gp_err),
+        .rle_lba       (gp_rle_lba),
+        .rle_size      (gp_rle_size),
+        .rle_found     (gp_rle_found),
+        .rle_fail      (gp_rle_fail)
     );
 
     // first_img_req 脉冲计数: 必须是"每完成一次扫描恰好 1 拍"，
@@ -283,6 +294,74 @@ module tb_gallery_probe;
     integer kk;
     integer ent;
 
+    // ------------------------------------------------------------------
+    // 【v2/t19】SCI.RLE 目录项开关
+    //   build_gallery 内部按 rle_enable 决定要不要多写一项 "SCI     RLE"。
+    //   用法: 每次 build_gallery 之前显式设置这三个量（task 末尾会自动清 0，
+    //   防止上一个用例的残留影响下一个用例 —— 这类"跨用例泄漏"最容易造出假绿）。
+    //   为什么要用全局量而不是给 build_gallery 加参数: 现有 10 个调用点都用
+    //   两参数形式，加参数要改全部调用点，改动面大且容易漏。
+    // ------------------------------------------------------------------
+    reg        rle_enable = 1'b0;
+    reg [31:0] rle_clu    = 32'd9;         // RLE 目录项里写的首簇号
+    reg [31:0] rle_sz     = 32'd82362927;  // RLE 目录项里写的字节数（取真素材大小）
+
+    // 【v2/t19】每簇扇区数（BPB 的第 13 字节）
+    //   默认 1：此时 (簇号-2)<<shift 的移位量是 0，**漏掉移位的错误公式也能算对**，
+    //   所以只测 spc=1 等于没测换算逻辑。W14 用 spc=2（shift=1）把它逼出来：
+    //   正确公式给 7+(6-2)<<1 = 15，漏移位的错误公式给 7+4 = 11，二者都能
+    //   落在镜像范围内（不触发越界告警），只能靠 LBA 数值分辨 —— 正是我们要的。
+    reg [7:0]  gal_spc    = 8'd1;
+
+    // 数据区起始扇区: PART_LBA + 保留扇区(1) + FAT 份数(2) × FAT 扇区数(1) = 7
+    //   与 build_gallery 里写的 BPB 一致；RLE 的期望 LBA 由它加 (簇号-2) 得到。
+    localparam [31:0] DATA_BASE = 32'd7;
+
+    // 8.3 短名目录项: "SCI     RLE"（名域 8 字节 + 扩展名 3 字节，无点）
+    //   与 rtl 里 gallery_probe 的 RLE_NAME 常量逐字节对应。
+    task mkrle;
+        input [15:0] sec;
+        input [3:0]  ent;
+        input [31:0] clu;
+        input [31:0] sz;
+        integer base;
+        begin
+            base = sec*512 + ent*32;
+            disk[base+0] = 8'h53;   // 'S'
+            disk[base+1] = 8'h43;   // 'C'
+            disk[base+2] = 8'h49;   // 'I'
+            disk[base+3] = 8'h20;   // 空格
+            disk[base+4] = 8'h20;
+            disk[base+5] = 8'h20;
+            disk[base+6] = 8'h20;
+            disk[base+7] = 8'h20;
+            disk[base+8] = 8'h52;   // 'R'
+            disk[base+9] = 8'h4C;   // 'L'
+            disk[base+10]= 8'h45;   // 'E'
+            disk[base+11]= 8'h20;   // 属性: 普通文件（非只读/非目录/非卷标）
+            disk[base+12]= 8'h00;
+            disk[base+13]= 8'h00;
+            disk[base+14]= 8'h00;
+            disk[base+15]= 8'h00;
+            disk[base+16]= 8'h00;
+            disk[base+17]= 8'h00;
+            disk[base+18]= 8'h00;
+            disk[base+19]= 8'h00;
+            disk[base+20]= clu[23:16];  // 首簇高 16 位
+            disk[base+21]= clu[31:24];
+            disk[base+22]= 8'h00;
+            disk[base+23]= 8'h00;
+            disk[base+24]= 8'h00;
+            disk[base+25]= 8'h00;
+            disk[base+26]= clu[7:0];    // 首簇低 16 位
+            disk[base+27]= clu[15:8];
+            disk[base+28]= sz[7:0];
+            disk[base+29]= sz[15:8];
+            disk[base+30]= sz[23:16];
+            disk[base+31]= sz[31:24];
+        end
+    endtask
+
     task build_gallery;
         input [8:0] n;
         input [8:0] skip;
@@ -299,7 +378,7 @@ module tb_gallery_probe;
 
             // —— VBR（BPB）——
             wr16(L_VBR, 9'd11, 16'd512);         // 每扇区字节数
-            wr8 (L_VBR, 9'd13, 8'd1);            // 每簇扇区数 = 1
+            wr8 (L_VBR, 9'd13, gal_spc);         // 每簇扇区数（W14 会改成 8）
             wr16(L_VBR, 9'd14, 16'd1);           // 保留扇区数
             wr8 (L_VBR, 9'd16, 8'd2);            // FAT 份数
             wr32(L_VBR, 9'd36, 32'd1);           // 每份 FAT 扇区数
@@ -324,8 +403,21 @@ module tb_gallery_probe;
                 end
             end
 
+            // —— 【v2/t19】可选的 SCI.RLE 目录项 ——
+            //   放在结束标记之前: fat32_reader 走到 0x00 就收尾，写在其后永远找不到。
+            //   rle_enable=0 时整项不写，用来验证"卡上没有视频"这条正常路径。
+            if (rle_enable) begin
+                mkrle(L_DIR0, ent[3:0], rle_clu, rle_sz);
+                ent = ent + 1;
+            end
+
             // —— 目录结束标记（0x00）: 让"未找到"走 dir_end → err=4 路径 ——
             mkother(L_DIR0, ent[3:0], 8'h00, 8'h00);
+
+            // 自动清回默认值: 防止本用例的 RLE 设置泄漏到下一个用例。
+            //   这类"跨用例残留"是假绿最常见的来源 —— 上一个用例写了 RLE 项，
+            //   下一个本应验证"卡上没有视频"的用例照样能通过。
+            rle_enable = 1'b0;
         end
     endtask
 
@@ -419,6 +511,12 @@ module tb_gallery_probe;
         // 最后一次读数后没有正常收尾，真卡上会表现为"下一次读块被残留状态挡住"
         repeat (4) @(negedge clk);
         chk(!card_active,                     "W01 card model idle after scan");
+        // 【v2/t19】镜像里没有 SCI.RLE: 视频路应当干净地报"没有"，而不是报故障。
+        //   判据必须看 rle_found，不能看 rle_lba==0（扇区 0 是合法值）。
+        chk(gp_rle_found === 1'b0,            "W01 no SCI.RLE reported as not found");
+        chk(gp_rle_fail  === 1'b0,            "W01 missing SCI.RLE is not a failure");
+        chk(gp_rle_lba   === 32'd0,           "W01 rle_lba zeroed when not found");
+        chk(gp_rle_size  === 32'd0,           "W01 rle_size zeroed when not found");
 
         // ---------------- W02 一张都没有 ----------------
         $display("");
@@ -567,6 +665,104 @@ module tb_gallery_probe;
         chk(gp_count == 5'd3,                 "W10 count restored to 3");
         chk(gp_err == 4'd0,                   "W10 stale error code cleared by rescan");
         chk((firq_pulses - firq_base) == 1,   "W10 recovery rescan asserts first_img_req once");
+
+        // ---------------- W11 图库 + SCI.RLE 同时存在 ----------------
+        // 这是现场最常见的情形: 卡上既有图片也有视频。
+        // 必须同时验证两件事: ①图库枚举结果没被 RLE 探测影响（count 仍是 3）；
+        //                   ②rle_lba 是**按 BPB 的 spc 算出来的真实扇区号**，
+        //                     不是把首簇号或别的什么直接透出去。
+        // 期望值用闭式算出，不复用 RTL 表达式: 7 + (9-2)<<0 = 14。
+        $display("");
+        $display("--- W11: gallery plus SCI.RLE on the same card ---");
+        rle_enable = 1'b1;
+        rle_clu    = 32'd9;
+        rle_sz     = 32'd82362927;
+        build_gallery(9'd3, 9'd0);
+        do_reset;
+        firq_base = firq_pulses;
+        start_scan;
+        wait_scan_done;
+        repeat (4) @(negedge clk);
+        $display("  W11: count=%0d rle_found=%b rle_lba=%0d rle_size=%0d",
+                 gp_count, gp_rle_found, gp_rle_lba, gp_rle_size);
+        chk(gp_done && !gp_fail,              "W11 scan with SCI.RLE present completes");
+        chk(gp_count == 5'd3,                 "W11 gallery count unaffected by RLE probe");
+        chk(gp_rle_found === 1'b1,            "W11 SCI.RLE found");
+        chk(gp_rle_fail  === 1'b0,            "W11 SCI.RLE probe reported no failure");
+        chk(gp_rle_lba   === 32'd14,          "W11 rle_lba equals data_begin + (cluster-2)<<spc_shift");
+        chk(gp_rle_size  === 32'd82362927,    "W11 rle_size equals the directory entry size");
+        // 反向判据: 只要 RLE 探测把"没找到"和"找到了"混起来，这条就会红
+        chk(gp_rle_lba   !== 32'd0,           "W11 found file does not report lba 0");
+
+        // ---------------- W12 换卡后 rescan 必须重探 RLE ----------------
+        // 现场场景: 拔卡换素材。新卡里 SCI.RLE 的首簇不同 → LBA 必须跟着变。
+        // 若 rescan 只重扫图库不重探 RLE，屏上表现是"科普模式永远停在第一帧"，
+        // 而日志里只有 err_code=1，根本反推不到 LBA 是旧的。
+        $display("");
+        $display("--- W12: rescan re-probes SCI.RLE on the new card ---");
+        rle_enable = 1'b1;
+        rle_clu    = 32'd12;                 // 新卡: 首簇 12 → 7 + 10 = 17
+        rle_sz     = 32'd1234567;
+        build_gallery(9'd2, 9'd0);
+        firq_base = firq_pulses;
+        pulse_rescan;
+        wait_terminal_clear;
+        chk(gp_rle_lba === 32'd0,             "W12 rescan clears the stale lba immediately");
+        wait_scan_done;
+        repeat (4) @(negedge clk);
+        $display("  W12: count=%0d rle_lba=%0d rle_size=%0d", gp_count, gp_rle_lba, gp_rle_size);
+        chk(gp_count == 5'd2,                 "W12 gallery rescanned to the new card");
+        chk(gp_rle_found === 1'b1,            "W12 SCI.RLE still found after the card swap");
+        chk(gp_rle_lba   === 32'd17,          "W12 rle_lba follows the new first cluster");
+        chk(gp_rle_size  === 32'd1234567,     "W12 rle_size follows the new directory entry");
+
+        // ---------------- W13 只有视频、一张图都没有 ----------------
+        // 卡上只有 SCI.RLE 是合法配置: 图库空不该拖累视频路，反之亦然。
+        $display("");
+        $display("--- W13: card with SCI.RLE but no images ---");
+        rle_enable = 1'b1;
+        rle_clu    = 32'd9;
+        rle_sz     = 32'd82362927;
+        build_gallery(9'd0, 9'd0);
+        do_reset;
+        firq_base = firq_pulses;
+        start_scan;
+        wait_scan_done;
+        repeat (4) @(negedge clk);
+        $display("  W13: count=%0d rle_found=%b rle_lba=%0d",
+                 gp_count, gp_rle_found, gp_rle_lba);
+        chk(gp_done && !gp_fail,              "W13 video-only card still completes");
+        chk(gp_count == 5'd0,                 "W13 empty gallery reported as empty");
+        chk((firq_pulses - firq_base) == 0,   "W13 no first_img_req with no images");
+        chk(gp_rle_found === 1'b1,            "W13 SCI.RLE still located on a video-only card");
+        chk(gp_rle_lba   === 32'd14,          "W13 rle_lba correct on a video-only card");
+
+        // ---------------- W14 每簇多扇区时 LBA 必须带移位 ----------------
+        // 为什么必须有这一条: spc=1 时 (簇号-2)<<0 == (簇号-2)，
+        //   漏掉移位的错误公式也能算出正确 LBA —— 那样 W11/W12/W13 全绿而 bug 仍在。
+        //   spc=2 时正确公式给 7+(9-2)<<1 = 21，漏移位给 14，两者都在镜像范围内、
+        //   都不会触发越界告警，只能靠 LBA 数值分辨。
+        $display("");
+        $display("--- W14: multi-sector clusters exercise the shift ---");
+        gal_spc    = 8'd2;
+        rle_enable = 1'b1;
+        rle_clu    = 32'd9;
+        rle_sz     = 32'd777;
+        build_gallery(9'd3, 9'd0);
+        do_reset;
+        firq_base = firq_pulses;
+        start_scan;
+        wait_scan_done;
+        repeat (4) @(negedge clk);
+        $display("  W14: count=%0d rle_lba=%0d rle_size=%0d",
+                 gp_count, gp_rle_lba, gp_rle_size);
+        chk(gp_done && !gp_fail,              "W14 multi-sector cluster scan completes");
+        chk(gp_count == 5'd3,                 "W14 gallery count correct at spc = 2");
+        chk(gp_rle_found === 1'b1,            "W14 SCI.RLE found at spc = 2");
+        chk(gp_rle_lba   === 32'd21,          "W14 rle_lba applies the spc shift");
+        chk(gp_rle_lba   !== 32'd14,          "W14 rle_lba is not the unshifted value");
+        // 复位到默认几何，避免影响后续用例
+        gal_spc = 8'd1;
 
         // ---------------- 收尾 ----------------
         $display("");

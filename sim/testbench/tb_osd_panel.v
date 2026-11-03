@@ -48,7 +48,12 @@ module tb_osd_panel;
     reg  [9:0]  active_y;
     reg  [23:0] rgb_in;
     reg         panel_on;
-    reg  [2:0]  bright_sel;
+    // t16：bright_sel[2:0] -> bright_lvl[3:0]（与 osd_panel 端口同名同宽），
+    //      并新增 vol_lvl / res_sel / ratio_sel 三口。位宽取 key_router 原宽。
+    reg  [3:0]  bright_lvl;
+    reg  [3:0]  vol_lvl;
+    reg  [2:0]  res_sel;
+    reg  [2:0]  ratio_sel;
     reg         invert_en;
     reg  [1:0]  auto_sw_sel;
     reg  [1:0]  info_mode;
@@ -64,7 +69,10 @@ module tb_osd_panel;
         .active_y      (active_y),
         .rgb_in        (rgb_in),
         .panel_on      (panel_on),
-        .bright_sel    (bright_sel),
+        .bright_lvl    (bright_lvl),
+        .vol_lvl       (vol_lvl),
+        .res_sel       (res_sel),
+        .ratio_sel     (ratio_sel),
         .invert_en     (invert_en),
         .auto_sw_sel   (auto_sw_sel),
         .info_mode     (info_mode),
@@ -165,6 +173,8 @@ module tb_osd_panel;
 
     integer i;
     integer nx, ny;
+    integer nyy;
+    reg [15:0] sig_a, sig_b;
 
     initial begin
         pass_cnt      = 0;
@@ -175,7 +185,11 @@ module tb_osd_panel;
         active_y      = 10'd0;
         rgb_in        = IMG_A;
         panel_on      = 1'b0;
-        bright_sel    = 3'd0;
+        // ★ 取 key_router 的复位值，不是全 0（音量 6 / 分辨率 4 / 屏占比 4）
+        bright_lvl    = 4'd0;
+        vol_lvl       = 4'd6;
+        res_sel       = 3'd4;
+        ratio_sel     = 3'd4;
         invert_en     = 1'b0;
         auto_sw_sel   = 2'd0;
         info_mode     = 2'd0;
@@ -318,6 +332,135 @@ module tb_osd_panel;
         chk_px(11'd320, 10'd240, 24'd0, "P09b blanking outputs 0 (center)");
         chk_px(PX0,     PY0,     24'd0, "P09c blanking outputs 0 (panel corner)");
         de = 1'b1;
+
+        // ================= P12 四个档位端口透传到文字层 ====================
+        // t16 新增了 vol_lvl / res_sel / ratio_sel 三个输入，并把 bright_sel
+        // 换成 bright_lvl[3:0]。本用例从**像素**反查字形，端到端确认四个端口
+        // 真的送到了 osd_param_text，而不是在 osd_panel 里被漏接/接错列。
+        //
+        // 做法（指纹法）：把 active 坐标摆到行 1 的某列中心，逐行扫该列 16 行
+        // 点阵，把"这一行亮不亮"记成一个 16 位向量，作为该字符的指纹。
+        // 换参数后若指纹变了，就证明面板上的数字确实跟着变了。
+        //   · 不用"亮像素个数"作判据 —— 两个不同字形可能恰好个数相同（假通过）；
+        //   · 不用 DUT 内部信号 —— 那样测的是接线而不是屏幕上真的有字。
+        // 行 1 是正文行，文字色 = C_BODY。
+        panel_on = 1'b1;
+        rgb_in   = IMG_A;
+        ny = TY0 + 16 + 3;          // 行 1 的第 3 行点阵（ty=19）
+
+        // ---- 亮度列 col 2：0 与 8 的指纹必须不同 ----
+        // 改造前 bright_sel 只有 3 位：档 8 -> 8[2:0]=000 -> 显示 '0'，
+        // 于是"档 0"与"档 8"在屏幕上是同一个字形。这条断言正是那个 bug 的靶子。
+        nx = TX0 + 2*8 + 4;
+        bright_lvl = 4'd0;
+        #1;
+        sig_a = 16'd0;
+        for (i = 0; i < 16; i = i + 1) begin
+            nyy = ny - 3 + i;
+            at(nx[10:0], nyy[9:0]);
+            sig_a[i] = (rgb_out === C_BODY);
+        end
+        bright_lvl = 4'd8;
+        #1;
+        sig_b = 16'd0;
+        for (i = 0; i < 16; i = i + 1) begin
+            nyy = ny - 3 + i;
+            at(nx[10:0], nyy[9:0]);
+            sig_b[i] = (rgb_out === C_BODY);
+        end
+        chk(|sig_a, "P12a bright_lvl=0 亮度列有字形（指纹非全零）");
+        chk(sig_a !== sig_b, "P12b bright_lvl 0 与 8 字形不同（3 位窄口时相同）");
+        $display("      P12b 亮度列指纹 0=%04h 8=%04h", sig_a, sig_b);
+
+        // ---- 音量列 col 6 ----
+        nx = TX0 + 6*8 + 4;
+        vol_lvl = 4'd0;
+        #1;
+        sig_a = 16'd0;
+        for (i = 0; i < 16; i = i + 1) begin
+            nyy = ny - 3 + i;
+            at(nx[10:0], nyy[9:0]);
+            sig_a[i] = (rgb_out === C_BODY);
+        end
+        vol_lvl = 4'd8;
+        #1;
+        sig_b = 16'd0;
+        for (i = 0; i < 16; i = i + 1) begin
+            nyy = ny - 3 + i;
+            at(nx[10:0], nyy[9:0]);
+            sig_b[i] = (rgb_out === C_BODY);
+        end
+        chk(|sig_a, "P12c vol_lvl=0 音量列有字形");
+        chk(sig_a !== sig_b, "P12d vol_lvl 0 与 8 字形不同（端口已透传）");
+        $display("      P12d 音量列指纹 0=%04h 8=%04h", sig_a, sig_b);
+
+        // ---- 分辨率列 col 10 ----
+        nx = TX0 + 10*8 + 4;
+        res_sel = 3'd0;
+        #1;
+        sig_a = 16'd0;
+        for (i = 0; i < 16; i = i + 1) begin
+            nyy = ny - 3 + i;
+            at(nx[10:0], nyy[9:0]);
+            sig_a[i] = (rgb_out === C_BODY);
+        end
+        res_sel = 3'd3;
+        #1;
+        sig_b = 16'd0;
+        for (i = 0; i < 16; i = i + 1) begin
+            nyy = ny - 3 + i;
+            at(nx[10:0], nyy[9:0]);
+            sig_b[i] = (rgb_out === C_BODY);
+        end
+        chk(sig_a !== sig_b, "P12e res_sel 0 与 3 字形不同（端口已透传）");
+
+        // ---- 屏占比列 col 14 ----
+        nx = TX0 + 14*8 + 4;
+        ratio_sel = 3'd0;
+        #1;
+        sig_a = 16'd0;
+        for (i = 0; i < 16; i = i + 1) begin
+            nyy = ny - 3 + i;
+            at(nx[10:0], nyy[9:0]);
+            sig_a[i] = (rgb_out === C_BODY);
+        end
+        ratio_sel = 3'd3;
+        #1;
+        sig_b = 16'd0;
+        for (i = 0; i < 16; i = i + 1) begin
+            nyy = ny - 3 + i;
+            at(nx[10:0], nyy[9:0]);
+            sig_b[i] = (rgb_out === C_BODY);
+        end
+        chk(sig_a !== sig_b, "P12f ratio_sel 0 与 3 字形不同（端口已透传）");
+
+        // ---- 条件列组 col 16（invert_en）----
+        // 关时整列必须是底色（指纹全零），开时必须出现 'I' 的笔画。
+        // 这条同时验 invert_en 仍接对 —— 改端口时最容易顺手接错的一根。
+        nx = TX0 + 16*8 + 4;
+        invert_en = 1'b0;
+        #1;
+        sig_a = 16'd0;
+        for (i = 0; i < 16; i = i + 1) begin
+            nyy = ny - 3 + i;
+            at(nx[10:0], nyy[9:0]);
+            sig_a[i] = (rgb_out === C_BODY);
+        end
+        invert_en = 1'b1;
+        #1;
+        sig_b = 16'd0;
+        for (i = 0; i < 16; i = i + 1) begin
+            nyy = ny - 3 + i;
+            at(nx[10:0], nyy[9:0]);
+            sig_b[i] = (rgb_out === C_BODY);
+        end
+        chk(sig_a === 16'd0, "P12g invert_en=0 时列 16 无字形（条件列组消失）");
+        chk(|sig_b,          "P12h invert_en=1 时列 16 出现 'I'");
+        $display("      P12h 列16 指纹 关=%04h 开=%04h", sig_a, sig_b);
+
+        // 恢复默认（不影响后续 P09 消隐用例）
+        bright_lvl = 4'd0; vol_lvl = 4'd6; res_sel = 3'd4; ratio_sel = 3'd4;
+        invert_en = 1'b0; panel_on = 1'b0;
 
         // ================= 汇总 ============================================
         $display("");

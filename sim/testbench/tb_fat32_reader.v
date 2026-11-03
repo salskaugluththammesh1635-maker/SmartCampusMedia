@@ -36,6 +36,9 @@ module tb_fat32_reader;
     // ---- DUT 连线 ----
     reg         start   = 1'b0;
     reg  [8:0]  img_index = 9'd1;
+    // 【v2 新增】显式 8.3 短名。全 0 = 自动模式（按 img_index 拼 IMGnnn.BMP），
+    //   非 0 = 通用模式（按这 11 字节逐字节比对）。
+    reg  [87:0] target_name = 88'd0;
     wire        busy, found, fail;
     wire [3:0]  err_code;
     wire [31:0] file_size;
@@ -60,6 +63,7 @@ module tb_fat32_reader;
         .rst_n         (rst_n),
         .start         (start),
         .img_index     (img_index),
+        .target_name   (target_name),
         .busy          (busy),
         .found         (found),
         .fail          (fail),
@@ -257,6 +261,54 @@ module tb_fat32_reader;
         end
     endtask
 
+    // 【v2 新增】构造「任意 8.3 短名」目录项（用于 BGM.WAV / SCI.RLE 等通用名）
+    //   name8 : 8 字节名域，不足补空格；ext3 : 3 字节扩展名
+    //   lower : 1 = 全部字节转小写（大小写不敏感专项）
+    task mkfile_name;
+        input [15:0]    sec;
+        input [3:0]     ent;
+        input [8*8-1:0] name8;
+        input [8*3-1:0] ext3;
+        input [7:0]     attr;
+        input [31:0]    clu;
+        input [31:0]    sz;
+        input           lower;
+        integer base;
+        integer i;
+        reg [7:0] b;
+        begin
+            base = sec*512 + ent*32;
+            for (i = 0; i < 32; i = i + 1) disk[base+i] = 8'h00;
+            for (i = 0; i < 8; i = i + 1) begin
+                b = name8[(7-i)*8 +: 8];
+                // 只把字母转小写，空格/数字原样（|0x20 会把 '1'(0x31) 变成 'Q'）
+                if (lower && (b >= "A") && (b <= "Z")) b = b | 8'h20;
+                disk[base+i] = b;
+            end
+            for (i = 0; i < 3; i = i + 1) begin
+                b = ext3[(2-i)*8 +: 8];
+                if (lower && (b >= "A") && (b <= "Z")) b = b | 8'h20;
+                disk[base+8+i] = b;
+            end
+            disk[base+11] = attr;
+            disk[base+12] = 8'h00;
+            disk[base+13] = 8'h00;
+            for (i = 14; i <= 19; i = i + 1) disk[base+i] = 8'h00;
+            disk[base+20] = clu[23:16];
+            disk[base+21] = clu[31:24];
+            disk[base+22] = 8'h00;
+            disk[base+23] = 8'h00;
+            disk[base+24] = 8'h00;
+            disk[base+25] = 8'h00;
+            disk[base+26] = clu[7:0];
+            disk[base+27] = clu[15:8];
+            disk[base+28] = sz[7:0];
+            disk[base+29] = sz[15:8];
+            disk[base+30] = sz[23:16];
+            disk[base+31] = sz[31:24];
+        end
+    endtask
+
     // ========================================================================
     // 场景镜像构造
     // ========================================================================
@@ -291,7 +343,8 @@ module tb_fat32_reader;
                SC_FATBAD  = 4'd7,  // FAT[2] = 0（非法簇号）
                SC_PART0   = 4'd8,  // 分区起始 LBA = 0
                SC_HICLU   = 4'd9,  // 首簇高 16 位非零（>65535）
-               SC_RSV     = 4'd10; // FAT[2] 落在保留区 0x0FFFFFF0~0x0FFFFFF7
+               SC_RSV     = 4'd10, // FAT[2] 落在保留区 0x0FFFFFF0~0x0FFFFFF7
+               SC_NAMES   = 4'd11; // 【v2】通用 8.3 短名（WAV/RLE/SRT）
 
     integer i;
     task build_image;
@@ -374,6 +427,15 @@ module tb_fat32_reader;
             wr32(L_FAT2, 9'd12, 32'h0FFF_FEF8);
             wr32(L_FAT2, 9'd16, 32'h0FFF_FEF8);
             wr32(L_FAT2, 9'd20, 32'h0FFF_FEF8);
+            // 簇 6/7/8/9（SC_NAMES 场景的 ALARM/NARR/SCI/NARR.SRT 首簇）
+            wr32(L_FAT1, 9'd24, 32'h0FFF_FEF8);
+            wr32(L_FAT1, 9'd28, 32'h0FFF_FEF8);
+            wr32(L_FAT1, 9'd32, 32'h0FFF_FEF8);
+            wr32(L_FAT1, 9'd36, 32'h0FFF_FEF8);
+            wr32(L_FAT2, 9'd24, 32'h0FFF_FEF8);
+            wr32(L_FAT2, 9'd28, 32'h0FFF_FEF8);
+            wr32(L_FAT2, 9'd32, 32'h0FFF_FEF8);
+            wr32(L_FAT2, 9'd36, 32'h0FFF_FEF8);
 
             // ---- 根目录第 1 簇 ----
             if (sc == SC_XCLU) begin
@@ -403,6 +465,23 @@ module tb_fat32_reader;
                 mkfile (L_DIR0, 4'd1, 9'd1, 8'h20, 32'h0101_0005,
                         32'd921654, 1'b0);
                 mkother(L_DIR0, 4'd2, 8'h00, 8'h00);   // 结束标记
+            end else if (sc == SC_NAMES) begin
+                // 【v2】通用 8.3 短名场景: 混合干扰项 + 5 个真实素材名
+                //   项0/1 是必须跳过的 LFN 与卷标；项2 起是目标名。
+                //   SCI.RLE 故意存成小写（验证大小写不敏感分支在通用模式下也生效）。
+                mkother(L_DIR0, 4'd0, 8'h41, 8'h0F);   // LFN
+                mkother(L_DIR0, 4'd1, 8'h42, 8'h08);   // 卷标
+                mkfile_name(L_DIR0, 4'd2, 64'h42474D2020202020, 24'h574156,
+                            8'h20, 32'd4, 32'd480000,  1'b0);  // BGM.WAV    48,000 B
+                mkfile_name(L_DIR0, 4'd3, 64'h414C41524D202020, 24'h574156,
+                            8'h20, 32'd5, 32'd96000,   1'b0);  // ALARM.WAV  96,000 B
+                mkfile_name(L_DIR0, 4'd4, 64'h4E41525220202020, 24'h574156,
+                            8'h20, 32'd6, 32'd288000,  1'b0);  // NARR.WAV  288,000 B
+                mkfile_name(L_DIR0, 4'd5, 64'h5343492020202020, 24'h524C45,
+                            8'h20, 32'd7, 32'd82362927,1'b1);  // sci.rle  小写存储
+                mkfile_name(L_DIR0, 4'd6, 64'h4E41525220202020, 24'h535254,
+                            8'h20, 32'd8, 32'd4096,    1'b0);  // NARR.SRT    4,096 B
+                mkother(L_DIR0, 4'd7, 8'h00, 8'h00);   // 目录结束
             end else begin
                 mkother(L_DIR0, 4'd0, 8'h41, 8'h0F);   // 项0: LFN 序列（必须跳过）
                 mkother(L_DIR0, 4'd1, 8'h42, 8'h08);   // 项1: 卷标（必须跳过）
@@ -429,7 +508,29 @@ module tb_fat32_reader;
     task fire_start;
         input [8:0] idx;
         begin
+            target_name = 88'd0;        // 自动模式: 按序号拼 IMGnnn.BMP
             img_index = idx;
+            @(negedge clk);
+            start = 1'b1;
+            @(negedge clk);
+            start = 1'b0;
+        end
+    endtask
+
+    // 【v2 新增】按显式 8.3 短名启动（通用模式）。
+    //   name8 : 8 字节名域，不足补空格（如 "BGM" -> "BGM     "）
+    //   ext3  : 3 字节扩展名（如 "WAV"）
+    // 用 task 内部循环逐字节打包进 target_name[87:0]，避免 11 个常量拼接写错。
+    task fire_start_name;
+        input [8*8-1:0] name8;
+        input [8*3-1:0] ext3;
+        integer k;
+        begin
+            img_index = 9'd0;           // 通用模式不看序号
+            for (k = 0; k < 11; k = k + 1) begin
+                if (k < 8) target_name[k*8 +: 8] = name8[(7-k)*8 +: 8];
+                else       target_name[k*8 +: 8] = ext3[(10-k)*8 +: 8];
+            end
             @(negedge clk);
             start = 1'b1;
             @(negedge clk);
@@ -448,6 +549,73 @@ module tb_fat32_reader;
             if (guard >= 400000) $display("TIMEOUT: terminal state not reached");
         end
     endtask
+
+    // 【t26 新增】任务输出：第二次 start 是否真的启动了新一轮
+    integer rstarted;
+
+    // 【t26 新增】等「新的一轮」真正跑完。
+    //   与 wait_terminal 的区别：后者的退出条件是 found/fail，而这两根线在
+    //   上一轮结束后仍保持为 1，所以第二次 start 之后它会立刻返回，什么也没
+    //   证明。这里先等 busy 拉高（DUT 接受第二次 start 的唯一可观测标志），
+    //   再等它落下，才能区分「真的重跑了」与「start 被终态吞掉」。
+    task wait_new_round;
+        output integer started;
+        integer guard;
+        begin
+            started = 0;
+            guard = 0;
+            while (!busy && (guard < 40000)) begin
+                @(negedge clk);
+                guard = guard + 1;
+            end
+            if (busy) begin
+                started = 1;
+                guard = 0;
+                while (busy && (guard < 400000)) begin
+                    @(negedge clk);
+                    guard = guard + 1;
+                end
+            end
+            if (started) $display("  new round started (busy observed)");
+            else $display("  TIMEOUT: new round never started (busy never asserted)");
+        end
+    endtask
+
+    // ------------------------------------------------------------------
+    // 【t26 新增】逐拍电平监视器：证明「第二次 start 之后没有陈旧结果泄漏」
+    //   背景：term_reentry 只屏蔽 st 处于终态的那一拍；下一拍 st 已回到
+    //   S_IDLE、term_reentry 落回 0，此时 found 直接等于 found_q。若 found_q
+    //   还留着上一轮的 1，调用方（wav_stream_player 的 W_FATLOC 进态即采
+    //   电平）会把它当成新结果采走 —— 这正是本卡要消灭的现象。
+    //   判据：armed 期间任何一拍 found=1，其 first_cluster 必须等于本轮
+    //   期望值。用 first_cluster 而不是 out_data_begin：IMG001/IMG002 同在
+    //   一个数据区，out_data_begin 两轮相同，区分不出新旧。
+    // ------------------------------------------------------------------
+    integer arm_spy;
+    integer spy_hi_cnt;
+    integer spy_viol_cnt;
+    integer spy_seen;
+    reg [31:0] spy_expect_clu;
+
+    //   采样时机：negedge（时钟周期中部，避开 posedge 上 DUT 非阻塞更新的竞争）。
+    //   还要避开另一个竞争：fire_start 在 negedge 执行 `start = 1'b1`，监视器
+    //   也在 negedge 采样，两者同刻抢跑；若监视器先跑会看到 start 还没拉高、
+    //   term_reentry=0、found 仍是上一轮的 1，把「启动前」误判成「泄漏」。
+    //   故先等观测到 start=1 才真正开始判定（spy_seen 一次性置位）。
+    always @(negedge clk) begin
+        if (arm_spy) begin
+            if (start === 1'b1) spy_seen = 1;
+            if (spy_seen && (found === 1'b1)) begin
+                spy_hi_cnt = spy_hi_cnt + 1;
+                if (first_cluster !== spy_expect_clu) begin
+                    spy_viol_cnt = spy_viol_cnt + 1;
+                    if (spy_viol_cnt <= 4)
+                        $display("SPY: cycle with found=1 carried stale first_cluster=%0d (expected %0d) at t=%0t",
+                                 first_cluster, spy_expect_clu, $time);
+                end
+            end
+        end
+    end
 
     // ========================================================================
     // 主测试序列
@@ -664,6 +832,138 @@ module tb_fat32_reader;
         fire_start(9'd1);
         wait_terminal;
         chk(fail && err_code == 4'd2, "T21 FAT16-style root directory is not FAT32");
+
+        // ---------------- T22 / T23 通用 8.3 短名（v2 新增功能）----------------
+        // 目的: 验证 target_name[87:0] 通用模式能定位任意 8.3 名，
+        //       这是 t7 读 SCI.RLE / t6 读 BGM.WAV 的前置能力。
+        //       同时验证首字节预筛已与 exp_byte 统一 —— 旧版写死 'I'/'i'
+        //       会让 'S'/'B'/'A'/'N' 开头的名字在第 0 字节就被判 nm_bad。
+        build_image(SC_NAMES);
+
+        // T22: BGM.WAV（大写存储，首字节 'B'=0x42 是旧版预筛的注定失败点）
+        do_reset;
+        fire_start_name("BGM     ", "WAV");
+        wait_terminal;
+        $display("  T22: found=%b err=%0d clu=%0d size=%0d",
+                 found, err_code, first_cluster, file_size);
+        chk(found,                      "T22 BGM.WAV found via target_name");
+        chk(!fail,                      "T22 no failure");
+        chk(first_cluster == 32'd4,     "T22 BGM.WAV first cluster = 4");
+        chk(file_size     == 32'd480000,"T22 BGM.WAV size = 480000");
+
+        // T23: ALARM.WAV / NARR.WAV / NARR.SRT 逐个命中
+        do_reset;
+        fire_start_name("ALARM   ", "WAV");
+        wait_terminal;
+        chk(found && first_cluster == 32'd5 && file_size == 32'd96000,
+            "T23a ALARM.WAV found (clu 5, 96000 B)");
+
+        do_reset;
+        fire_start_name("NARR    ", "WAV");
+        wait_terminal;
+        chk(found && first_cluster == 32'd6 && file_size == 32'd288000,
+            "T23b NARR.WAV found (clu 6, 288000 B)");
+
+        do_reset;
+        fire_start_name("NARR    ", "SRT");
+        wait_terminal;
+        chk(found && first_cluster == 32'd8 && file_size == 32'd4096,
+            "T23c NARR.SRT found (same 8-char name, different ext)");
+
+        // T24: SCI.RLE —— 卡上存成小写 sci.rle，通用模式必须同样大小写不敏感
+        do_reset;
+        fire_start_name("SCI     ", "RLE");
+        wait_terminal;
+        $display("  T24: found=%b err=%0d clu=%0d size=%0d",
+                 found, err_code, first_cluster, file_size);
+        chk(found,                          "T24 SCI.RLE (stored lowercase) found");
+        chk(first_cluster == 32'd7,         "T24 SCI.RLE first cluster = 7");
+        chk(file_size     == 32'd82362927,  "T24 SCI.RLE size = 82362927");
+
+        // T25: 不存在的名字必须报未找到（err=4），不能误命中相邻项
+        do_reset;
+        fire_start_name("ZZZ     ", "WAV");
+        wait_terminal;
+        $display("  T25: fail=%b err=%0d", fail, err_code);
+        chk(fail && err_code == 4'd4, "T25 missing name -> err = 4");
+
+        // T26: 自动模式（target_name=0）仍按序号走，与 T01 同镜像同结果
+        //   这一条是防回归的守门人: 任何把双模判断写错方向的改动都会挂在这里。
+        do_reset;
+        fire_start(9'd1);
+        wait_terminal;
+        chk(fail, "T26 auto mode cannot find IMG001.BMP in SC_NAMES image");
+
+        // ================================================================
+        //  T27 —— 终态可重入: 连续两次 start（第一次成功、第二次成功）
+        // ----------------------------------------------------------------
+        //  背景: 修复前 S_DONE / S_FAIL 两个终态都不看 start、也不改 st，
+        //        全文件唯一 st<=S_IDLE 的出口是复位与 default 分支。
+        //        ⇒ 定位成功一次之后，第二次 start 会被静默吞掉。
+        //        这一条与 T28 必须同时在旧 RTL 下变红，否则用例没测到点。
+        //  镜像: SC_BASIC（IMG001 在簇 5、IMG002 在簇 6，同一张卡）
+        //  关键: 两次 start 之间**不复位**，只靠 start 本身重进流程。
+        // ================================================================
+        $display("");
+        $display("---- T27: re-enter from S_DONE (success then success) ----");
+        build_image(SC_BASIC);
+        do_reset;
+        fire_start(9'd1);
+        wait_terminal;
+        $display("  T27 round1: found=%b fail=%b err=%0d clu=%0d",
+                 found, fail, err_code, first_cluster);
+        chk(found && first_cluster == 32'd5, "T27a round1 finds IMG001 (clu 5)");
+
+        // 第二次 start：不复位，直接发脉冲
+        //   【t26】监视器在 fire_start 之前置位，覆盖 start 那拍及其后每一拍，
+        //   包括 st 已回到 S_IDLE 的那个窗口（陈旧结果最容易泄漏的地方）。
+        arm_spy       = 1;
+        spy_hi_cnt    = 0;
+        spy_viol_cnt  = 0;
+        spy_seen      = 0;
+        spy_expect_clu = 32'd6;             // 本轮期望定位到 IMG002（簇 6）
+        fire_start(9'd2);
+        wait_new_round(rstarted);
+        arm_spy = 0;
+        $display("  T27 round2: started=%0d found=%b fail=%b err=%0d clu=%0d",
+                 rstarted, found, fail, err_code, first_cluster);
+        chk(rstarted == 1,                  "T27b second start restarts the locator (S_DONE re-entrant)");
+        chk(found && !fail,                 "T27c round2 reports found (not fail)");
+        chk(first_cluster == 32'd6,         "T27d round2 relocates IMG002 (clu 6, not the stale 5)");
+        chk(err_code == 4'd0,               "T27e round2 err_code stays 0");
+        // 【t26 新增】逐拍监视的两条断言。T27f 是「监视器确实活着」的自检——
+        // 若监视器一次都没看到 found=1（比如 fire 时机错开），T27g 会因为
+        // 恒真而变成假绿，所以必须有这个前提。
+        $display("  T27 spy: found_high_cycles=%0d stale_violations=%0d",
+                 spy_hi_cnt, spy_viol_cnt);
+        chk(spy_hi_cnt > 0,                 "T27f spy observed found=1 (monitor is live)");
+        chk(spy_viol_cnt == 0,              "T27g no cycle leaked a stale result (found=1 always carries new cluster)");
+
+        // ================================================================
+        //  T28 —— 终态可重入: 连续两次 start（第一次失败、第二次成功）
+        // ----------------------------------------------------------------
+        //  这一条覆盖 S_FAIL 出口。现网典型触发路径：第一次换源时 SD 握手
+        //  超时（err=7）进了 S_FAIL，之后再用同一个 fat32_reader 实例去定位
+        //  别的文件，start 被吞、fail 一直是 1，上层（wav_stream_player）
+        //  读到的是上一轮的错误码，表现为 E_BLKTMO 永不消失。
+        // ================================================================
+        $display("");
+        $display("---- T28: re-enter from S_FAIL (fail then success) ----");
+        build_image(SC_BASIC);
+        do_reset;
+        fire_start(9'd9);                   // IMG009 不存在
+        wait_terminal;
+        $display("  T28 round1: found=%b fail=%b err=%0d", found, fail, err_code);
+        chk(fail && !found && err_code == 4'd4, "T28a round1 fails with err 4 as expected");
+
+        fire_start(9'd1);                   // 同一实例，第二次要能重跑并成功
+        wait_new_round(rstarted);
+        $display("  T28 round2: started=%0d found=%b fail=%b err=%0d clu=%0d",
+                 rstarted, found, fail, err_code, first_cluster);
+        chk(rstarted == 1,                  "T28b second start restarts the locator (S_FAIL re-entrant)");
+        chk(found && !fail,                 "T28c round2 reports found and clears fail");
+        chk(first_cluster == 32'd5,         "T28d round2 finds IMG001 (clu 5)");
+        chk(err_code == 4'd0,               "T28e round2 err_code cleared to 0");
 
         // ---------------- 收尾 ----------------
         $display("");

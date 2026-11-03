@@ -1,4 +1,4 @@
-# Real-controller full-frame write, 64ms retention and repeated readback gate.
+﻿# Real-controller full-frame write, 64ms retention and repeated readback gate.
 [CmdletBinding()]
 param(
     [string]$ReportDir='reports/display_diag_20261028/final/retention',

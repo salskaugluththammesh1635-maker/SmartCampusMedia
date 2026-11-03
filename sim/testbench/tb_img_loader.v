@@ -35,6 +35,7 @@ module tb_img_loader;
 
     localparam CLK_PERIOD = 40;            // 25MHz
     localparam NSEC       = 64;            // 镜像扇区数
+    localparam [31:0] TB_BLK_TIMEOUT = 32'd20000; // 块握手超时（缩短版，见 DUT 例化）
 
     localparam [31:0] PART_LBA = 32'd4;
     localparam [15:0] L_MBR    = 16'd0;
@@ -93,6 +94,8 @@ module tb_img_loader;
     integer fails    = 0;
     integer pix_seen = 0;
     integer wr_words = 0;
+    time    t_begin;                       // T16~T18 计时起点
+    integer t_cycles, t_guard;
 
     // ------------------------------------------------------------------------
     //  DUT + 真实的 bmp_parser
@@ -100,7 +103,10 @@ module tb_img_loader;
     img_loader #(
         .CLK_FREQ_HZ (25_000_000),
         .CHAIN_MAX   (16),
-        .WR_TIMEOUT  (4096)
+        .WR_TIMEOUT  (4096),
+        // 【2026-10-31】缩短块握手超时，T16/T17 才能在合理仿真时间内验证看门狗；
+        //   仍远大于单扇区传输时间（512 字节 × (RD_GAP+1) ≈ 1024 拍）。
+        .BLK_TIMEOUT (TB_BLK_TIMEOUT)
     ) dut (
         .clk           (clk),
         .rst_n         (rst_n),
@@ -166,6 +172,7 @@ module tb_img_loader;
     localparam RD_GAP = 1;      // 字节间隔（拍）
     integer    rd_byte;
     reg [31:0] rd_lba;
+    reg        drop_start = 1'b0; // 1 = 模拟仲裁吞掉 blk_start：不回 done 也不回 err
     reg        err_inject = 1'b0;
     integer    err_lba = -1;   // >=0 时只在指定扇区注入错误
     integer    oob_hits = 0;
@@ -195,7 +202,7 @@ module tb_img_loader;
 
             case (mdl_st)
             M_IDLE: begin
-                if (blk_start) begin
+                if (blk_start && !drop_start) begin
                     if ($test$plusargs("dbg"))
                         $display("  [mdl] blk_start addr=%0d", blk_addr);
                     if (blk_addr >= NSEC) begin
@@ -872,6 +879,65 @@ module tb_img_loader;
         $display("  T15: done=%b fail=%b err=%0d", done, fail, err_code);
         chk(fail && !done,        "T15 数据阶段读块失败应当失败");
         chk(err_code == 4'd3,     "T15 err = 3 (底层读块失败)");
+
+        // ====================================================================
+        // 【2026-10-31】T16~T18：blk_start 被吞（不回 done 也不回 err）
+        //   交接文档 §4 步骤 4：必须在 BLK_TIMEOUT 量级内报错，且错误码能区分
+        //   "块握手超时"与"文件定位失败/上层 4 s 无进度"。
+        // ====================================================================
+        $display("\n-- T16 文件定位阶段 blk_start 被吞 --");
+        build_bmp(24, 8, 54, 0);
+        build_image(24, 8, 54, 0, 2, 32'd0);
+        do_reset;
+        drop_start = 1'b1;
+        t_begin = $time;
+        fire_start_wh(9'd1, 16'd24, 16'd8);
+        wait_terminal;
+        t_cycles = ($time - t_begin) / CLK_PERIOD;
+        drop_start = 1'b0;
+        $display("  T16: done=%b fail=%b err=%0d cycles=%0d", done, fail, err_code, t_cycles);
+        chk(fail && !done,         "T16 定位阶段请求被吞应当失败");
+        chk(err_code == 4'd10,     "T16 err = 10 (块握手超时 dA)，不是 1(F4)");
+        chk(t_cycles <= TB_BLK_TIMEOUT + 200, "T16 在 BLK_TIMEOUT 量级内报错");
+
+        $display("\n-- T17 数据阶段 blk_start 被吞 --");
+        build_bmp(24, 8, 54, 0);
+        build_image(24, 8, 54, 0, 2, 32'd0);
+        do_reset;
+        fire_start_wh(9'd1, 16'd24, 16'd8);
+        t_guard = 0;
+        while (dut.st != 4'd4 && !done && !fail && t_guard < 1000000) begin
+            @(posedge clk); t_guard = t_guard + 1;
+        end
+        chk(dut.st == 4'd4,        "T17 已进入 T_DATRD");
+        drop_start = 1'b1;
+        t_begin = $time;
+        wait_terminal;
+        t_cycles = ($time - t_begin) / CLK_PERIOD;
+        drop_start = 1'b0;
+        $display("  T17: done=%b fail=%b err=%0d cycles=%0d", done, fail, err_code, t_cycles);
+        chk(fail && !done,         "T17 数据阶段请求被吞应当失败");
+        chk(err_code == 4'd10,     "T17 err = 10 (块握手超时 dA)");
+        chk(t_cycles <= TB_BLK_TIMEOUT + 2000, "T17 在 BLK_TIMEOUT 量级内报错");
+
+        // T18：模拟 fat32_reader 自身挂死（压住它的看门狗计数），
+        //   img_loader 的 T_FATLOC 看门狗必须兜住并报 14(dE)。
+        $display("\n-- T18 文件定位无进度（fat32_reader 挂死）--");
+        build_bmp(24, 8, 54, 0);
+        build_image(24, 8, 54, 0, 2, 32'd0);
+        do_reset;
+        drop_start = 1'b1;
+        force dut.u_fat.blk_wait_cnt = 32'd0;
+        t_begin = $time;
+        fire_start_wh(9'd1, 16'd24, 16'd8);
+        wait_terminal;
+        t_cycles = ($time - t_begin) / CLK_PERIOD;
+        release dut.u_fat.blk_wait_cnt;
+        drop_start = 1'b0;
+        $display("  T18: done=%b fail=%b err=%0d cycles=%0d", done, fail, err_code, t_cycles);
+        chk(fail && !done,         "T18 定位无进度应当失败");
+        chk(err_code == 4'd14,     "T18 err = 14 (定位无进度 dE)");
+        chk(t_cycles <= 2 * TB_BLK_TIMEOUT + 200, "T18 在 2xBLK_TIMEOUT 内报错");
         // 收尾
         // ====================================================================
         chk(oob_hits == 0, "全程无越界扇区访问");

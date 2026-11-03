@@ -20,8 +20,8 @@
 //
 //   3) 相邻样本连线 audio_waveform.v:82-95
 //      idx_prev = (idx == 63) ? idx : idx + 1     ← 最左端没有更旧样本，退化为自身
-//      y_curr = 200 + (hist[idx]      >>> 9)
-//      y_prev = 200 + (hist[idx_prev] >>> 9)
+//      y_curr = Y_CENTER + (hist[idx]      >>> Y_SHIFT)
+//      y_prev = Y_CENTER + (hist[idx_prev] >>> Y_SHIFT)
 //      y_min/y_max 取二者较小/较大，然后
 //      wave_pixel = wave_en && de && in_window && (active_y >= y_min) && (active_y <= y_max)
 //      → 每列点亮的是 y_min..y_max 的**闭区间**，两端都要亮。
@@ -29,9 +29,16 @@
 //   4) 颜色恒为 24'hFF_FF_40（黄色），与九宫格/电平条区分。
 //
 // 【本 TB 的核心手法：造一条可精确预测的斜坡】
-//   依次推入 64 个样本，第 j 个样本 = j*1024。
-//   于是历史里 hist[i] = (63-i)*1024，代入映射得：
-//        q = rel_x[9:3] 时，y_curr = 200 + 2q，y_prev = 198 + 2q  (q>=1)
+//   依次推入 64 个样本，第 j 个样本的高 16 位 = min(j, AMP_POS)*Y_STEP（一个像素行），
+//   即在 AMP_POS 行处饱和。于是历史里 hist[i] = min(63-i, AMP_POS)*Y_STEP，代入映射得
+//   （q = rel_x[9:3] 即第 q 段）：
+//        q <= AMP_POS： y_curr = Y_CENTER + q，y_prev = Y_CENTER + q - 1   (q>=1)
+//        q  > AMP_POS： y_curr = y_prev = Y_TOP（两个样本同值，退化为单行）
+//        q=0 段没有更旧的邻居，退化为单行 y = Y_CENTER
+//   ★ 必须饱和：64 个样本各升一整行需要 63*Y_STEP <= 32767，Y_SHIFT=10 时
+//     63*1024=64512 会撑爆 16 位有符号历史（也撑爆 24 位有符号的 push_sample 入参），
+//     所以在满幅 AMP_POS 处截断。Y_SHIFT=9 时 AMP_POS=63，饱和点刚好在最后一个
+//     样本之外，行为与不饱和完全等价 —— 这正是本次改造能在旧参数下保持 76/0 的原因。
 //   每列应当点亮的像素区间完全可预测，可以逐列核对"两端亮、上下各一格灭"。
 //   这条斜坡同时把移位方向、索引方向、>>> 缩放、连线区间一次性钉死。
 // =============================================================================
@@ -42,8 +49,18 @@ module tb_audio_waveform;
     // ---- DUT 参数（与默认值一致，写出来便于断言引用）----------------------
     localparam integer X0       = 64;
     localparam integer X1       = 576;
-    localparam integer Y_CENTER = 200;
+    localparam integer Y_CENTER = 408;      // 波形中心线（= DUT 的 parameter Y_CENTER）
+    localparam integer Y_SHIFT  = 10;       // 幅度缩放（= DUT 的 parameter Y_SHIFT）
     localparam integer HIST     = 64;
+
+    // 由上面两个参数按定义复算出的规格量。**这些量必须与 DUT 的移位量严格独立**：
+    // 改这里不改 RTL 就必须红一片，改 RTL 不改这里也必须红一片 —— 两份字面量分开写
+    // 才有交叉验证的意义（从 DUT 读参数等于自己证明自己）。
+    localparam integer Y_STEP  = 1 << Y_SHIFT;           // 一个像素行 = 样本高 16 位的倍数
+    localparam integer AMP_POS = 32767 >>> Y_SHIFT;      // 正向满幅行数
+    localparam integer AMP_NEG = -(32768 >>> Y_SHIFT);   // 负向满幅行数（比正向多 1，向下取整）
+    localparam integer Y_TOP   = Y_CENTER + AMP_POS;     // 波形最高行
+    localparam integer Y_BOT   = Y_CENTER + AMP_NEG;     // 波形最低行
 
     // ---- 时钟 --------------------------------------------------------------
     reg clk;
@@ -105,7 +122,7 @@ module tb_audio_waveform;
     function integer y_of;
         input signed [15:0] s;
         begin
-            y_of = Y_CENTER + (s >>> 9);
+            y_of = Y_CENTER + (s >>> Y_SHIFT);
         end
     endfunction
 
@@ -158,6 +175,8 @@ module tb_audio_waveform;
     integer x;
     integer ymin;
     integer ymax;
+    integer yc;          // 本段当前样本的 y
+    integer yp;          // 本段相邻（更旧）样本的 y
     integer bad;
     reg signed [15:0] s16;
 
@@ -188,31 +207,31 @@ module tb_audio_waveform;
         // 全 0 历史 → y_curr = y_prev = 200，只点亮中心线那一行
         de      = 1'b1;
         wave_en = 1'b1;
-        probe(11'd64,  10'd200, 1,          "[reset] center line lit at left edge");
-        probe(11'd320, 10'd200, 1,          "[reset] center line lit in the middle");
-        probe(11'd575, 10'd200, 1,          "[reset] center line lit at right edge");
-        probe(11'd320, 10'd199, 0,          "[reset] row above center is dark");
-        probe(11'd320, 10'd201, 0,          "[reset] row below center is dark");
+        probe(11'd64,  Y_CENTER, 1,          "[reset] center line lit at left edge");
+        probe(11'd320, Y_CENTER, 1,          "[reset] center line lit in the middle");
+        probe(11'd575, Y_CENTER, 1,          "[reset] center line lit at right edge");
+        probe(11'd320, Y_CENTER - 1, 0,      "[reset] row above center is dark");
+        probe(11'd320, Y_CENTER + 1, 0,      "[reset] row below center is dark");
 
         // =====================================================================
         // ② x 窗口边界：in_window = (x >= 64) && (x < 576)
         // =====================================================================
-        probe(11'd63,  10'd200, 0,          "[window] x=63 is left of the window");
-        probe(11'd64,  10'd200, 1,          "[window] x=64 is the first column");
-        probe(11'd575, 10'd200, 1,          "[window] x=575 is the last column");
-        probe(11'd576, 10'd200, 0,          "[window] x=576 is right of the window");
-        probe(11'd640, 10'd200, 0,          "[window] x=640 (active area end) is dark");
+        probe(11'd63,  Y_CENTER, 0,          "[window] x=63 is left of the window");
+        probe(11'd64,  Y_CENTER, 1,          "[window] x=64 is the first column");
+        probe(11'd575, Y_CENTER, 1,          "[window] x=575 is the last column");
+        probe(11'd576, Y_CENTER, 0,          "[window] x=576 is right of the window");
+        probe(11'd640, Y_CENTER, 0,          "[window] x=640 (active area end) is dark");
 
         // =====================================================================
         // ③ 两级使能门控：de 与 wave_en 都必须为 1
         // =====================================================================
         de = 1'b0;
-        probe(11'd320, 10'd200, 0,          "[gate] de=0 blanks the waveform");
+        probe(11'd320, Y_CENTER, 0,          "[gate] de=0 blanks the waveform");
         de = 1'b1;
         wave_en = 1'b0;
-        probe(11'd320, 10'd200, 0,          "[gate] wave_en=0 blanks the waveform");
+        probe(11'd320, Y_CENTER, 0,          "[gate] wave_en=0 blanks the waveform");
         wave_en = 1'b1;
-        probe(11'd320, 10'd200, 1,          "[gate] both enables restore the pixel");
+        probe(11'd320, Y_CENTER, 1,          "[gate] both enables restore the pixel");
 
         // =====================================================================
         // ④ 移位寄存器语义：hist[0] 最新、hist[63] 最旧、只取高 16 位
@@ -260,44 +279,44 @@ module tb_audio_waveform;
         // =====================================================================
         // 全部清 0 后只放一个正样本 → 该列 y_curr=201、y_prev=200（连到中心线）
         clear_state;
-        push_sample(24'sh02_0000);          // hist=512 → 512>>>9 = 1 → y=201
+        push_sample(Y_STEP * 256);          // hist=Y_STEP → >>>Y_SHIFT = 1 → y = Y_CENTER+1
         #1;
-        ck(u_dut.hist[0] === 16'sd512,      "[ymap] sample 0x020000 stores hist=512");
+        ck(u_dut.hist[0] === Y_STEP,        "[ymap] one-pixel sample stores hist=Y_STEP");
         s16 = u_dut.hist[0];
-        ck_int(y_of(s16), 201,              "[ymap] +512 maps to y = 201");
+        ck_int(y_of(s16), Y_CENTER + 1,     "[ymap] +Y_STEP maps to one row below center");
         // x=575 → idx=0（最新样本），idx_prev=1（全 0 → y=200）
-        probe(11'd575, 10'd200, 1,          "[ymap] line reaches back to the center row");
-        probe(11'd575, 10'd201, 1,          "[ymap] line reaches the sample row");
-        probe(11'd575, 10'd199, 0,          "[ymap] one row above the line is dark");
-        probe(11'd575, 10'd202, 0,          "[ymap] one row below the line is dark");
+        probe(11'd575, Y_CENTER, 1,          "[ymap] line reaches back to the center row");
+        probe(11'd575, Y_CENTER + 1, 1,      "[ymap] line reaches the sample row");
+        probe(11'd575, Y_CENTER - 1, 0,      "[ymap] one row above the line is dark");
+        probe(11'd575, Y_CENTER + 2, 0,      "[ymap] one row below the line is dark");
 
         // 负样本 → 向下（y 减小）
         clear_state;
-        push_sample(24'shFE_0000);          // 有符号 -131072 → hist = -512 → y=199
+        push_sample(-(Y_STEP * 256));       // 有符号 -Y_STEP → y = Y_CENTER-1
         #1;
-        ck(u_dut.hist[0] === -16'sd512,     "[ymap] sample 0xFE0000 stores hist=-512");
+        ck(u_dut.hist[0] === -Y_STEP,       "[ymap] negative sample stores hist=-Y_STEP");
         s16 = u_dut.hist[0];
-        ck_int(y_of(s16), 199,              "[ymap] -512 maps to y = 199 (above center)");
-        probe(11'd575, 10'd199, 1,          "[ymap] negative sample draws above the center");
-        probe(11'd575, 10'd200, 1,          "[ymap] negative sample still connects to center");
-        probe(11'd575, 10'd201, 0,          "[ymap] nothing drawn below when the sample is negative");
+        ck_int(y_of(s16), Y_CENTER - 1,     "[ymap] -Y_STEP maps to one row above center");
+        probe(11'd575, Y_CENTER - 1, 1,      "[ymap] negative sample draws above the center");
+        probe(11'd575, Y_CENTER, 1,          "[ymap] negative sample still connects to center");
+        probe(11'd575, Y_CENTER + 1, 0,      "[ymap] nothing drawn below when the sample is negative");
 
-        // 极端幅度：+32767>>>9 = 63 → y=263；-32768>>>9 = -64 → y=136
+        // 极端幅度：+32767>>>Y_SHIFT = AMP_POS → Y_TOP；-32768>>>Y_SHIFT = AMP_NEG → Y_BOT
         clear_state;
         push_sample(24'sh7F_FF00);          // hist = 0x7FFF = 32767
         #1;
         s16 = u_dut.hist[0];
-        ck_int(y_of(s16), 263,              "[ymap] full positive amplitude reaches y=263");
-        probe(11'd575, 10'd263, 1,          "[ymap] top of swing is lit");
-        probe(11'd575, 10'd264, 0,          "[ymap] one row above the swing is dark");
+        ck_int(y_of(s16), Y_TOP,            "[ymap] full positive amplitude reaches Y_TOP");
+        probe(11'd575, Y_TOP, 1,             "[ymap] top of swing is lit");
+        probe(11'd575, Y_TOP + 1, 0,         "[ymap] one row above the swing is dark");
 
         clear_state;
         push_sample(24'sh80_0000);          // hist = 0x8000 = -32768
         #1;
         s16 = u_dut.hist[0];
-        ck_int(y_of(s16), 136,              "[ymap] full negative amplitude reaches y=136");
-        probe(11'd575, 10'd136, 1,          "[ymap] bottom of swing is lit");
-        probe(11'd575, 10'd135, 0,          "[ymap] one row below the swing is dark");
+        ck_int(y_of(s16), Y_BOT,            "[ymap] full negative amplitude reaches Y_BOT");
+        probe(11'd575, Y_BOT, 1,             "[ymap] bottom of swing is lit");
+        probe(11'd575, Y_BOT - 1, 0,         "[ymap] one row below the swing is dark");
 
         // =====================================================================
         // ⑥ 最左列的退化情形：idx == 63 时 idx_prev = idx（没有更旧样本）
@@ -305,64 +324,70 @@ module tb_audio_waveform;
         // =====================================================================
         clear_state;
         // 先推入一个"旧"样本占住 hist[63]，再推 63 个零，让 hist[62] 与 hist[63] 明显不同
-        push_sample(24'sh7E_0000);          // hist = +32256 → y = 200+63 = 263，作为最旧样本
+        push_sample(24'sh7F_FF00);          // hist = +32767（正向满幅）→ y = Y_TOP，作为最旧样本
+        // 注：原版送 24'sh7E_0000（hist=32256=63*512）把步长 512 焊进了样本值；
+        //     改为正向满幅 +32767 后，两种 Y_SHIFT 下都取到 AMP_POS，样本值不再依赖移位量。
         for (j = 0; j < 63; j = j + 1)
             push_sample(24'sd0);
         #1;
-        ck(u_dut.hist[63] === 16'sd32256,   "[degenerate] oldest slot holds the far sample");
+        ck(u_dut.hist[63] === 16'sd32767,   "[degenerate] oldest slot holds the far sample");
         ck(u_dut.hist[62] === 16'sd0,       "[degenerate] next slot is zero");
 
-        // x=64 → rel_x=0 → idx=63, idx_prev=63 → 单像素，y=263
-        probe(11'd64, 10'd263, 1,           "[degenerate] leftmost column draws the old sample");
-        probe(11'd64, 10'd200, 0,           "[degenerate] leftmost column does NOT connect to the next sample");
-        probe(11'd64, 10'd262, 0,           "[degenerate] leftmost column is a single pixel (no stretch)");
-        // x=72 → rel_x=8 → idx=62(=0, y=200), idx_prev=63(=32256, y=263) → 连 200..263
-        probe(11'd72, 10'd200, 1,           "[degenerate] second column starts at the center row");
-        probe(11'd72, 10'd263, 1,           "[degenerate] second column connects up to the old sample");
-        probe(11'd72, 10'd263, 1,           "[degenerate] second column lights the whole segment");
-        probe(11'd72, 10'd231, 1,           "[degenerate] second column lights a pixel mid-segment");
-        probe(11'd72, 10'd264, 0,           "[degenerate] second column stops at the old sample");
+        // x=64 → rel_x=0 → idx=63, idx_prev=63 → 单像素 y=Y_TOP
+        probe(11'd64, Y_TOP, 1,              "[degenerate] leftmost column draws the old sample");
+        probe(11'd64, Y_CENTER, 0,           "[degenerate] leftmost column does NOT connect to the next sample");
+        probe(11'd64, Y_TOP - 1, 0,          "[degenerate] leftmost column is a single pixel (no stretch)");
+        // x=72 → rel_x=8 → idx=62(=0, y=Y_CENTER), idx_prev=63(=32767, y=Y_TOP) → 整段相连
+        probe(11'd72, Y_CENTER, 1,           "[degenerate] second column starts at the center row");
+        probe(11'd72, Y_TOP, 1,              "[degenerate] second column connects up to the old sample");
+        probe(11'd72, Y_TOP, 1,              "[degenerate] second column lights the whole segment");
+        probe(11'd72, (Y_CENTER + Y_TOP) / 2, 1, "[degenerate] second column lights a pixel mid-segment");
+        probe(11'd72, Y_TOP + 1, 0,          "[degenerate] second column stops at the old sample");
 
         // =====================================================================
         // ⑦ 每 8 像素一个样本：同一 q 内 8 列相同，跨过 q 边界才换样本
-        //    造一条斜坡：让 hist[0]=j*512 逐拍增长。
+        //    造一条斜坡：让 hist[0] 逐拍增长 min(j, AMP_POS)*Y_STEP。
         //    因为 hist 只存 sample[23:8]，push_sample(v) 得到 hist = v>>8，
-        //    所以送 v = j*131072（即 j*512<<8）才能让 hist[0] = j*512。
-        //    最终 hist[i] = (63-i)*512 → y_curr = 200 + (63-i) = 200 + q，完全可预测。
-        //    最大值 63*512 = 32256（y=263）落在 480 行内，且 63*131072 = 8257536
-        //    未超 24 位有符号上限 8388607，不会溢出。
+        //    所以送 v = min(j, AMP_POS)*Y_STEP*256 才能让 hist[0] = min(j,AMP_POS)*Y_STEP。
+        //    最终 hist[i] = min(63-i, AMP_POS)*Y_STEP → 前 AMP_POS 段 y_curr = Y_CENTER + q。
+        //    ★ AMP_POS 处必须饱和：Y_SHIFT=10 时 63*Y_STEP = 64512 既超 16 位历史也超
+        //      24 位 push_sample 入参；饱和后最大值 AMP_POS*Y_STEP <= 32767 两头都安全
+        //      （Y_SHIFT=9：63*512=32256；Y_SHIFT=10：31*1024=31744）。
         // =====================================================================
         for (j = 0; j < HIST; j = j + 1)
-            push_sample(j * 131072);
+            push_sample(((j < AMP_POS) ? j : AMP_POS) * Y_STEP * 256);
         #1;
-        ck(u_dut.hist[0]  === 16'sd32256,   "[ramp] newest slot = 63*512");
+        ck(u_dut.hist[0]  === ((63 < AMP_POS) ? 63 : AMP_POS) * Y_STEP,
+                                            "[ramp] newest slot = min(63,AMP_POS)*Y_STEP");
         ck(u_dut.hist[63] === 16'sd0,       "[ramp] oldest slot = 0");
-        ck(u_dut.hist[32] === 16'sd15872,   "[ramp] middle slot follows the ramp");
+        ck(u_dut.hist[32] === ((31 < AMP_POS) ? 31 : AMP_POS) * Y_STEP,
+                                            "[ramp] middle slot follows the ramp");
 
-        // q=0 段（x=64..71）：idx=63 且 idx_prev=63 → 单像素 y=200
-        probe(11'd64,  10'd200, 1,          "[ramp] q=0 column lights y=200");
-        probe(11'd71,  10'd200, 1,          "[ramp] q=0 last column still y=200 (8px per sample)");
-        probe(11'd71,  10'd201, 0,          "[ramp] q=0 does not stretch (no older neighbour)");
-        // q=1 段（x=72..79）：y_curr=201, y_prev=200 → 200..201
-        probe(11'd72,  10'd200, 1,          "[ramp] q=1 begins at y=200");
-        probe(11'd79,  10'd201, 1,          "[ramp] q=1 ends at y=201");
-        probe(11'd79,  10'd202, 0,          "[ramp] q=1 does not reach y=202");
-        // q=2 段（x=80..87）：y_curr=202, y_prev=201 → 201..202
-        probe(11'd80,  10'd202, 1,          "[ramp] q=2 advances by exactly one row");
-        probe(11'd80,  10'd201, 1,          "[ramp] q=2 starts at y=201");
-        probe(11'd80,  10'd200, 0,          "[ramp] q=2 does not reach y=200");
+        // q=0 段（x=64..71）：idx=63 且 idx_prev=63 → 单像素 y=Y_CENTER
+        probe(11'd64,  Y_CENTER, 1,          "[ramp] q=0 column lights the center row");
+        probe(11'd71,  Y_CENTER, 1,          "[ramp] q=0 last column still center (8px per sample)");
+        probe(11'd71,  Y_CENTER + 1, 0,      "[ramp] q=0 does not stretch (no older neighbour)");
+        // q=1 段（x=72..79）：y_curr=Y_CENTER+1, y_prev=Y_CENTER → 连两行
+        probe(11'd72,  Y_CENTER, 1,          "[ramp] q=1 begins at the center row");
+        probe(11'd79,  Y_CENTER + 1, 1,      "[ramp] q=1 ends one row below center");
+        probe(11'd79,  Y_CENTER + 2, 0,      "[ramp] q=1 does not reach two rows below");
+        // q=2 段（x=80..87）：y_curr=Y_CENTER+2, y_prev=Y_CENTER+1 → 连两行
+        probe(11'd80,  Y_CENTER + 2, 1,      "[ramp] q=2 advances by exactly one row");
+        probe(11'd80,  Y_CENTER + 1, 1,      "[ramp] q=2 starts one row below center");
+        probe(11'd80,  Y_CENTER, 0,          "[ramp] q=2 does not reach the center row");
 
         // 全段扫描：64 个 q 段逐列核对 y_min..y_max 亮、两端外各一格灭
         bad = 0;
         for (q = 0; q < HIST; q = q + 1) begin
             x = X0 + 8*q + 3;               // 取该段中间一列，避开段边界
-            if (q == 0) begin
-                ymin = Y_CENTER;
-                ymax = Y_CENTER;
-            end else begin
-                ymin = Y_CENTER + q - 1;
-                ymax = Y_CENTER + q;
-            end
+            // 饱和形式统一表达（q > AMP_POS 时两个样本同值 → ymin == ymax）
+            yc = Y_CENTER + ((q > AMP_POS) ? AMP_POS : q);
+            if (q == 0)
+                yp = yc;
+            else
+                yp = Y_CENTER + (((q - 1) > AMP_POS) ? AMP_POS : (q - 1));
+            ymin = (yc < yp) ? yc : yp;
+            ymax = (yc > yp) ? yc : yp;
             active_x = x;
             active_y = ymin; #1;
             if (wave_pixel !== 1'b1) bad = bad + 1;
@@ -402,12 +427,12 @@ module tb_audio_waveform;
         repeat (2) @(posedge clk);
         de      = 1'b1;
         wave_en = 1'b1;
-        probe(11'd320, 10'd200, 1,          "[resume] center line back after reset release");
-        push_sample(24'sh04_0000);          // hist = 0x0400 = 1024 → y = 202
+        probe(11'd320, Y_CENTER, 1,          "[resume] center line back after reset release");
+        push_sample(2 * Y_STEP * 256);      // hist = 2*Y_STEP → y = Y_CENTER+2
         #1;
-        ck(u_dut.hist[0] === 16'sd1024,     "[resume] history records again after reset");
-        probe(11'd575, 10'd202, 1,          "[resume] new sample is drawn at y=202");
-        probe(11'd575, 10'd200, 1,          "[resume] new sample still connects to center");
+        ck(u_dut.hist[0] === 2 * Y_STEP,    "[resume] history records again after reset");
+        probe(11'd575, Y_CENTER + 2, 1,      "[resume] new sample is drawn two rows below center");
+        probe(11'd575, Y_CENTER, 1,          "[resume] new sample still connects to center");
 
         $display("SUMMARY: checks=%0d errors=%0d", checks, errors);
         if (errors == 0) $display("ALL CHECKS PASSED: audio_waveform");

@@ -30,6 +30,8 @@
 //   P08 四个参数各自都能触发（亮度/反色/倍率/模式）
 //   P09 反向变化也能触发（不是只认"变大"）
 //   P10 img_index 变化**不**触发（有意设计：图号由播放器自动递增）
+//   P11 t16 新增三档（音量/分辨率/屏占比）各自都能触发
+//   P12 复位释放后第一拍不弹窗（三个新延迟副本的复位值必须对齐 key_router）
 // ============================================================================
 `timescale 1ns / 1ps
 
@@ -39,7 +41,14 @@ module tb_osd_autopop;
 
     reg        clk;
     reg        rst_n;
-    reg  [2:0] bright_sel;
+    // t16：bright_sel[2:0] -> bright_lvl[3:0]（与 osd_autopop 端口同名同宽），
+    //      并新增 vol_lvl / res_sel / ratio_sel 三根被监视线。
+    //      ★ 初值必须取 key_router 的复位值（音量 6 / 分辨率 4 / 屏占比 4），
+    //      不能填 0 —— 见文件尾 P12 用例的说明。
+    reg  [3:0] bright_lvl;
+    reg  [3:0] vol_lvl;
+    reg  [2:0] res_sel;
+    reg  [2:0] ratio_sel;
     reg        invert_en;
     reg  [1:0] auto_sw_sel;
     reg  [1:0] info_mode;
@@ -52,7 +61,10 @@ module tb_osd_autopop;
     ) u_dut_real (
         .clk          (clk),
         .rst_n        (rst_n),
-        .bright_sel   (bright_sel),
+        .bright_lvl   (bright_lvl),
+        .vol_lvl      (vol_lvl),
+        .res_sel      (res_sel),
+        .ratio_sel    (ratio_sel),
         .invert_en    (invert_en),
         .auto_sw_sel  (auto_sw_sel),
         .info_mode    (info_mode),
@@ -67,7 +79,10 @@ module tb_osd_autopop;
     ) u_dut_fast (
         .clk          (clk),
         .rst_n        (rst_n),
-        .bright_sel   (bright_sel),
+        .bright_lvl   (bright_lvl),
+        .vol_lvl      (vol_lvl),
+        .res_sel      (res_sel),
+        .ratio_sel    (ratio_sel),
         .invert_en    (invert_en),
         .auto_sw_sel  (auto_sw_sel),
         .info_mode    (info_mode),
@@ -112,7 +127,11 @@ module tb_osd_autopop;
         pass_cnt    = 0;
         fail_cnt    = 0;
         rst_n       = 1'b0;
-        bright_sel  = 3'd0;
+        // ★ 取 key_router 复位值，不是全 0（见 P12）
+        bright_lvl  = 4'd0;
+        vol_lvl     = 4'd6;
+        res_sel     = 3'd4;
+        ratio_sel   = 3'd4;
         invert_en   = 1'b0;
         auto_sw_sel = 2'd0;
         info_mode   = 2'd0;
@@ -140,7 +159,7 @@ module tb_osd_autopop;
             "P02c CNT_MAX fits in 26-bit counter");
 
         // ================= P03 参数变化立刻弹窗 ==========================
-        bright_sel = 3'd1;   // 模拟 KEY7 按一下
+        bright_lvl = 4'd1;   // 模拟 KEY7 按一下
         wait_clk(2);
         chk(panel_on === 1'b1,      "P03a bright change -> panel on (real)");
         chk(panel_on_fast === 1'b1, "P03b bright change -> panel on (fast)");
@@ -168,7 +187,7 @@ module tb_osd_autopop;
         //            -> 重触发实现仍开着；不重触发实现此刻已关闭
         // 首版把两次等待写成 20000+20000，第二个观测点距最后触发已 40000 拍，
         // 两种实现都已关闭 —— 那条断言区分不了任何东西，等于没测。
-        bright_sel = 3'd2;   // 第二次按键，刷新倒计时
+        bright_lvl = 4'd2;   // 第二次按键，刷新倒计时
         wait_clk(10000);
         chk(panel_on_fast === 1'b1,
             "P07a panel on: 30000 clk after first trigger but 10000 after retrigger");
@@ -202,7 +221,7 @@ module tb_osd_autopop;
         wait_clk(FAST_MAX + 10);
         chk(panel_on_fast === 1'b0, "P08f expired after info_mode trigger");
 
-        bright_sel = 3'd3;
+        bright_lvl = 4'd3;
         wait_clk(2);
         chk(panel_on_fast === 1'b1, "P08g bright change triggers");
         wait_clk(FAST_MAX + 10);
@@ -210,7 +229,7 @@ module tb_osd_autopop;
 
         // ================= P09 反向变化也能触发 ==========================
         // 上面全是"改成一个新值"。这里改回 0，验证比较是"不等"而非"变大"。
-        bright_sel = 3'd0;
+        bright_lvl = 4'd0;
         wait_clk(2);
         chk(panel_on_fast === 1'b1, "P09a change back to 0 triggers");
         wait_clk(FAST_MAX + 10);
@@ -227,6 +246,56 @@ module tb_osd_autopop;
         wait_clk(1000);
         chk(panel_on_fast === 1'b0,
             "P10b still no popup (no hidden periodic trigger)");
+
+        // ================= P11 三个新档位各自都能触发（t16）==============
+        // t16 给 osd_autopop 加了三根监视线（音量/分辨率/屏占比）。这三根
+        // 若漏接或漏进 changed，用户按 Key7 循环到那几档时面板根本不弹 ——
+        // 新加的显示项永远看不见。这里逐个改、逐个验。
+        vol_lvl = 4'd7;
+        wait_clk(2);
+        chk(panel_on_fast === 1'b1, "P11a vol_lvl change triggers");
+        wait_clk(FAST_MAX + 10);
+        chk(panel_on_fast === 1'b0, "P11b expired after vol_lvl trigger");
+
+        res_sel = 3'd3;
+        wait_clk(2);
+        chk(panel_on_fast === 1'b1, "P11c res_sel change triggers");
+        wait_clk(FAST_MAX + 10);
+        chk(panel_on_fast === 1'b0, "P11d expired after res_sel trigger");
+
+        ratio_sel = 3'd2;
+        wait_clk(2);
+        chk(panel_on_fast === 1'b1, "P11e ratio_sel change triggers");
+        wait_clk(FAST_MAX + 10);
+        chk(panel_on_fast === 1'b0, "P11f expired after ratio_sel trigger");
+
+        // 反向也认（比较是"不等"而非"变大"）：音量 7 -> 6
+        vol_lvl = 4'd6;
+        wait_clk(2);
+        chk(panel_on_fast === 1'b1, "P11g vol_lvl change back triggers");
+        wait_clk(FAST_MAX + 10);
+        chk(panel_on_fast === 1'b0, "P11h expired after reverse vol change");
+
+        // ================= P12 复位第一拍不弹窗（t16 不变式）=============
+        // ★ 这条是本轮最容易破的不变式：新增三根延迟副本的复位值必须等于
+        //   key_router 的复位值（vol=6 / res=4 / ratio=4）。若照老习惯写成
+        //   全 0，复位释放后第一拍 vol_lvl(6) != vol_d(0) -> changed=1 ->
+        //   上电画面莫名多出一块面板 2.5 秒。
+        //   这里重新复位一次，然后在复位释放后的头几拍盯 panel_on。
+        //   （P01 已经验过一次，但那次是在 P11 改动之前、且当时三根线还是
+        //     0；本用例用**复位值**重新验，正是为了让"写成全 0"这种错变红。）
+        rst_n = 1'b0;
+        vol_lvl = 4'd6; res_sel = 3'd4; ratio_sel = 3'd4; bright_lvl = 4'd0;
+        invert_en = 1'b0; auto_sw_sel = 2'd0; info_mode = 2'd0;
+        wait_clk(3);
+        rst_n = 1'b1;
+        #1;
+        chk(panel_on_fast === 1'b0, "P12a 复位释放当拍 panel_on = 0");
+        chk(panel_on      === 1'b0, "P12b 复位释放当拍 panel_on(real) = 0");
+        wait_clk(1);
+        chk(panel_on_fast === 1'b0, "P12c 复位后第 2 拍 panel_on = 0");
+        wait_clk(50);
+        chk(panel_on_fast === 1'b0, "P12d 复位后 50 拍 panel_on = 0（无假变化）");
 
         // ================= 汇总 ==========================================
         $display("");

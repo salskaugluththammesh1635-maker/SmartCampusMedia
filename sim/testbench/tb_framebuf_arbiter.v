@@ -15,6 +15,7 @@ module tb_framebuf_arbiter;
     localparam RD_LATENCY = 10;
     localparam RD_TIMEOUT = 1024;
     localparam MIN_RD_GROUP_CYCLES = 13;
+    localparam MIN_WR_GROUP_CYCLES = 13;   // 2026-10-31 新增：写侧组首间隔保护
     localparam MEM_WORDS = 1024;
     localparam FIFO_WORDS = 4096;
     localparam CLK_PERIOD = 6.667;
@@ -63,6 +64,7 @@ module tb_framebuf_arbiter;
     integer cases_done = 0;
     integer cycle_count = 0;
     integer last_rd_group_cycle = -1;
+    integer last_wr_group_cycle = -1;      // 2026-10-31 新增
     integer wr_cmds = 0;
     integer rd_cmds = 0;
     integer rd_acks = 0;
@@ -168,6 +170,7 @@ module tb_framebuf_arbiter;
         if (!rst_n) begin
             cycle_count = 0;
             last_rd_group_cycle = -1;
+            last_wr_group_cycle = -1;
             wr_cmds = 0;
             rd_cmds = 0;
             rd_acks = 0;
@@ -214,6 +217,12 @@ module tb_framebuf_arbiter;
             if (app_wr_en) begin
                 chk(model_rd_phase == 0, "write cannot interrupt a partial read group");
                 chk(expected_outstanding == 0, "write waits until every outstanding read has returned");
+                if (model_wr_phase == 0) begin
+                    if (last_wr_group_cycle >= 0)
+                        chk(cycle_count - last_wr_group_cycle >= MIN_WR_GROUP_CYCLES,
+                            "accepted write-group starts are at least thirteen clocks apart");
+                    last_wr_group_cycle = cycle_count;
+                end
                 chk(app_wr_addr[1:0] == 2'b00, "arbiter presents aligned constant write-group base");
                 if (model_wr_phase == 0)
                     chk(app_wr_addr == expected_wr_addr, "write group address advances by four and wraps at frame end");

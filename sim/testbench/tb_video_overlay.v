@@ -27,6 +27,17 @@ module tb_video_overlay;
 
     // ---- 时钟: 25MHz（模块本身是纯组合，此处仅为端口一致性与波形可读）----
     localparam CLK_PERIOD = 40;             // ns
+
+    // ---- 音频波形层的几何规格（与 rtl/video/audio_waveform.v 的默认参数一致）----
+    //   ★ 这里是**独立复算的一份**，不从 DUT 读参数：DUT 改参数而这里不改，
+    //     下面的断言就必须红 —— 这正是本段要守的东西。
+    localparam integer WV_Y_CENTER = 408;                       // 波形中心线
+    localparam integer WV_Y_SHIFT  = 10;                        // 幅度缩放
+    localparam integer WV_STEP     = 1 << WV_Y_SHIFT;           // 一行的样本量级
+    localparam integer WV_AMP_POS  = 32767 >>> WV_Y_SHIFT;      // 正向满幅行数
+    localparam integer WV_AMP_NEG  = -(32768 >>> WV_Y_SHIFT);   // 负向满幅行数
+    localparam integer WV_TOP      = WV_Y_CENTER + WV_AMP_POS;  // 最高行
+    localparam integer WV_BOT      = WV_Y_CENTER + WV_AMP_NEG;  // 最低行
     reg clk;
     initial clk = 1'b0;
     always #(CLK_PERIOD/2) clk = ~clk;
@@ -77,6 +88,12 @@ module tb_video_overlay;
         .audio_valid  (audio_valid),
         .wave_en      (wave_en),
         .caption_en   (caption_en),
+        // t13 新增两端口。本 TB 只验 v1 行为，故恒接常量：
+        // narr_en=0 -> 科普视频字幕关，底部滚动带仍由 caption_en 控制；
+        // frame_idx 在 narr_en=0 时不参与任何选择，填 0 即可。
+        // 常量接法（而非 reg + defaults 赋值）与 tb_osd_caption.v:74-75 保持一致。
+        .narr_en      (1'b0),
+        .frame_idx    (16'd0),
         .play_state   (play_state),
         .auto_play    (auto_play),
         .rgb_out      (rgb_out)
@@ -241,32 +258,38 @@ module tb_video_overlay;
         at(11'd0, 10'd0);
         chk_eq24(rgb_out, 24'h00_00_00, "V02 black stays black at the first pixel");
 
-        // ---------------- V03 KEY7 亮度五档 ----------------
-        // 期望值按"右移减法"的定义手算，不用公式在 TB 里重算 ——
-        // 若 TB 也用同样的移位表达式，实现写错时两边会一起错，断言就失效了。
-        //   255 -> 255 / 224 / 192 / 161 / 127
-        //   128 -> 128 / 112 /  96 /  80 /  64
-        //    64 ->  64 /  56 /  48 /  40 /  32
+        // ---------------- V03 亮度已移出本模块（v2 接口变更） ----------------
+        // 改造前本段验证 5 档亮度（100/87.5/75/62.5/50%）。
+        // v2 把亮度扩到 10 档并整体搬到 rtl/video/brightness_apply.v，原因见
+        // 该文件头【二】：亮度留在本模块会把字幕/波形/电平条一起调暗，违反
+        // 赛规 1.4(4)「参数调节后信息可读」。
+        //
+        // 因此本模块的 bright_sel 现在**只剩一个用途**：底部信息条第 8/9/10
+        // 格用它画亮度指示格（见 V08）。亮度数值本身的正确性由
+        // sim/testbench/tb_brightness_apply.v 的 27 项断言负责，不在这里重复。
+        //
+        // 这里改为锁定"数据通路已直通"这一新契约：bright_sel 从 0 扫到 4，
+        // 图像像素必须**逐档不变**。若哪天有人把亮度又搬回本模块，这条会红。
         $display("");
-        $display("--- V03 KEY7 brightness steps ---");
+        $display("--- V03 brightness removed (passthrough contract) ---");
         defaults;
         rgb_in = {8'hFF, 8'h80, 8'h40};
         at(11'd320, 10'd240);
         bright_sel = 3'd0;
         #1;
-        chk_eq24(rgb_out, {8'd255, 8'd128, 8'd64},  "V03 step0 = 100%");
+        chk_eq24(rgb_out, {8'd255, 8'd128, 8'd64},  "V03 step0 image passthrough");
         bright_sel = 3'd1;
         #1;
-        chk_eq24(rgb_out, {8'd224, 8'd112, 8'd56},  "V03 step1 = 87.5% (x - x/8)");
+        chk_eq24(rgb_out, {8'd255, 8'd128, 8'd64},  "V03 step1 image unchanged (brightness moved out)");
         bright_sel = 3'd2;
         #1;
-        chk_eq24(rgb_out, {8'd192, 8'd96,  8'd48},  "V03 step2 = 75% (x - x/4)");
+        chk_eq24(rgb_out, {8'd255, 8'd128, 8'd64},  "V03 step2 image unchanged (brightness moved out)");
         bright_sel = 3'd3;
         #1;
-        chk_eq24(rgb_out, {8'd161, 8'd80,  8'd40},  "V03 step3 = 62.5% (x - x/4 - x/8)");
+        chk_eq24(rgb_out, {8'd255, 8'd128, 8'd64},  "V03 step3 image unchanged (brightness moved out)");
         bright_sel = 3'd4;
         #1;
-        chk_eq24(rgb_out, {8'd127, 8'd64,  8'd32},  "V03 step4 = 50% (x >> 1)");
+        chk_eq24(rgb_out, {8'd255, 8'd128, 8'd64},  "V03 step4 image unchanged (brightness moved out)");
 
         // ---------------- V04 KEY8 反色 ----------------
         $display("");
@@ -468,45 +491,48 @@ module tb_video_overlay;
         chk_eq24(rgb_out, 24'h20_FF_20, "V10 level bar colour unchanged at darkest+invert");
         at(11'd100, 10'd470);
         chk_eq24(rgb_out, 24'h10_18_20, "V10 info background unchanged at darkest+invert");
-        // 同一时刻图像层必须**确实**被调暗+反色（确认前两级没被跳过）
+        // 同一时刻图像层必须**确实**被反色（v2：亮度已移出，故只验反色）
+        //   改造前这里期望 0x80_80_80（先按 50% 调暗再反色）；
+        //   v2 把亮度搬到 brightness_apply.v 后，本模块只剩反色一级，
+        //   白色 0xFF 反色即 0x00。这同时反证了"亮度真的不在本模块了"。
         rgb_in = 24'hFF_FF_FF;
         at(11'd320, 10'd240);
-        chk_eq24(rgb_out, 24'h80_80_80, "V10 image layer is dimmed then inverted");
+        chk_eq24(rgb_out, 24'h00_00_00, "V10 image layer is inverted only (brightness moved out)");
 
         // ---------------- V11 KEY13 音频波形层 ----------------
-        // 窗口 x ∈ [64,575]，每 8 像素一个样本，中心线 y=200。
-        // 先填 64 个 0，验证安静时是一条 y=200 的直线；再推入 2^21 的正样本，
+        // 窗口 x ∈ [64,575]，每 8 像素一个样本，中心线 y = WV_Y_CENTER。
+        // 先填 64 个 0，验证安静时是一条中心线；再推入 2^21 的正样本，
         // 验证右端最新样本抬高，并与旧样本连线。
         $display("");
-        $display("--- V11 KEY13 audio waveform ---");
+        $display("--- V11 audio waveform (Key10 viz_en) ---");
         defaults;
         wave_en = 1'b1;
         rgb_in  = 24'h40_40_40;
         for (w = 0; w < 64; w = w + 1) push_sample(24'sd0);
-        at(11'd320, 10'd200);
-        chk_eq24(rgb_out, 24'hFF_FF_40, "V11 silent history draws baseline at y=200");
-        at(11'd320, 10'd199);
+        at(11'd320, WV_Y_CENTER);
+        chk_eq24(rgb_out, 24'hFF_FF_40, "V11 silent history draws the baseline");
+        at(11'd320, WV_Y_CENTER - 1);
         chk_eq24(rgb_out, 24'h40_40_40, "V11 one row above baseline is background");
-        at(11'd63, 10'd200);
+        at(11'd63, WV_Y_CENTER);
         chk_eq24(rgb_out, 24'h40_40_40, "V11 x=63 is left of the waveform window");
-        at(11'd576, 10'd200);
+        at(11'd576, WV_Y_CENTER);
         chk_eq24(rgb_out, 24'h40_40_40, "V11 x=576 is right of the waveform window");
 
-        // 2^21 = 0x20_0000 → sample[23:8] = 0x2000 = 8192 → >>>9 = +16 像素
-        push_sample(24'sd2097152);
-        at(11'd574, 10'd216);
+        // 送 16*WV_STEP 到高 16 位 → >>>WV_Y_SHIFT = +16 像素（满幅为 +WV_AMP_POS 行）
+        push_sample(16 * WV_STEP * 256);
+        at(11'd574, WV_Y_CENTER + 16);
         chk_eq24(rgb_out, 24'hFF_FF_40, "V11 newest sample raises the right edge");
-        at(11'd574, 10'd208);
+        at(11'd574, WV_Y_CENTER + 8);
         chk_eq24(rgb_out, 24'hFF_FF_40, "V11 line connects newest to previous sample");
-        at(11'd574, 10'd199);
+        at(11'd574, WV_Y_CENTER - 1);
         chk_eq24(rgb_out, 24'h40_40_40, "V11 left of the line stays background");
-        at(11'd320, 10'd200);
+        at(11'd320, WV_Y_CENTER);
         chk_eq24(rgb_out, 24'hFF_FF_40, "V11 older samples remain on the baseline");
-        at(11'd320, 10'd216);
+        at(11'd320, WV_Y_CENTER + 16);
         chk_eq24(rgb_out, 24'h40_40_40, "V11 older samples are not raised");
 
         wave_en = 1'b0;
-        at(11'd320, 10'd200);
+        at(11'd320, WV_Y_CENTER);
         chk_eq24(rgb_out, 24'h40_40_40, "V11 wave off draws nothing");
 
         // 电平条与波形共存：右侧电平条、中间波形，互不覆盖
@@ -515,16 +541,16 @@ module tb_video_overlay;
         audio_sample = 24'sd2097151;
         at(11'd620, 10'd300);
         chk_eq24(rgb_out, 24'h20_FF_20, "V11 level bar still works with waveform on");
-        at(11'd320, 10'd200);
+        at(11'd320, WV_Y_CENTER);
         chk_eq24(rgb_out, 24'hFF_FF_40, "V11 waveform still works with level bar on");
 
         // OSD 不受亮度/反色影响
         bright_sel = 3'd4;
         invert_en  = 1'b1;
-        at(11'd320, 10'd200);
+        at(11'd320, WV_Y_CENTER);
         chk_eq24(rgb_out, 24'hFF_FF_40, "V11 waveform colour unchanged at darkest+invert");
         de = 1'b0;
-        at(11'd320, 10'd200);
+        at(11'd320, WV_Y_CENTER);
         chk_eq24(rgb_out, 24'd0, "V11 blanking forces waveform output to 0");
 
         // ---------------- V12 KEY3 科普态常显标记 ----------------
@@ -589,12 +615,17 @@ module tb_video_overlay;
         defaults;
         rgb_in = 24'h40_40_40;
 
-        // 关着的时候：字幕区域必须与"没有字幕层"完全一致
+        // 关着的时候：只有底部滚动带必须与"没有字幕层"完全一致。
+        //   t13 语义变更（osd_caption.v:250/:263 的 "&& !narr_en"，osd_caption.v:234 的
+        //   "ticker_band && caption_en"）：caption_en 现在只控 Key5 的底部滚动带，
+        //   标题行/状态行改由 narr_en 控制。本 TB 恒接 narr_en=1'b0（非科普模式），
+        //   所以 caption_en=0 时标题/状态两带照旧绘制（衬底把 0x40 压到 0x10），
+        //   只有滚动带回到未加字幕层的样子。断言按新语义写，不删检查项。
         caption_en = 1'b0;
         at(11'd40, 10'd20);
-        chk_eq24(rgb_out, 24'h40_40_40, "V13 caption off leaves title band untouched");
+        chk_eq24(rgb_out, 24'h10_10_10, "V13 caption off still draws title band (narr_en gates it)");
         at(11'd40, 10'd52);
-        chk_eq24(rgb_out, 24'h40_40_40, "V13 caption off leaves state band untouched");
+        chk_eq24(rgb_out, 24'h10_10_10, "V13 caption off still draws state band (narr_en gates it)");
         at(11'd40, 10'd450);
         chk_eq24(rgb_out, 24'h40_40_40, "V13 caption off leaves ticker band untouched");
 

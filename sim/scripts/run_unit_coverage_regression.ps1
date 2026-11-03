@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # run_unit_coverage_regression.ps1
 # -----------------------------------------------------------------------------
 # Unit-coverage regression: runs 18 module-level testbenches that cover RTL
@@ -140,6 +140,16 @@ $sources = @(
     'rtl/storage/sdram_ctrl_wrap.v',
     'rtl/storage/sdram_frame_diag.v',
 
+    # --- v2 control layer ---------------------------------------------------
+    'rtl/video/brightness_apply.v',
+    'rtl/control/mode_ctrl.v',
+    'rtl/control/key_router.v',
+
+    # --- v2 sensor layer ----------------------------------------------------
+    'rtl/sensor/i2c_master.v',
+    'rtl/sensor/aht20_ctrl.v',
+    'rtl/sensor/thermal_guard.v',
+
     'rtl/top/dmz_eg4s20_min_top.v',
 
     'sim/testbench/tb_lane_lvds_10_1.v',
@@ -159,7 +169,26 @@ $sources = @(
     'sim/testbench/tb_sdram_pll.v',
     'sim/testbench/tb_dmz_eg4s20_min_top.v',
     'sim/testbench/tb_science_font16.v',
-    'sim/testbench/tb_sdram_frame_diag_top.v'
+    'sim/testbench/tb_sdram_frame_diag_top.v',
+
+    # --- v2 testbenches -----------------------------------------------------
+    'sim/testbench/tb_brightness_apply.v',
+    'sim/testbench/tb_mode_ctrl.v',
+    'sim/testbench/tb_key_router.v',
+    'sim/testbench/tb_i2c_master.v',
+    'sim/testbench/tb_aht20_ctrl.v',
+    'sim/testbench/tb_thermal_guard.v',
+
+    # --- v2 t6 audio path (SD WAV streaming + volume + source mux) ----------
+    'rtl/audio/vol_apply.v',
+    'rtl/audio/audio_src_mux.v',
+    'rtl/audio/wav_stream_player.v',
+    'rtl/storage/fat32_reader.v',
+    'sim/testbench/tb_fat32_reader.v',
+    'sim/testbench/tb_gain_direction.v',
+    'sim/testbench/tb_vol_apply.v',
+    'sim/testbench/tb_audio_src_mux.v',
+    'sim/testbench/tb_wav_stream_player.v'
 )
 
 $resolved = @($sources | ForEach-Object {
@@ -186,6 +215,20 @@ $result = [ordered]@{
     tests        = @()
 }
 $failed = $false
+
+# ---- A4 分母断言（t9 加）---------------------------------------------------
+# 只断言「没有失败」在「一个 case 都没跑」时同样成立，而「一个 case 都没跑」
+# 恰恰是最该报警的状态。所以收尾必须同时断言分母三件事：
+#   $script:A4Ran -gt 0                —— 真的跑了
+#   $script:A4Ran -eq $ExpCaseCount    —— 跑的个数等于这张表该有的个数
+#   $script:A4Passed -eq $script:A4Ran   —— 每一个都过了
+# 必须用 $script: 前缀：将来若把主流程包进函数，函数里的 += 改的是局部副本，
+# 外层判据会永远看到 0 → 打印 PASS（scripts\run_tb_baseline.ps1 头注记着这个坑）。
+# 也刻意不写 $ExpCaseCount = @($cases).Count —— 那是同源自证：case 表被误删时
+# 期望值会跟着一起变小，断言永远成立。
+$script:A4Ran    = 0
+$script:A4Passed = 0
+$ExpCaseCount  = 29   # unit 套件应有 case 数（默认档）；tb 增删必须同步改这里
 
 Push-Location $ReportDir
 try {
@@ -249,11 +292,68 @@ try {
         # 153600-word write + read-back. ~385k cycles, about 2 minutes. Needs
         # glbl (PLL model) and SDRAM_SIM_MODEL (inline behavioural memory).
         @{name='sdram_frame_diag_top'; top='tb_sdram_frame_diag_top'; glbl=$true;
-          marker='ALL CHECKS PASSED: sdram_frame_diag_top'}
+          marker='ALL CHECKS PASSED: sdram_frame_diag_top'},
+
+        # --- v2 control layer -----------------------------------------------
+        # Pure combinational 10-step brightness dimmer (no clock port at all).
+        @{name='brightness_apply';  top='tb_brightness_apply';  glbl=$false;
+          marker='ALL CHECKS PASSED: brightness_apply'},
+        # Daily/science/emergency mode FSM: Key2 cycles, Key3 jumps, temperature
+        # alarm enters emergency, leaving requires a confirmed Key3 double-press.
+        @{name='mode_ctrl';         top='tb_mode_ctrl';         glbl=$false;
+          marker='ALL CHECKS PASSED: mode_ctrl'},
+        # One-key-one-module decoder: 10-step brightness/volume, 5-step
+        # resolution/aspect, three independent layer switches, emergency clamp.
+        @{name='key_router';        top='tb_key_router';        glbl=$false;
+          marker='ALL CHECKS PASSED: key_router'},
+
+        # --- v2 sensor layer -------------------------------------------------
+        # I2C physical layer against a behavioural AHT20 slave model: START/
+        # STOP/byte/ACK, open-drain semantics, 100kHz SCL period, edge-triggered
+        # request handling.
+        @{name='i2c_master';        top='tb_i2c_master';        glbl=$false;
+          marker='ALL CHECKS PASSED: i2c_master'},
+        # AHT20 protocol layer: trigger/read/CRC8, full-scale and zero boundary
+        # values, NACK and CRC failure paths, sensor_fault fail-safe semantics.
+        @{name='aht20_ctrl';        top='tb_aht20_ctrl';        glbl=$false;
+          marker='ALL CHECKS PASSED: aht20_ctrl'},
+        # Sensor-agnostic threshold/hysteresis/interlock layer: signed
+        # comparison (negative temperatures must never look like heat) and
+        # fail-safe hold when readings go stale.
+        @{name='thermal_guard';     top='tb_thermal_guard';     glbl=$false;
+          marker='ALL CHECKS PASSED: thermal_guard'},
+
+        # --- v2 t6 audio path ------------------------------------------------
+        # fat32_reader: short-name parameterisation. The 11-byte 8.3 target
+        # name must hit BGM.WAV / ALARM.WAV / NARR.WAV / NARR.SRT / SCI.RLE
+        # (lower-case on disk) while IMGnnn.BMP index addressing still works.
+        @{name='fat32_reader';      top='tb_fat32_reader';      glbl=$false;
+          marker='ALL CHECKS PASSED: fat32_reader'},
+        # brightness vs volume gain direction. These two tables use the SAME
+        # gain set {3,6,10,13,16,20,23,26,29,32}/32 in OPPOSITE order, so the
+        # direction assertions must live in one testbench, side by side.
+        @{name='gain_direction';    top='tb_gain_direction';    glbl=$false;
+          marker='ALL CHECKS PASSED: gain_direction'},
+        # vol_apply: 10-level table, emergency floor clamp, strict mute via
+        # audio_en gate, and the negative-axis direction check that catches
+        # an arithmetic shift (>>>) accidentally written as logical (>>).
+        @{name='vol_apply';         top='tb_vol_apply';         glbl=$false;
+          marker='ALL CHECKS PASSED: vol_apply'},
+        # audio_src_mux: mode->source mapping, single-cycle src_start,
+        # sd_ready gating, and emergency forced audio that never rewrites
+        # the user's audio_en register.
+        @{name='audio_src_mux';     top='tb_audio_src_mux';     glbl=$false;
+          marker='ALL CHECKS PASSED: audio_src_mux'},
+        # wav_stream_player: real RIFF/fmt/data chunk parsing, 520-cycle
+        # fractional sample tick, underrun hold-last-sample, loop wraparound
+        # back to the PCM start (not the file start).
+        @{name='wav_stream_player'; top='tb_wav_stream_player'; glbl=$false;
+          marker='ALL CHECKS PASSED: wav_stream_player'}
     )
 
     foreach ($case in $cases) {
         $log = $case.name + '.log'
+        $script:A4Ran++
 
         $simArgs = @('-c', '-quiet', '-onfinish', 'stop',
                      '-do', 'onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0',
@@ -291,7 +391,7 @@ try {
         $line = '{0,-22} passed={1,-6} passLines={2,-4} knownIssues={3}' -f `
                 $case.name, $passed, $passLines, $knownIssues
         Write-Output $line
-        if (-not $passed) { $failed = $true }
+        if ($passed) { $script:A4Passed++ } else { $failed = $true }
     }
 
     # ---- Verify no source changed while the suite was running -------------
@@ -302,6 +402,29 @@ try {
         }
     }
 
+    # ---- A4 分母断言（t9 加）--------------------------------------------
+    # 三条一起判，缺一不可：
+    #   1) $script:A4Ran -gt 0              跑了没有
+    #   2) $script:A4Ran -eq $ExpCaseCount  跑够没有（与硬编码期望数比，不同源自证）
+    #   3) $script:A4Passed -eq $script:A4Ran 全过了没有
+    # 只做 3) 时「一个没跑」也满足；只做 1)+3) 时「case 表被误删一半」也满足。
+    if ($script:A4Ran -eq 0) {
+        Write-Output ('  A4-GATE: ran=0（一个 case 都没跑却要打印 PASS，这是最该报警的状态）')
+        $failed = $true
+    }
+    if ($script:A4Ran -ne $ExpCaseCount) {
+        Write-Output ('  A4-GATE: ran=' + $script:A4Ran + ' 与期望 case 数 ' + $ExpCaseCount + ' 不符（case 表被改过？）')
+        $failed = $true
+    }
+    if ($script:A4Passed -ne $script:A4Ran) {
+        Write-Output ('  A4-GATE: passed=' + $script:A4Passed + ' / ran=' + $script:A4Ran)
+        $failed = $true
+    }
+    Write-Output ('  A4-GATE: ran=' + $script:A4Ran + ' passed=' + $script:A4Passed + ' expected=' + $ExpCaseCount)
+
+    $result.ran = $script:A4Ran
+    $result.passedCount = $script:A4Passed
+    $result.expectedCaseCount = $ExpCaseCount
     $result.status = $(if ($failed) { 'failed' } else { 'passed' })
 }
 catch {

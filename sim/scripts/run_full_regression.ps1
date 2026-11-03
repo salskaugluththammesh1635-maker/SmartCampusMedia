@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # run_full_regression.ps1
 # -----------------------------------------------------------------------------
 # One command to run EVERY simulation suite in this repository and print a single
@@ -33,7 +33,23 @@ param(
     # Comma separated subset, e.g. -Suite unit,frontend. Empty means all.
     [string[]]$Suite      = @(),
     # Keep going after a failing suite and report the whole table.
-    [switch]$ContinueOnError
+    [switch]$ContinueOnError,
+    # vlog 编译宏，本编排器**自己不编译任何源**，它只负责把宏转发给愿意接收的子
+    # 套件脚本。
+    #
+    # 为什么需要一个统一入口：rtl/storage/sdram_ctrl_wrap.v:127 是
+    #     `ifdef SDRAM_SIM_MODEL  -> 文件内自带行为模型
+    #     `else                   -> Anlogic 加密核 sdr_as_ram.enc.v
+    # ModelSim ASE 编不动加密核（vlog 直接 exit=2）。所以凡是要编到
+    # sdram_ctrl_wrap 的套件都必须拿到这个宏，否则 T9 一跑就整片红。
+    #
+    # 但**不能无脑传给所有子脚本**：7 个子脚本里只有 run_frontend_regression.ps1
+    # 与 run_audio_regression.ps1 声明了 [string[]]$VlogDefines 形参；其余（含
+    # run_unit_coverage_regression.ps1，它连 CmdletBinding 都没有）收到未知参数
+    # 会直接 "A parameter cannot be found that matches parameter name
+    # 'VlogDefines'" 报错退出，本来绿的套件会被这个转发机制拖红。
+    # 所以下面按「子脚本源码里是否出现 $VlogDefines」逐个判定，能接的才传。
+    [string[]]$VlogDefines = @('+define+SDRAM_SIM_MODEL')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,8 +62,20 @@ New-Item -ItemType Directory -Force -Path $ReportRoot | Out-Null
 #   script : file name under sim\scripts
 #   title  : one-line description shown in the summary
 #   extra  : extra arguments appended to the child invocation (optional)
+# ---- A4 分母断言（t9 加）---------------------------------------------------
+# 编排器同样有"一个套件都没跑也照样 PASS"的缺口：$failed 只在某套件红或脚本缺失时
+# 置位，-$Suite 传了不存在的组合 / 全被过滤掉时 $results 为空、$failed 仍为 $false，
+# 于是尾判据照旧打印 'FULL REGRESSION PASSED'。
+# 期望套件数**不从 $results 反推**（那是同源自证：套件表被误删一条，期望值也跟着小，
+# 断言永远成立），而是按"用户要的名单"独立算：不给 -Suite 就是全套 7 个。
+# 计数器用 $script: 前缀：将来若把主循环包进函数，函数内 += 只改局部副本，
+# 外层判据会永远看到 0 —— scripts\run_tb_baseline.ps1 头注记着这个坑。
+$script:A4Ran    = 0
+$script:A4Passed = 0
+$ExpSuiteCount = 7
+
 $allSuites = @(
-    @{ name='unit';     script='run_unit_coverage_regression.ps1';      title='18 module unit testbenches';            extra=@() },
+    @{ name='unit';     script='run_unit_coverage_regression.ps1';      title='29 module unit testbenches';            extra=@() },
     @{ name='frontend'; script='run_frontend_regression.ps1';           title='SD/FAT32/BMP/player/OSD';               extra=@() },
     @{ name='storage';  script='run_storage_regression.ps1';            title='SDRAM / framebuf / retention';          extra=@() },
     @{ name='audio';    script='run_audio_regression.ps1';              title='audio tone / PWM / waveform path';      extra=@() },
@@ -101,7 +129,23 @@ foreach ($s in $selected) {
     $t0 = Get-Date
 
     # Child scripts accept -ModelSimPath / -ReportDir uniformly.
-    $childArgs = @('-ModelSimPath', $ModelSimPath, '-ReportDir', $reportDir) + @($s.extra)
+    #
+    # -VlogDefines 则**不是**uniform 的：只有 run_frontend_regression.ps1 和
+    # run_audio_regression.ps1 声明了这个形参。其余子脚本收到它会立刻
+    #   "A parameter cannot be found that matches parameter name 'VlogDefines'"
+    # 报错退出（run_unit_coverage_regression.ps1 甚至没有 CmdletBinding，
+    # 参数解析更严格），本来全绿的套件会被这个转发机制拖红。
+    # 所以先读子脚本源码，出现 $VlogDefines 才把宏传下去。
+    $childAcceptsDefines = $false
+    try {
+        $childSrc = [IO.File]::ReadAllText($scriptPath)
+        $childAcceptsDefines = ($childSrc -match '\$VlogDefines')
+    } catch { $childAcceptsDefines = $false }
+    $childArgs = @('-ModelSimPath', $ModelSimPath, '-ReportDir', $reportDir)
+    if ($childAcceptsDefines -and $VlogDefines.Count -gt 0) {
+        $childArgs += @('-VlogDefines') + @($VlogDefines)
+    }
+    $childArgs += @($s.extra)
 
     # Run in a separate PowerShell process so one suite's Push-Location or
     # preference changes cannot leak into the next one.
@@ -181,6 +225,28 @@ foreach ($s in $selected) {
     }
 }
 
+# ---- A4 分母断言（t9 加）---------------------------------------------------
+$script:A4Ran    = @($results).Count
+$script:A4Passed = @($results | Where-Object { $_.status -eq 'passed' }).Count
+if ($Suite.Count -gt 0) {
+    # 用户点名跑子集时，期望数就是名单长度（名单来自命令行，不是本脚本的表）
+    $ExpSuiteCount = @($Suite | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } |
+                       Where-Object { $_ }).Count
+}
+if ($script:A4Ran -eq 0) {
+    Write-Output '  A4-GATE: ran=0（一个套件都没跑却要打印通过，这是最该报警的状态）'
+    $failed = $true
+}
+if ($script:A4Ran -ne $ExpSuiteCount) {
+    Write-Output ('  A4-GATE: ran=' + $script:A4Ran + ' 与期望套件数 ' + $ExpSuiteCount + ' 不符（套件表被改过？）')
+    $failed = $true
+}
+if ($script:A4Passed -ne $script:A4Ran) {
+    Write-Output ('  A4-GATE: passed=' + $script:A4Passed + ' / ran=' + $script:A4Ran)
+    $failed = $true
+}
+Write-Output ('  A4-GATE: ran=' + $script:A4Ran + ' passed=' + $script:A4Passed + ' expected=' + $ExpSuiteCount)
+
 # ---- Summary table ---------------------------------------------------------
 $elapsed = [int]((Get-Date) - $startedAt).TotalSeconds
 Write-Output ''
@@ -205,9 +271,15 @@ $summary = [ordered]@{
     status     = $(if ($failed) { 'failed' } else { 'passed' })
     modelSimPath = $ModelSimPath
     primLibPath  = $PrimLibPath
+    # 记下这次编排携带的编译宏，便于 t9 报告直接引用（哪些子套件真正收到，
+    # 见各自 result.json 里的 arguments）。
+    vlogDefines  = @($VlogDefines)
     reportRoot   = $ReportRoot
     elapsedSeconds = $elapsed
     totalPassLines = $totalPassLines
+    ran            = $script:A4Ran
+    passedCount    = $script:A4Passed
+    expectedSuiteCount = $ExpSuiteCount
     suites     = $results
 }
 $summary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $ReportRoot 'summary.json') -Encoding utf8

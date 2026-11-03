@@ -14,6 +14,12 @@ module tb_startup_ownership #(parameter LEGACY_READY=0);
   wire gallery_done, gallery_fail, gallery_first_req;
   wire [4:0] gallery_count;
   wire [3:0] gallery_err;
+  // 【t19】gallery_probe 新增的 SCI.RLE 定位输出（原先 u_fat 的五根输出空连接）。
+  //   本 tb 的卡镜像只有 IMG001.BMP、没有 SCI.RLE，故期望
+  //   rle_found=0 / rle_fail=0 / rle_lba=0 / rle_size=0。
+  //   注意: "卡上没有视频" 是正常情形，不能报 fail —— 这条必须有断言。
+  wire [31:0] gallery_rle_lba, gallery_rle_size;
+  wire        gallery_rle_found, gallery_rle_fail;
   // These are the exact ownership and start-routing expressions from the
   // production top.  LEGACY_READY=1 changes only image_player.sd_ready to the
   // historical sd_ok connection as a negative control.
@@ -45,7 +51,9 @@ module tb_startup_ownership #(parameter LEGACY_READY=0);
     .clk(clk), .rst_n(rst_n), .sd_ok(sd_ok), .rescan(1'b0),
     .blk_start(gallery_start), .blk_addr(gallery_addr), .blk_done(blk_done), .blk_err(blk_err),
     .data_byte(data_byte), .data_valid(data_valid), .done(gallery_done), .fail(gallery_fail),
-    .count(gallery_count), .first_img_req(gallery_first_req), .err_code(gallery_err));
+    .count(gallery_count), .first_img_req(gallery_first_req), .err_code(gallery_err),
+    .rle_lba(gallery_rle_lba), .rle_size(gallery_rle_size),
+    .rle_found(gallery_rle_found), .rle_fail(gallery_rle_fail));
 
   image_player #(.WIDTH(32), .HEIGHT(16), .MEM_WORDS(1024), .LOAD_TIMEOUT(12000),
                  .SEAMLESS(0), .FADE_FRAMES(1)) player (
@@ -57,7 +65,12 @@ module tb_startup_ownership #(parameter LEGACY_READY=0);
     .out_w(out_w), .out_h(out_h), .out_off_x(out_x), .out_off_y(out_y), .image_ready(player_ready),
     .loading(player_loading), .failed(player_failed), .error_code(player_error), .reader_status(player_status),
     .sdram_clk(), .sdram_cke(), .sdram_cs_n(), .sdram_ras_n(), .sdram_cas_n(), .sdram_we_n(),
-    .sdram_ba(), .sdram_addr(), .sdram_dm(), .sdram_dq());
+    .sdram_ba(), .sdram_addr(), .sdram_dm(), .sdram_dq(),
+    // v2 新增（T4）：外部写口全关，逻辑分辨率取容器尺寸（垂直映射恒等旁路）。
+    .ext_wr_mode(1'b0), .ext_wr_valid(1'b0), .ext_wr_addr(21'd0), .ext_wr_data(32'd0),
+    .ext_wr_dm(4'd0), .ext_wr_done(1'b0), .ext_no_fade(1'b0),
+    .ext_wr_ack(), .ext_wr_busy(), .ext_frame_ready(), .ext_frame_sel(), .ext_loader_want_blk(),
+    .src_w(16'd32), .src_h(16'd16));
 
   task wr8; input integer a; input [7:0] v; begin disk[a]=v; end endtask
   task wr16; input integer a; input [15:0] v; begin disk[a]=v[7:0]; disk[a+1]=v[15:8]; end endtask
@@ -129,7 +142,24 @@ module tb_startup_ownership #(parameter LEGACY_READY=0);
       // pending register while it is still not allowed to start an SD read.
       @(posedge clk); #1;
       chk(first_req_while_gallery==1,"first-image request is a single pulse before ownership transfer");
-      chk(gallery_done && sd_owner_player,"SD ownership transfers only after gallery completion");
+      // 【t19 行为变更 · 在 tb 里显式承认，不放宽断言】
+      //   从 t19 起 gallery_probe 在枚举完 IMGnnn 之后会再走一轮 FAT32 定位
+      //   SCI.RLE（复用同一个 fat32_reader 实例，不新增第 4 份 —— DSP 24/29，
+      //   加第 4 份就是 30 > 29 布不下），因此 done 比 v1 晚一轮。
+      //   first_img_req 仍在枚举结束那一拍发出，语义不变。
+      //   下面两条把"RLE 轮真的插在中间"钉死：脉冲当拍 done 必须仍为 0、
+      //   且 SD 所有权仍在本模块手上；若将来有人把 RLE 轮优化掉，这两条会红。
+      chk(!gallery_done,   "gallery done is deferred by the SCI.RLE probe round");
+      chk(sd_owner_gallery,"SD ownership still held by the gallery during the RLE probe round");
+      guard=0;
+      while(!gallery_done && !gallery_fail && guard<5000) begin @(negedge clk); guard=guard+1; end
+      chk(guard<5000 && gallery_done,"gallery completes after the SCI.RLE probe round");
+      chk(sd_owner_player,"SD ownership transfers only after gallery completion");
+      // SCI.RLE 定位结果: 本镜像没有视频文件，属于"没有"而不是"故障"
+      chk(gallery_rle_found===1'b0,"card without SCI.RLE reports not found");
+      chk(gallery_rle_fail===1'b0, "missing SCI.RLE is not reported as a failure");
+      chk(gallery_rle_lba===32'd0, "rle_lba stays zero when the file is absent");
+      chk(gallery_rle_size===32'd0,"rle_size stays zero when the file is absent");
       chk(player.pending===1'b1,"image_player retained the one-cycle request across ownership handoff");
       chk(player_pulses_while_gallery==0,"no player block-start pulse was lost to the gallery mux");
       guard=0;

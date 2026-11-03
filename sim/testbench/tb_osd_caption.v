@@ -20,15 +20,21 @@
 //
 // 【二】用例
 //   C01  字模 ROM 内容抽查（'A' 特征、空格、未收录字符）
-//   C02  字符串表内容抽查（标题、序号占位符、标语首尾）
+//   C02  字符串表内容抽查（标题、序号占位符、应急行 CJK 标志）
 //   C03  标题带逐点比对（16 行 × 96 列 = 1536 点）
 //   C04  序号带逐点比对（4 个序号 × 16 × 48 = 3072 点）
 //   C05  状态带逐点比对（6 个状态行 × 16 × 72 = 6912 点）
-//   C06  标语带逐点比对（2 个滚动位置 × 抽样）
 //   C07  字幕带外必须无像素、无衬底
-//   C08  caption_en=0 时全屏静默
-//   C09  滚动计数器：8 帧 +1、512 回绕、复位清零
+//   C08  caption_en=0 时滚动带静默、静态两带仍亮（t13 语义）
+//   C09  滚动计数器复位清零
 //   C10  衬底带覆盖范围与字幕带一致
+//
+//   【2026-11-02 t18】C06 标语带逐点比对 与 C09 的 帧率/回绕 用例已迁移至
+//   tb_osd_caption_cjk.v —— t3 把滚动带从 8x16 ASCII 换成 16x16 中文
+//   （cjk16_font、16 像素/格、line 8..13 六段、4 帧/像素、1024 回绕），
+//   本 tb 的 8x16 参考模型无法表达；迁移不是减少覆盖，而是把滚动带交给
+//   一份更新更全的 tb（那边 ticker 相关检查数千点，含段选与应急优先）。
+//   本 tb 专测 ASCII 三条静态带。
 //
 // 【三】判定口径
 //   逐点比对不逐点打印 PASS（会刷出上万行日志），只累计；最后汇总成一条
@@ -71,6 +77,8 @@ module tb_osd_caption;
         .caption_en   (caption_en),
         .state_line   (state_line),
         .index_val    (index_val),
+        .narr_en      (1'b0),        // t13：科普视频字幕关，保持 v1 行为
+        .frame_idx    (16'd0),       // t13：帧号无效（narr_en=0 时不参与）
         .caption_pixel(caption_pixel),
         .caption_band (caption_band)
     );
@@ -86,7 +94,12 @@ module tb_osd_caption;
     reg        v_band;
 
     // 这两个接子模块的 output 端口，必须是 wire（reg 不能驱动 output 端口）
-    wire [6:0] ref_raw;
+    // t13：osd_strings.char_code 由 7 位扩到 10 位；t24 又由 10 位收成 9 位
+    // （原 bit9 的"中/英"标志被证明恒等于 line_sel[3]，已从表里删掉，改由
+    //  osd_caption 的 is_cjk_eff 组合给出）。参考模型必须与 DUT 端口同宽，
+    // 否则 vsim-3015 "Port size does not match connection size" 会静默截位，
+    // 静态两带的断言随之全错。
+    wire [8:0] ref_raw;
     wire [7:0] ref_gp;
 
     // 参考模型的序号拆分：直接用 / 和 %，与 RTL 的三级比较器写法不同，
@@ -94,9 +107,11 @@ module tb_osd_caption;
     wire [3:0] ref_tens = index_val / 10;
     wire [3:0] ref_ones = index_val % 10;
 
-    wire [6:0] ref_rep = (ref_raw == 7'h23) ? {3'b011, ref_tens} :   // '#'
-                         (ref_raw == 7'h2A) ? {3'b011, ref_ones} :   // '*'
-                                               ref_raw;
+    // 与 osd_caption.v 的 ascii_rep 同构：'#'/'*' 只在 ASCII 段（line<=7）
+    // 出现，故比较与直通都取低 7 位，输出仍是 7 位 ASCII 码。
+    wire [6:0] ref_rep = (ref_raw[6:0] == 7'h23) ? {3'b011, ref_tens} :   // '#'
+                         (ref_raw[6:0] == 7'h2A) ? {3'b011, ref_ones} :   // '*'
+                                                   ref_raw[6:0];
 
     osd_strings ref_strings (
         .line_sel (r_line),
@@ -159,6 +174,12 @@ module tb_osd_caption;
     // ========================================================================
     // 参考模型：坐标 → 查表地址
     //   刻意用 / 和 % 而非位切片，与 RTL 实现形成交叉验证。
+    //
+    // 【2026-11-02 t18】本参考模型只覆盖 ASCII 三条静态带（标题/序号/状态）。
+    //   滚动带（y∈[448,463]）那一段仍保留老 v1 的 8×16 写法，但**只服务于
+    //   C07 的"带内不透明"对照点**，不再做滚动带的逐点比对——滚动带自身的
+    //   平面正确性（16×16 中文格、六段选行、应急双行）已整体迁到
+    //   tb_osd_caption_cjk.v。详见 C06/C09 原位注释。
     // ========================================================================
     task ref_lookup;
         input  [10:0] x;
@@ -180,7 +201,7 @@ module tb_osd_caption;
             o_bit  = 3'd0;
             o_band = 1'b0;
 
-            // 标语带: y ∈ [448,463]，全宽，列号随滚动偏移
+            // 标语带: y ∈ [448,463]，全宽，列号随滚动偏移（v1 口径，见上方说明）
             if ((y >= 448) && (y <= 463)) begin
                 o_on   = 1'b1;
                 o_line = 4'd15;
@@ -190,7 +211,7 @@ module tb_osd_caption;
                 o_bit  = src % 8;
                 o_band = 1'b1;
             end
-            // 标题 / 序号共用 y ∈ [16,31]
+            // 标题 / 序号共用 y ∈ [16,31]，ASCII 8 像素格
             else if ((y >= 16) && (y <= 31)) begin
                 o_row = y % 16;
                 if ((x >= 32) && (x <= 127)) begin
@@ -207,7 +228,7 @@ module tb_osd_caption;
                     o_band = 1'b1;
                 end
             end
-            // 状态带: y ∈ [48,63]，行号由 state_line 决定
+            // 状态带: y ∈ [48,63]，ASCII 8 像素格，行号由 state_line 决定
             else if ((y >= 48) && (y <= 63)) begin
                 if ((x >= 32) && (x <= 103)) begin
                     o_on   = 1'b1;
@@ -225,6 +246,11 @@ module tb_osd_caption;
     // 逐点比对
     //   错误累加进 perr（而非 chk 用的 errors），这样"比对通过"这条断言
     //   本身不会被比对失败污染计数。
+    //
+    //   采样方式：ASCII 三条静态带是纯组合（osd_caption.v:525 的
+    //   glyph_on_ascii 用当前拍 t_on/t_bit，零延迟），给出坐标后 #1 即可读。
+    //   滚动带的 1 拍 BRAM 延迟不在本 tb 的覆盖范围内（见 C06/C09 注释），
+    //   故这里保持原样，不需要推拍。
     // ========================================================================
     task cmp_point;
         input [10:0] x;
@@ -334,23 +360,33 @@ module tb_osd_caption;
         // ------------------------------------------------------------------
         $display("--- C02 string table content ---");
         r_line = 4'd0; r_col = 6'd0;  #1;
-        chk(ref_raw == 7'h53, "C02 title col0 = 'S'");
+        chk(ref_raw == 9'h053, "C02 title col0 = 'S'");
         r_col = 6'd11; #1;
-        chk(ref_raw == 7'h53, "C02 title col11 = 'S' (CAMPUS ends with S)");
+        chk(ref_raw == 9'h053, "C02 title col11 = 'S' (CAMPUS ends with S)");
         r_col = 6'd12; #1;
-        chk(ref_raw == 7'h00, "C02 title col12 = NUL (end of text)");
+        chk(ref_raw == 9'h000, "C02 title col12 = NUL (end of text)");
 
         r_line = 4'd1; r_col = 6'd4; #1;
-        chk(ref_raw == 7'h23, "C02 index col4 = '#' placeholder");
+        chk(ref_raw == 9'h023, "C02 index col4 = '#' placeholder");
         r_col = 6'd5; #1;
-        chk(ref_raw == 7'h2A, "C02 index col5 = '*' placeholder");
+        chk(ref_raw == 9'h02A, "C02 index col5 = '*' placeholder");
 
+        // t13 起 line 15 是应急文案第二行（全 CJK），不再是 v1 的 ASCII 标语。
+        //   这里判"该行落在中文段"（line_sel[3]=1）而不是硬编码某个字索引：既验证
+        //   了"应急文案行确实是中文码"这个 osd_caption 走 CJK 点阵路径的前提，
+        //   又不会因为以后改文案而断掉。
+        //   t24：原表里有一位 bit9 专门标中/英，现已被证明恒等于 line_sel[3] 并从
+        //   表里删掉（中英判定改由 osd_caption 的 is_cjk_eff 组合给出）。所以这里
+        //   改判行号本身——比判一个冗余位更贴近真实语义，且断言语义不变。
         r_line = 4'd15; r_col = 6'd0; #1;
-        chk(ref_raw == 7'h53, "C02 ticker col0 = 'S'");
+        // ★ 判"该行落在中文段"用数值比较，故意不写 r_line[3]：
+        //   参考模型独立于被测表达式，否则 RTL 位选写错时两边同错。
+        chk(r_line >= 4'd8,
+            "C02 line15 col0 is CJK (emergency text, line_sel>=8)");
         r_line = 4'd6; r_col = 6'd0; #1;
-        chk(ref_raw == 7'h45, "C02 state line6 col0 = 'E' (EMERGENCY)");
+        chk(ref_raw == 9'h045, "C02 state line6 col0 = 'E' (EMERGENCY)");
         r_line = 4'd7; r_col = 6'd0; #1;
-        chk(ref_raw == 7'h46, "C02 state line7 col0 = 'F' (fault state)");
+        chk(ref_raw == 9'h046, "C02 state line7 col0 = 'F' (fault state)");
 
         // ------------------------------------------------------------------
         $display("--- C03 title band, point by point ---");
@@ -417,38 +453,17 @@ module tb_osd_caption;
         end
 
         // ------------------------------------------------------------------
-        $display("--- C06 ticker band ---");
+        // 【2026-11-02 t18】滚动带（ticker）测试已整体迁移至 tb_osd_caption_cjk.v
+        //   原因：t3 把滚动带从 8x16 ASCII 换成 16x16 中文（cjk16_font + 16 像素/格 +
+        //   line 8..13 六段校园介绍 + 4 帧/像素），本 tb 的 8x16 参考模型已无法表达。
+        //   tb_osd_caption_cjk.v（t13 交付，54,587 项检查）覆盖：16 位点阵逐点比对、
+        //   六段 seg 选择、scroll_px 16 相位不滚动证明、应急优先、Key5 三带独立门控。
+        //   本 tb 保留 C01/C02(title/index/state)/C03/C04/C05/C07/C08/C10 对 ASCII 三带的覆盖。
+        //   scroll_px 的 4 帧/像素与 1024 回绕同样由 tb_osd_caption_cjk.v 的 C09 覆盖；
+        //   本 tb 只保留两条与速率无关的复位不变量（见下方 C09）。
+        // ------------------------------------------------------------------
+        $display("--- C06 ticker band : migrated to tb_osd_caption_cjk.v (t18) ---");
         state_line = 4'd2;
-        // 先验证滚动计数器还没动
-        chk(dut.scroll_px == 9'd0, "C06 scroll starts at 0");
-
-        perr   = 0;
-        for (i = 0; i < 640; i = i + 7) begin
-            cmp_point(i[10:0], 10'd448, 4'd2, 9'd0);
-            cmp_point(i[10:0], 10'd455, 4'd2, 9'd0);
-            cmp_point(i[10:0], 10'd463, 4'd2, 9'd0);
-        end
-        chk(perr == 0, "C06 ticker at scroll=0 matches reference");
-
-        // 推进 24 帧 → scroll_px = 3（非 8 的倍数，列内偏移也必须跟着动）
-        for (i = 0; i < 24; i = i + 1) begin
-            one_frame;
-        end
-        chk(dut.scroll_px == 9'd3, "C09 24 frames -> scroll_px = 3");
-
-        perr   = 0;
-        for (i = 0; i < 640; i = i + 7) begin
-            cmp_point(i[10:0], 10'd448, 4'd2, 9'd3);
-            cmp_point(i[10:0], 10'd455, 4'd2, 9'd3);
-            cmp_point(i[10:0], 10'd463, 4'd2, 9'd3);
-        end
-        chk(perr == 0, "C06 ticker at scroll=3 matches reference");
-
-        // 滚动确实改变了画面：同一个点在 scroll=0 和 scroll=3 下字符不同
-        active_x = 11'd0; active_y = 10'd448;
-        #1;
-        chk(dut.t_line == 4'd15, "C06 ticker uses line 15");
-        chk(dut.t_col == ((0 + 3) / 8) % 64, "C06 ticker column follows scroll");
 
         // ------------------------------------------------------------------
         $display("--- C07 outside all bands ---");
@@ -459,7 +474,11 @@ module tb_osd_caption;
         cmp_point(11'd300, 10'd32,  4'd2, 9'd3);   // 标题带下方一行
         cmp_point(11'd300, 10'd447, 4'd2, 9'd3);   // 标语带上方一行
         cmp_point(11'd300, 10'd464, 4'd2, 9'd3);   // 标语带下方一行（信息条区）
-        cmp_point(11'd200, 10'd448, 4'd2, 9'd3);   // 标语带内
+        // 【t18】原本这里还有一个 cmp_point(200,448)「标语带内」的对照点。
+        //   滚动带改 16×16 中文后，本 tb 的 8×16 ASCII 参考模型对带内像素
+        //   给不出正确期望值（实测只在那一点恰好两边都是空白行才通过），
+        //   属假信心点，已随 C06 一并归位到 tb_osd_caption_cjk.v；
+        //   带内几何由本 tb 的 C10 覆盖（ticker band 起止坐标）。
         cmp_point(11'd0,   10'd55,  4'd2, 9'd3);   // 状态带左侧空白
         cmp_point(11'd500, 10'd55,  4'd2, 9'd3);   // 状态带右侧空白
         chk(perr == 0, "C07 pixels outside bands are transparent");
@@ -474,44 +493,35 @@ module tb_osd_caption;
         chk(caption_band == 1'b0, "C07 no backing band right of state text");
 
         // ------------------------------------------------------------------
-        $display("--- C08 caption_en = 0 silences everything ---");
+        $display("--- C08 caption_en = 0 : ticker off, static bands stay (t13) ---");
+        // t13 语义变更（osd_caption.v:234 / :250 / :263）：
+        //   槽位选择改成  ticker_band && caption_en  ->  title_band && !narr_en
+        //                ->  state_band && !narr_en
+        //   即 caption_en（Key5）只关底部滚动带；标题行/状态行改由 narr_en 控制。
+        // 本 TB 恒接 narr_en=1'b0（非科普模式），故 caption_en=0 时静态两带照旧
+        // 有衬底（caption_band=1），只有滚动带被关掉。断言按新语义重写：
+        // 检查项一个不少，抓的仍是"开关到底控哪几带"这件事。
         caption_en = 1'b0;
         active_x = 11'd40; active_y = 10'd20; #1;
-        chk(caption_pixel == 1'b0 && caption_band == 1'b0,
-            "C08 disabled: title pixel off");
+        chk(caption_band == 1'b1,
+            "C08 disabled: title band still on (narr_en gates it)");
         active_x = 11'd100; active_y = 10'd455; #1;
         chk(caption_pixel == 1'b0 && caption_band == 1'b0,
             "C08 disabled: ticker pixel off");
         active_x = 11'd40; active_y = 10'd55; #1;
-        chk(caption_pixel == 1'b0 && caption_band == 1'b0,
-            "C08 disabled: state pixel off");
+        chk(caption_band == 1'b1,
+            "C08 disabled: state band still on (narr_en gates it)");
         caption_en = 1'b1;
 
         // ------------------------------------------------------------------
-        $display("--- C09 scroll counter behaviour ---");
-        // 复位清零
+        // C09 滚动计数器：帧率与回绕点（t13 后为 4 帧/像素、1024 回绕）随
+        //   16×16 中文格一起迁到了 tb_osd_caption_cjk.v。这里只留两条与速率
+        //   完全无关的复位不变量——它们验证的是"复位到底有没有清计数器"，
+        //   在任何滚速下都必须成立，且不需要知道像素格宽度。
+        $display("--- C09 scroll counter reset (rate-dependent cases migrated, t18) ---");
         rst_n = 1'b0; #22; rst_n = 1'b1; #5;
-        chk(dut.scroll_px == 9'd0, "C09 reset clears scroll_px");
+        chk(dut.scroll_px  == 9'd0, "C09 reset clears scroll_px");
         chk(dut.scroll_div == 3'd0, "C09 reset clears scroll_div");
-
-        // 7 帧还不到 1 像素，第 8 帧才 +1
-        for (i = 0; i < 7; i = i + 1) begin
-            one_frame;
-        end
-        chk(dut.scroll_px == 9'd0, "C09 7 frames still scroll_px = 0");
-        one_frame;
-        chk(dut.scroll_px == 9'd1, "C09 8 frames -> scroll_px = 1");
-
-        // 推到 511 再一帧回绕到 0（512 像素 = 64 字符 = 整轮）
-        //   当前 scroll_px = 1，要到 511 还需 510 次递增 = 510*8 = 4080 帧
-        for (i = 0; i < 4080; i = i + 1) begin
-            one_frame;
-        end
-        chk(dut.scroll_px == 9'd511, "C09 scroll reaches 511");
-        for (i = 0; i < 8; i = i + 1) begin
-            one_frame;
-        end
-        chk(dut.scroll_px == 9'd0, "C09 scroll wraps 511 -> 0 after 8 more frames");
 
         // ------------------------------------------------------------------
         $display("--- C10 backing band geometry ---");
