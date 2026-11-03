@@ -80,6 +80,36 @@ module tb_audio_src_mux;
     );
 
     // ------------------------------------------------------------------
+    //  ★ t6 新增：第二份 DUT，**故意不做 parameter override**
+    //  【为什么必须要有这一份】
+    //    上面一份用 override 传入了 tb 自己定义的"正确字节序"常量，这样做能测
+    //    mux 的选择逻辑，但它**同时也掩盖了 RTL 默认 parameter 是否写对** ——
+    //    这正是本工程踩过的坑：rtl/audio/audio_src_mux.v 的默认值原本写成
+    //    `{"BGM", 40'h20_20_20_20_20, "WAV"}`（正序），Verilog 拼接把最左操作数
+    //    放到最高位，于是 target_name[7:0] = 'V'，而 fat32_reader 从 [7:0] 比
+    //    目录项的第 0 字节 —— 磁盘上的 "BGM     WAV" 首字节是 'B'，永远匹配不上。
+    //    单元 tb 全绿（因为 override 了正确常量），上板却完全没声音。
+    //    ⇒ 必须有一份"用默认参数"的实例，直接断言它在日常模式输出的
+    //      src_name[7:0] 就是 'B'(0x42)，从根上防止这个 bug 二次复发。
+    // ------------------------------------------------------------------
+    wire [87:0] def_src_name;
+    wire [1:0]  def_src_sel;
+    wire        def_src_start;
+    wire        def_eff_audio_en;
+
+    audio_src_mux u_dut_default (        // 注意：这里**不写 #(...)**
+        .clk          (clk),
+        .rst_n        (rst_n),
+        .mode         (mode),
+        .audio_en     (audio_en),
+        .sd_ready     (sd_ready),
+        .src_sel      (def_src_sel),
+        .src_name     (def_src_name),
+        .src_start    (def_src_start),
+        .eff_audio_en (def_eff_audio_en)
+    );
+
+    // ------------------------------------------------------------------
     //  记分板
     // ------------------------------------------------------------------
     integer pass_cnt = 0;
@@ -163,6 +193,23 @@ module tb_audio_src_mux;
                 $display("     exp name bytes: %h", exp_name);
             end
             chk(nm_mism == 0, msg);
+        end
+    endtask
+
+    // ------------------------------------------------------------------
+    //  把一个 88 位短名按"第 0 字节..第 10 字节"的顺序打印出来
+    //  ★ $display 按高位到低位打印，所以要倒着取（[87:80] 是第 10 字节）
+    //    第一版直接顺序取，打出来是倒序，害我以为常量写反了。
+    // ------------------------------------------------------------------
+    task show_name(input [1023:0] tag, input [87:0] nm);
+        integer j;
+        reg [8*11-1:0] s;
+        begin
+            s = 88'd0;
+            for (j = 0; j < 11; j = j + 1)
+                s[(10-j)*8 +: 8] = nm[j*8 +: 8];
+            $display("     [name] %0s bytes(0..10) = '%0s'  [7:0]=0x%02x",
+                     tag, s, nm[7:0]);
         end
     endtask
 
@@ -337,6 +384,45 @@ module tb_audio_src_mux;
         mode = 2'd0;                      // 回到日常（BGM）
         wait_start(20);
         chk(got_start === 1'b1, "S12a switching back to a previously used source re-issues src_start");
+
+        // ================================================================
+        //  S13 【t6 新增】默认 parameter 的字节序（防 override 掩盖 bug）
+        //  上面所有用例都用了 override 的正确常量，测的是 mux 的选择逻辑；
+        //  这一组测的是 **RTL 默认 parameter 本身**，也就是真正进综合的那份。
+        // ================================================================
+        $display("");
+        $display("---- S13: default parameter byte order (no override) ----");
+        sd_ready = 1'b1;
+        mode = 2'd0; @(posedge clk); #1;
+        show_name("default daily   (BGM)  ", def_src_name);
+        chk(def_src_name[7:0]     === 8'h42, "S13a default BGM byte0 == 'B' (0x42), not 'V' (0x56)");
+        chk(def_src_name[15:8]    === 8'h47, "S13b default BGM byte1 == 'G'");
+        chk(def_src_name[23:16]   === 8'h4D, "S13c default BGM byte2 == 'M'");
+        chk(def_src_name[31:24]   === 8'h20, "S13d default BGM byte3 == space");
+        chk(def_src_name[71:64]   === 8'h57, "S13e default BGM byte8 == 'W'");
+        chk(def_src_name[79:72]   === 8'h41, "S13f default BGM byte9 == 'A'");
+        chk(def_src_name[87:80]   === 8'h56, "S13g default BGM byte10 == 'V'");
+        // 与磁盘 8.3 短名 "BGM     WAV" 逐字节全等（这是 fat32_reader 的比对基准）
+        exp_name = {8'h56, 8'h41, 8'h57, 8'h20, 8'h20, 8'h20, 8'h20, 8'h20,
+                    8'h4D, 8'h47, 8'h42};
+        chk(def_src_name === exp_name,        "S13h default BGM == 'BGM     WAV' on disk (all 11 bytes)");
+
+        mode = 2'd1; @(posedge clk); #1;
+        show_name("default science (NARR) ", def_src_name);
+        // "NARR    WAV"：主名 4 字母 + 4 空格 = 8，扩展名 3
+        exp_name = {8'h56, 8'h41, 8'h57, 8'h20, 8'h20, 8'h20, 8'h20,
+                    8'h52, 8'h52, 8'h41, 8'h4E};
+        chk(def_src_name === exp_name,        "S13i default NARR == 'NARR    WAV' on disk (all 11 bytes)");
+        chk(def_src_name[7:0]     === 8'h4E, "S13j default NARR byte0 == 'N'");
+
+        mode = 2'd2; @(posedge clk); #1;
+        show_name("default emerg   (ALARM)", def_src_name);
+        // "ALARM   WAV"：主名 5 字母 + 3 空格 = 8，扩展名 3
+        exp_name = {8'h56, 8'h41, 8'h57, 8'h20, 8'h20, 8'h20,
+                    8'h4D, 8'h52, 8'h41, 8'h4C, 8'h41};
+        chk(def_src_name === exp_name,        "S13k default ALARM == 'ALARM   WAV' on disk (all 11 bytes)");
+        chk(def_src_name[7:0]     === 8'h41, "S13l default ALARM byte0 == 'A'");
+        mode = 2'd0; @(posedge clk); #1;
 
         // ================================================================
         //  收尾

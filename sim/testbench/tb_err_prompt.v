@@ -24,11 +24,17 @@
 //   C4  图片层分类: err=2→b1 / 7→b2 / 1→F4 / 3,4,5,8,9→d4,d5,d6,d7,d8 / 11,12→dB,dC
 //   C5  "卡好但零张图"→ 00 且 err_active=1（改造前完全无提示的盲区）
 //   C6  sd_cd 无卡抢先提示 → C0
-//   C7  优先级: sd_fail > gallery_fail > image_failed
+//   C7  优先级: sd_fail > gallery_fail > image_failed > rle_bad > wav_bad > 零张图 > sd_cd
 //   C8  告警延迟: 刚出错后的 ALARM_DELAY 拍内 alarm_req 必须为 0
 //   C9  告警窗口: 延迟后拉高，满 ALARM_TOTAL 拍后自动停止且不再重复
 //   C10 错误消失后计数清零；再次出错会重新响一轮（不漏报）
 //   C11 正常态（有图可播）不产生任何提示
+//   C12 【t9 新增】视频层分类: err=1→bE / 2→dE / 3→d0 / 4→d1 / 5→d5 / 6→d6
+//       以及"撤掉 rle_bad 立刻回到无提示"。这组钉住的是可观测性本身：
+//       改造前视频通路失败在数码管上完全看不出来，是本项目最贵的一个盲区。
+//   C13 【t6 新增】音频层分类: err=1..5→F1..F5 / 6→C1 / 7→d7 / 8→d8 / 9→F6 / 其它→d9
+//       以及"撤掉 wav_bad 立刻回到无提示"。钉住 wav_stream_player.err_code 到
+//       两位码的映射，防止将来把这根输入接回常量 0（那会让"没声音"再次无法归因）。
 //
 // 运行: vsim -c -do "run -all" work.tb_err_prompt
 // =============================================================================
@@ -52,6 +58,12 @@ module tb_err_prompt;
     reg  [4:0] gallery_count = 5'd0;
     reg        image_failed  = 1'b0;
     reg  [3:0] image_err     = 4'd0;
+    // 【t9 新增】视频层（rle_decoder / gallery_probe 的 RLE 探查结果）
+    reg        rle_bad       = 1'b0;
+    reg  [3:0] rle_err       = 4'd0;
+    // 【t6 新增】音频层（wav_stream_player.err_code）
+    reg        wav_bad       = 1'b0;
+    reg  [3:0] wav_err       = 4'd0;
 
     // ---- DUT 输出 ----
     wire       err_active;
@@ -76,6 +88,13 @@ module tb_err_prompt;
         .gallery_count (gallery_count),
         .image_failed  (image_failed),
         .image_err     (image_err),
+        // 【t9】视频层：不接会让输入悬空为 z，组合逻辑里 if(rle_bad) 吃到 X
+        //   后整个提示层输出 X（连 SD 层的提示都会被带坏），所以必须显式连。
+        .rle_bad       (rle_bad),
+        .rle_err       (rle_err),
+        // 【t6】音频层：同样必须显式连，否则 if(wav_bad) 会吃到 z 把输出带成 X
+        .wav_bad       (wav_bad),
+        .wav_err       (wav_err),
         .err_active    (err_active),
         .prompt_hi     (prompt_hi),
         .prompt_lo     (prompt_lo),
@@ -139,6 +158,8 @@ module tb_err_prompt;
             gallery_fail = 1'b0; gallery_err = 4'd0;
             gallery_done = 1'b0; gallery_count = 5'd0;
             image_failed = 1'b0; image_err = 4'd0;
+            rle_bad = 1'b0; rle_err = 4'd0;
+            wav_bad = 1'b0; wav_err = 4'd0;
             @(negedge clk);
         end
     endtask
@@ -233,6 +254,71 @@ module tb_err_prompt;
         @(negedge clk); image_err = 4'd10; @(negedge clk);
         chk_prompt(1'b1, CH_DATA, 4'd10, "C4 image_err=10 block handshake timeout -> dA");
 
+        // ================= C12 视频层分类（t9 新增）=================
+        // 【为什么这一组用例是本次修复的核心】
+        //   改造前 rle_err_code/rle_underrun 在顶层零消费者、err_prompt 也没有
+        //   任何 rle_* 端口 —— 科普模式整条视频通路死掉时，数码管仍然显示
+        //   playback_state=4(PLAY)、蜂鸣器不响、LED 不亮，故障完全静默。
+        //   这组用例钉住"视频失败必须能在数码管上读出来"，防止将来有人把
+        //   这两根输入又接回常量 0（那会让本组用例全部失败，而不是静默退化）。
+        clear_all;
+        @(negedge clk); rle_bad = 1'b1; rle_err = 4'd1;
+        @(negedge clk);
+        chk_prompt(1'b1, CH_BMP, 4'hE, "C12 rle_err=1 magic mismatch -> bE");
+        @(negedge clk); rle_err = 4'd2; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'hE, "C12 rle_err=2 geometry -> dE");
+        @(negedge clk); rle_err = 4'd3; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd0, "C12 rle_err=3 run count -> d0");
+        @(negedge clk); rle_err = 4'd4; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd1, "C12 rle_err=4 truncated/block -> d1");
+        @(negedge clk); rle_err = 4'd5; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd5, "C12 rle_err=5 fat chain -> d5");
+        @(negedge clk); rle_err = 4'd6; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd6, "C12 rle_err=6 SCI.RLE absent -> d6");
+        @(negedge clk); rle_err = 4'd0; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd9, "C12 rle_err=default -> d9");
+        // 撤掉视频层，必须立刻回到"无提示"（这条钉住"退出科普就不该再报"）
+        @(negedge clk); rle_bad = 1'b0;
+        @(negedge clk);
+        chk_prompt(1'b0, 4'h0, 4'h0, "C12 rle_bad=0 -> prompt cleared");
+
+        // ================= C13 音频层分类（t6 新增）=================
+        // 【为什么这一组必须存在】
+        //   改造前 wav_stream_player.err_code 在顶层是空连接（`.err_code()`），
+        //   WAV 找不到 / 读到坏块 / 格式不符时它安静地停在 W_FAIL，而数码管显示
+        //   PLAY、LED 全灭 —— 「日常模式没声音」在现场完全无法归因。
+        //   这组用例钉住 err_code → 两位码的映射，任何把 wav_bad 接回常量 0
+        //   或改错字母的改动都会在这里红。
+        //   注意期望值与 wav_stream_player.v:53-63 的错误码表逐条对应，
+        //   不是按 FAT 层的猜测。
+        clear_all;
+        @(negedge clk); wav_bad = 1'b1; wav_err = 4'd1;
+        @(negedge clk);
+        chk_prompt(1'b1, CH_FORMAT, 4'd1, "C13 wav_err=1 RIFF id -> F1");
+        @(negedge clk); wav_err = 4'd2; @(negedge clk);
+        chk_prompt(1'b1, CH_FORMAT, 4'd2, "C13 wav_err=2 fmt/non-PCM -> F2");
+        @(negedge clk); wav_err = 4'd3; @(negedge clk);
+        chk_prompt(1'b1, CH_FORMAT, 4'd3, "C13 wav_err=3 bits!=16 -> F3");
+        @(negedge clk); wav_err = 4'd4; @(negedge clk);
+        chk_prompt(1'b1, CH_FORMAT, 4'd4, "C13 wav_err=4 rate!=48k -> F4");
+        @(negedge clk); wav_err = 4'd5; @(negedge clk);
+        chk_prompt(1'b1, CH_FORMAT, 4'd5, "C13 wav_err=5 truncated -> F5");
+        // 最常见的一条：卡上没这个 WAV（只拷了 RES640 那套图就会这样）
+        @(negedge clk); wav_err = 4'd6; @(negedge clk);
+        chk_prompt(1'b1, CH_CARD, 4'd1, "C13 wav_err=6 file not found -> C1");
+        @(negedge clk); wav_err = 4'd7; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd7, "C13 wav_err=7 block read fail -> d7");
+        @(negedge clk); wav_err = 4'd8; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd8, "C13 wav_err=8 handshake timeout -> d8");
+        @(negedge clk); wav_err = 4'd9; @(negedge clk);
+        chk_prompt(1'b1, CH_FORMAT, 4'd6, "C13 wav_err=9 stereo -> F6");
+        @(negedge clk); wav_err = 4'd0; @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd9, "C13 wav_err=default -> d9");
+        // err_code 归零 = WAV 恢复正常，提示必须立刻消失（日常模式不该长期挂错）
+        @(negedge clk); wav_bad = 1'b0; wav_err = 4'd0;
+        @(negedge clk);
+        chk_prompt(1'b0, 4'h0, 4'h0, "C13 wav_bad=0 -> prompt cleared");
+
         // ================= C5 卡好但零张图（改造前的交互盲区）=================
         clear_all;
         @(negedge clk); gallery_done = 1'b1; gallery_count = 5'd0;
@@ -259,6 +345,8 @@ module tb_err_prompt;
         sd_fail = 1'b1; sd_err = 4'd8;              // F1
         gallery_fail = 1'b1; gallery_err = 4'd3;    // F3
         image_failed = 1'b1; image_err = 4'd7;      // b2
+        rle_bad = 1'b1; rle_err = 4'd4;             // d1（视频层）
+        wav_bad = 1'b1; wav_err = 4'd6;             // C1（音频层，t6）
         sd_cd = 1'b1;                               // C0
         @(negedge clk);
         chk_prompt(1'b1, CH_FORMAT, 4'd1, "C7 priority sd_fail wins -> F1");
@@ -270,6 +358,21 @@ module tb_err_prompt;
         @(negedge clk); gallery_fail = 1'b0;
         @(negedge clk);
         chk_prompt(1'b1, CH_BMP, 4'd2, "C7 then image_failed -> b2");
+        // 【t9】撤掉图片层，视频层接管（钉住新分支的位置：图片 > 视频 > 音频 > 零张图）
+        @(negedge clk); image_failed = 1'b0;
+        @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd1, "C7 then rle_bad -> d1 (video layer)");
+        // 【t6】视频层仍在时，音频层不得抢屏（视频 > 音频）
+        @(negedge clk);
+        chk_prompt(1'b1, CH_DATA, 4'd1, "C7 rle_bad still wins over wav_bad -> d1");
+        // 撤掉视频层，音频层接管（钉住 wav_bad 分支的位置）
+        @(negedge clk); rle_bad = 1'b0;
+        @(negedge clk);
+        chk_prompt(1'b1, CH_CARD, 4'd1, "C7 then wav_bad -> C1 (audio layer)");
+        // 音频层之后再撤掉，才轮到 sd_cd 的无卡提示
+        @(negedge clk); wav_bad = 1'b0; wav_err = 4'd0;
+        wait_cycles(3);
+        chk_prompt(1'b1, CH_CARD, 4'd0, "C7 then sd_cd -> C0 last of all");
 
         // ================= C8/C9/C10 告警时序 =================
         clear_all;

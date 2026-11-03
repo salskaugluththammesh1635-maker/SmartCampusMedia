@@ -65,9 +65,15 @@ module tb_display_content #(parameter RD_GAP=1, parameter FUNCTIONAL_TIMING=1,
         .win_w(16'd640), .win_h(16'd480), .win_off_x(16'd0), .win_off_y(16'd0),
         .active_x(x));
 
+    // letterbox 屏蔽：复刻出货接线（两组几何取交集）。
+    //   win_*     = Key9 档位窗口；本 tb 全用满屏恒等档，故接 W×H@(0,0)。
+    //   img_win_* = image_player 的 out_*（本次装载图像实际写入的矩形）。
+    // t7-B 之后出货的 mask.win_* 不再接 out_*，旧版本这里接 `.win_w(out_w)`
+    // 验证的是不存在的电路；本版与 rtl/top/dmz_eg4s20_hdmi_top.v 逐拍一致。
     image_window_mask u_reload_mask (
         .de(de), .active_x(x), .active_y(y),
-        .win_w(out_w), .win_h(out_h), .win_off_x(out_off_x), .win_off_y(out_off_y),
+        .win_w(16'd640), .win_h(16'd480), .win_off_x(16'd0), .win_off_y(16'd0),
+        .img_w(out_w), .img_h(out_h), .img_off_x(out_off_x), .img_off_y(out_off_y),
         .pixel_valid(pixel_valid), .pixel_valid_out(pixel_shown));
 
 `ifdef DISPLAY_REAL_CORE

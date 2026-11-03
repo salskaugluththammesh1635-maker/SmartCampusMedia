@@ -12,7 +12,7 @@
 //   V04 KEY8 反色:      三通道按位取反，且只作用于图像层
 //   V05 KEY11 九宫格:   4 条线的位置命中、相邻像素不命中
 //   V06 KEY13 电平条:   幅度正负对称（取绝对值）、高度映射正确
-//   V07 KEY12 底条:     y>=464 整行为底条色，y<464 不受影响
+//   V07 KEY12 底条:     底条只占 12 格区（x 8..103 / y 468..475），区外为图像
 //   V08 KEY12 方块:     12 个格位的位序与格内 6 实 2 空
 //   V09 图层优先级:     线 > 方块 > 电平条 > 底条 > 图像
 //   V10 OSD 免疫前两级: 反色/调暗开着时 OSD 颜色不变
@@ -377,21 +377,30 @@ module tb_video_overlay;
         chk_eq24(rgb_out, 24'h40_40_40, "V06 level off draws nothing");
 
         // ---------------- V07 KEY12 底部信息条底条 ----------------
+        // 【2026-11-03 语义变更】底条从「全宽 16 行（y 464..479）」收窄为
+        //   「12 格区域（x 8..103, y 468..475）」。原因见 video_overlay.v 第三级-C
+        //   注释：全宽底条紧贴滚动字幕带（y 448..463）下方、0 行间隙，在 100%
+        //   全屏档上就是用户报的「字幕下方一条黑带」。收窄后黑面积 -92.5%，
+        //   12 格的双态编码（亮格 = 位 1，暗格 = 底条色）完全保留。
+        //   因此本段断言的**否定面**扩大了：y=464/479、x=0/639 都不再是底条。
         $display("");
         $display("--- V07 KEY12 info bar background ---");
         defaults;
         info_en = 1'b1;
         rgb_in  = 24'h40_40_40;
         at(11'd100, 10'd464);
-        chk_eq24(rgb_out, 24'h10_18_20, "V07 y=464 starts the info bar");
+        chk_eq24(rgb_out, 24'h40_40_40, "V07 y=464 is no longer part of the info bar");
         at(11'd100, 10'd479);
-        chk_eq24(rgb_out, 24'h10_18_20, "V07 last line is still info bar");
+        chk_eq24(rgb_out, 24'h40_40_40, "V07 last line is no longer part of the info bar");
         at(11'd100, 10'd463);
         chk_eq24(rgb_out, 24'h40_40_40, "V07 y=463 is above the info bar");
         at(11'd0, 10'd470);
-        chk_eq24(rgb_out, 24'h10_18_20, "V07 bar spans the full first column");
+        chk_eq24(rgb_out, 24'h40_40_40, "V07 bar no longer spans the first column");
         at(11'd639, 10'd470);
-        chk_eq24(rgb_out, 24'h10_18_20, "V07 bar spans the full last column");
+        chk_eq24(rgb_out, 24'h40_40_40, "V07 bar no longer spans the last column");
+        // 收窄后的真实边界：x 8..103、y 468..475（暗格用底条色，见 V08）
+        at(11'd100, 10'd470);
+        chk_eq24(rgb_out, 24'h10_18_20, "V07 narrowed bar keeps the dark cell backdrop");
         info_en = 1'b0;
         at(11'd100, 10'd470);
         chk_eq24(rgb_out, 24'h40_40_40, "V07 info off draws nothing");
@@ -433,17 +442,17 @@ module tb_video_overlay;
         chk_eq24(rgb_out, 24'h10_18_20, "V08 box10 dark because auto_sw_sel[0] = 0");
         at(11'd96, 10'd470);                // 格11，auto[1]=1
         chk_eq24(rgb_out, 24'h40_E0_D0, "V08 box11 lit by auto_sw_sel[1]");
-        at(11'd104, 10'd470);               // 格12，超出 12 格
-        chk_eq24(rgb_out, 24'h10_18_20, "V08 box12 stays background (only 12 boxes)");
-        // y 方向边界: 方块只画在 [468,475]，其余行是纯底条
+        at(11'd104, 10'd470);               // 格12，超出 12 格 → 已无底条，落回图像色
+        chk_eq24(rgb_out, 24'h40_40_40, "V08 box12 shows image (backdrop ends at x=103)");
+        // y 方向边界: 方块与底条都只画在 [468,475]，其余行是图像
         at(11'd8, 10'd467);
-        chk_eq24(rgb_out, 24'h10_18_20, "V08 y=467 above the box row is background");
+        chk_eq24(rgb_out, 24'h40_40_40, "V08 y=467 above the box row is image");
         at(11'd8, 10'd468);
         chk_eq24(rgb_out, 24'h40_E0_D0, "V08 y=468 starts the box row");
         at(11'd8, 10'd475);
         chk_eq24(rgb_out, 24'h40_E0_D0, "V08 y=475 ends the box row");
         at(11'd8, 10'd476);
-        chk_eq24(rgb_out, 24'h10_18_20, "V08 y=476 below the box row is background");
+        chk_eq24(rgb_out, 24'h40_40_40, "V08 y=476 below the box row is image");
 
         // ---------------- V09 图层优先级 ----------------
         // 线 > 方块 > 电平条 > 底条 > 图像。

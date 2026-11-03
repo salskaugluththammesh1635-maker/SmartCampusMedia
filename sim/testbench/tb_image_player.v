@@ -43,6 +43,22 @@ module tb_image_player #(parameter FULL=0, parameter SEAMLESS=1, parameter SCALE
     integer    oob_hits = 0;
     reg sticky_arb_fault=0, sticky_refresh_fault=0;
 
+    // ---------------------------------------------------------------------
+    // 【t9】外部写口（视频通路）的驱动与观测
+    // ---------------------------------------------------------------------
+    // 为什么需要这几个 reg：CASE 15 要验证 ext_ever_framed（"科普期间翻过
+    // 至少一帧"的电平）—— 它是顶层 narr_on 的唯一门控，改造前用的是单拍脉冲
+    // ext_frame_ready，导致字幕永远不显示。要验证它，必须先能把 ext_wr_mode
+    // 拉高、并注入一次 ext_wr_done（模拟 rle_decoder 把整帧写完）。
+    // 其余三根（valid/addr/data/dm）仍接常量 0：本用例只走
+    // 「done 单拍 → commit_pending → vblank 翻帧 → 粘滞位置位」这条链，
+    // 不需要真的往 SDRAM 写字；接 0 让写通道完全不参与，避免与既有的
+    // 194 条像素基线发生任何交互（那些基线全部在 ext_wr_mode=0 下跑）。
+    reg  ext_wr_mode_r  = 1'b0;
+    reg  ext_wr_done_r  = 1'b0;
+    reg  ext_no_fade_r  = 1'b0;
+    wire ext_ever_framed;
+
     // A real sticky memory fault clears only when the storage path is reset.
     // Keep each injected source high through C_FAIL and release it on that reset.
     always @(negedge dut.store_rst_sdr) begin
@@ -80,9 +96,17 @@ module tb_image_player #(parameter FULL=0, parameter SEAMLESS=1, parameter SCALE
         .reader_status(reader_status), .sdram_clk(), .sdram_cke(), .sdram_cs_n(),
         .sdram_ras_n(), .sdram_cas_n(), .sdram_we_n(), .sdram_ba(), .sdram_addr(), .sdram_dm(), .sdram_dq(),
         // v2 新增（T4）：本测试只跑 BMP 装载路，外部写口全部按缺省「关闭」接。
-        .ext_wr_mode(1'b0), .ext_wr_valid(1'b0), .ext_wr_addr(21'd0), .ext_wr_data(32'd0),
-        .ext_wr_dm(4'd0), .ext_wr_done(1'b0), .ext_no_fade(1'b0),
-        .ext_wr_ack(), .ext_wr_busy(), .ext_frame_ready(), .ext_frame_sel(), .ext_loader_want_blk(),
+        // 【t9】原先是 4 个常量 1'b0/21'd0/32'd0/4'd0 直接接到端口上。为了让
+        //   CASE 15 能验证 ext_ever_framed（字幕门控的电平语义），把
+        //   ext_wr_mode / ext_wr_done / ext_no_fade 改成可由用例驱动的 reg；
+        //   其余三根（valid/addr/data/dm）仍接常量 0 —— 本用例只走
+        //   「ext_wr_done 单拍 → commit_pending → vblank 翻帧」这条链，
+        //   不需要真的往 SDRAM 写字，接 0 反而让写通道完全不参与，
+        //   避免与 194 条既有像素基线发生任何交互。
+        .ext_wr_mode(ext_wr_mode_r), .ext_wr_valid(1'b0), .ext_wr_addr(21'd0), .ext_wr_data(32'd0),
+        .ext_wr_dm(4'd0), .ext_wr_done(ext_wr_done_r), .ext_no_fade(ext_no_fade_r),
+        .ext_wr_ack(), .ext_wr_busy(), .ext_frame_ready(), .ext_ever_framed(ext_ever_framed),
+        .ext_frame_sel(), .ext_loader_want_blk(),
         // v2 新增（T4）：日常档逻辑分辨率 = 容器尺寸，垂直行映射为恒等旁路。
         .src_w(W[15:0]), .src_h(H[15:0]),
         // v2 新增（t20 / Key9）：窗口矩形与列坐标透传端口。
@@ -97,10 +121,20 @@ module tb_image_player #(parameter FULL=0, parameter SEAMLESS=1, parameter SCALE
     // letterbox 屏蔽是顶层 image_window_mask 的职责，image_player 本身不写、
     // 也不清零窗口外区域（真机上那块是上一帧残影，仿真里是未初始化 X）。
     // 因此这里把屏蔽器一并例化，按「送显前的最终像素」判定，才是真实链路。
+    //
+    // 【v2 t7：这里必须复刻**出货接线**，不能再接旧线】
+    //   出货顶层（rtl/top/dmz_eg4s20_hdmi_top.v）给 mask 喂两组几何：
+    //     win_*     = Key9 档位窗口（ratio_map；满屏档 = W×H@(0,0)）
+    //     img_win_* = image_player 的 out_*（本次装载图像实际写入的矩形）
+    //   t7-B 之后 mask 的 win_* 早已不再接 out_*。旧版本这里接
+    //   `.win_w(out_w)...`，验证的是一个**不存在于出货配置**的电路 —— 这正是
+    //   「仿真全绿、上板却有黑边残影」的直接原因。本 tb 全部断言建立在满屏
+    //   恒等档上，故 win_* 按满屏档接常量、img_win_* 接 out_*，与出货逐拍一致。
     wire shown_valid;
     image_window_mask u_mask (
         .de(de), .active_x(x), .active_y(y),
-        .win_w(out_w), .win_h(out_h), .win_off_x(out_off_x), .win_off_y(out_off_y),
+        .win_w(W[15:0]), .win_h(H[15:0]), .win_off_x(16'd0), .win_off_y(16'd0),
+        .img_w(out_w), .img_h(out_h), .img_off_x(out_off_x), .img_off_y(out_off_y),
         .pixel_valid(pixel_valid), .pixel_valid_out(shown_valid));
     task chk;
         input cond; input [8*120-1:0] msg;
@@ -151,6 +185,39 @@ module tb_image_player #(parameter FULL=0, parameter SEAMLESS=1, parameter SCALE
             // 全黑保持帧数：按消隐边沿计数，转场期间应至少出现一次整帧全黑。
             if (SEAMLESS && FADE_ON && dut.vblank_rise && (dut.fade_alpha === 8'h00))
                 fade_black_frames = fade_black_frames + 1;
+        end
+    end
+    // 【v2 t7】翻帧后 display_* 必须等于**本次提交应得的那组几何**。
+    //   背景：image_player 有三处翻帧点 —— 首帧提交、消隐期硬切换（视频/科普模式）、
+    //   淡出到全黑后翻帧（日常模式）。三处都必须把 display_* 与 front_sel **同拍**提交，
+    //   否则顶层 image_window_mask 拿到的写入侧几何是上一张图的，换尺寸就会错配。
+    //   fade 分支曾经漏掉这四行赋值：6 张素材全 640×480、首帧就是 640/480/0/0，
+    //   之后任何一帧算出的窗口都一样，缺陷被素材完全掩盖；一旦换成非 640×480 素材，
+    //   表现就是"只有日常模式错位、切到科普就正常"。
+    //   采样点选在 front_sel 翻转的下一拍：此时 display_* 已随翻转更新，而新一次装载
+    //   还没走到 img_scaler 的 src_start（要等 BMP 头 54 字节），scale_* 仍是本帧的值。
+    //   ★ 期望值不是无条件取 scale_*：ext（科普视频）写口一帧写满 WIDTH×HEIGHT，
+    //     几何恒为满帧@(0,0)，与 BMP 的 letterbox 无关（见 image_player 的 disp_*_sel）。
+    //     这里由 TB 独立算一遍，不复用 DUT 的选择器，否则断言会跟着实现一起错。
+    integer disp_geom_ok  = 0;
+    integer disp_geom_bad = 0;
+    wire [15:0] exp_disp_w = ext_wr_mode_r ? W[15:0] : dut.scale_w;
+    wire [15:0] exp_disp_h = ext_wr_mode_r ? H[15:0] : dut.scale_h;
+    wire [15:0] exp_disp_x = ext_wr_mode_r ? 16'd0   : dut.scale_off_x;
+    wire [15:0] exp_disp_y = ext_wr_mode_r ? 16'd0   : dut.scale_off_y;
+    always @(posedge clk) begin
+        if (rst_n && SEAMLESS && (dut.front_sel !== front_sel_d) && image_ready_d) begin
+            if ((dut.display_w     === exp_disp_w) &&
+                (dut.display_h     === exp_disp_h) &&
+                (dut.display_off_x === exp_disp_x) &&
+                (dut.display_off_y === exp_disp_y))
+                disp_geom_ok = disp_geom_ok + 1;
+            else begin
+                disp_geom_bad = disp_geom_bad + 1;
+                $display("FAIL: display geometry stale after flip t=%0t disp=%0d,%0d,%0d,%0d expect=%0d,%0d,%0d,%0d ext=%b",
+                    $time, dut.display_w, dut.display_h, dut.display_off_x, dut.display_off_y,
+                    exp_disp_w, exp_disp_h, exp_disp_x, exp_disp_y, ext_wr_mode_r);
+            end
         end
     end
     task request_image;
@@ -645,6 +712,13 @@ module tb_image_player #(parameter FULL=0, parameter SEAMLESS=1, parameter SCALE
                 chk(fade_black_frames >= 1,"at least one whole frame is displayed at full black");
                 chk(dut.fade_alpha == 8'hFF,"transition completes back to full brightness");
                 chk(dut.fade_state == 2'd0,"transition state machine returns to idle");
+                // 【v2 t7】fade 路径翻帧后 display_* 必须是新一帧的几何。
+                //   disp_geom_ok 在每次真实翻帧的下一拍累加，>=1 说明这条路径真的被走到过；
+                //   disp_geom_bad 必须为 0，否则 mask 拿到的写入侧窗口是旧图的。
+                chk(disp_geom_bad == 0,
+                    "display geometry follows the new frame on the fade flip path");
+                chk(disp_geom_ok >= 1,
+                    "the fade flip path actually ran (display geometry sampled at least once)");
             end else begin
                 chk(front_changes == changes_before,"single-buffer mode never flips the front selection");
             end
@@ -762,6 +836,144 @@ module tb_image_player #(parameter FULL=0, parameter SEAMLESS=1, parameter SCALE
             chk(image_ready && !failed,"progress-fed watchdog lets a slow card finish the frame");
             check_frame;
             rd_gap = RD_GAP;
+        end
+        // ------------------------------------------------------------------
+        // CASE 15（t9 新增）：ext_ever_framed —— "视频模式下真的翻过一帧"的电平
+        // ------------------------------------------------------------------
+        // 【为什么必须钉这几条】
+        //   顶层 narr_on = m_science && rle_ever_framed && narr_frame_ok 是科普模式
+        //   中文字幕的唯一门控。改造前这里接的是 ext_frame_ready（每帧 1 个 40 ns
+        //   的单拍脉冲，且落在 vblank、de=0 的区间），等价于字幕永远不显示 ——
+        //   问题③"只剩一条蓝条"的第二半就是这么来的。
+        //   只验证"能置 1"不够，必须同时验证：
+        //     ① 没有 done 就不能置 1（否则等于把门控拆了，进科普第一帧就开字幕，
+        //        画面还是上一张图 → 字幕在跑、画面对不上）；
+        //     ② 置 1 之后是**持续电平**而不是单拍（这正是本次修复的全部内容，
+        //        如果它只亮一拍，和改之前没有任何区别，且用例会漏检）；
+        //     ③ ext_wr_mode 落下必须清 0（否则退回日常再进科普，第一帧上屏前
+        //        字幕就先亮了）。
+        //   本 tb 的 ext_wr_valid/addr/data/dm 恒接 0，所以这里不写真正的像素，
+        //   只走「done 单拍 → commit_pending → vblank 翻帧 → 粘滞」这条控制链。
+        $display("CASE 15: ext_ever_framed is a level that needs a real flip and clears on exit");
+        begin : ever_framed
+            integer g;
+            integer held;
+            // 前置：此时 image_ready 已为 1（前面 CASE 都装载过整帧），
+            // 所以提交走的是"已有旧帧"分支，需要等 vblank_rise 才翻帧首。
+            chk(image_ready && !failed, "CASE15 precondition: a BMP frame is on screen");
+            chk(ext_ever_framed === 1'b0, "CASE15 ext_ever_framed is 0 before video mode starts");
+            @(negedge clk); ext_wr_mode_r = 1'b1; ext_no_fade_r = 1'b1;
+            repeat(200) @(negedge clk);
+            // ① 进了视频模式但一帧都没提交过 → 必须仍是 0
+            chk(ext_ever_framed === 1'b0,
+                "CASE15 no ext_wr_done yet -> ext_ever_framed stays 0");
+            chk(dut.commit_pending === 1'b0,
+                "CASE15 no ext_wr_done yet -> no commit pending either");
+            // ② 注入一次 ext_wr_done（单拍，模拟 rle_decoder 写完最后一字）
+            @(negedge clk); ext_wr_done_r = 1'b1;
+            @(negedge clk); ext_wr_done_r = 1'b0;
+            // 等它真的翻帧。判据用粘滞位本身（而不是 front_sel 的变化）：
+            // SEAMLESS=0 的 case 里 back_sel 恒为 0，front_sel 不会翻转，
+            // 但"提交完成"这件事照样发生（!FADE_ON || ext_no_fade 分支，
+            // 且 ext_no_fade=1 被本用例拉高）—— 用 front_sel 判会让
+            // image_player_single 这个 case 假失败。
+            g = 0;
+            while ((ext_ever_framed !== 1'b1) && g < 20000) begin
+                @(negedge clk); g = g + 1;
+            end
+            chk(g < 20000, "CASE15 the injected frame really reaches a commit decision");
+            // ③ 翻帧之后粘滞位必须为 1，并且**持续**保持（这是本次修复的核心）
+            chk(ext_ever_framed === 1'b1,
+                "CASE15 after a real flip ext_ever_framed goes 1");
+            held = 0;
+            for (g = 0; g < 600; g = g + 1) begin
+                @(negedge clk);
+                if (ext_ever_framed === 1'b1) held = held + 1;
+            end
+            // 单拍脉冲在这里最多只能命中 1 次，600 次采样必须全部为 1。
+            chk(held == 600,
+                "CASE15 ext_ever_framed is a level, not a one-cycle pulse (600/600 high)");
+            // ④ 退出视频模式（ext_wr_mode 落下）必须立刻清 0
+            @(negedge clk); ext_wr_mode_r = 1'b0; ext_no_fade_r = 1'b0;
+            repeat(4) @(negedge clk);
+            chk(ext_ever_framed === 1'b0,
+                "CASE15 leaving video mode clears ext_ever_framed");
+            repeat(200) @(negedge clk);
+            chk(ext_ever_framed === 1'b0,
+                "CASE15 ext_ever_framed stays cleared while out of video mode");
+        end
+        // 【v2 t7】CASE 16：日常模式（fade 路径）+ 非满尺寸源图。
+        //   这是整个 tb 里唯一能让 display_* 与 scale_* 分离的用例。前面所有 CASE
+        //   的源图尺寸都等于容器尺寸，首帧算出 W/H/0/0 之后任何一帧都一样，于是
+        //   「fade 分支漏更新 display_*」这个缺陷在仿真里完全不可见 —— 与上板
+        //   「6 张素材全 640×480」是同构的掩盖。变异测试实证：把 fade 分支那四行
+        //   注释掉，只跑 CASE1~15 仍然 checks 全过、errors=0。
+        //   这里装半幅图（走 img_scaler 的 1:1 居中分支，out_* 与 off_* 都不等于
+        //   满屏），强制走 fade 翻帧，再断言 display_* 已跟随新帧。
+        $display("CASE 16: half-size source in daily (fade) mode keeps display geometry in step");
+        begin : fade_geom
+            integer gb, gk;
+            gb = disp_geom_bad; gk = disp_geom_ok;
+            build_bmp(W/2, H/2, 54, 0); build_image(W/2, H/2, 54, 0, 4, 0);
+            request_image(1); terminal;
+            chk(image_ready && !failed,"CASE16 half-size image commits in daily (fade) mode");
+            chk(dut.display_w === (W/2),"CASE16 display_w follows the half-size frame");
+            chk(dut.display_h === (H/2),"CASE16 display_h follows the half-size frame");
+            chk(dut.display_off_x === (W/4),"CASE16 display_off_x centers the half-size frame");
+            chk(dut.display_off_y === (H/4),"CASE16 display_off_y centers the half-size frame");
+            chk(disp_geom_bad == gb,"CASE16 no stale display geometry on the fade flip path");
+            if (SEAMLESS) chk(disp_geom_ok > gk,"CASE16 the fade flip path really ran for this reload");
+            // 还原满幅图，保证收尾统计与任何后续用例看到的是干净状态。
+            build_bmp(W,H,54,0); build_image(W,H,54,0,4,0);
+            request_image(1); terminal;
+            chk(image_ready && !failed,"CASE16 restore the full-size frame");
+        end
+        // 【v2 t7】CASE 17：ext（科普视频）模式下，窗口几何必须取满帧。
+        //   失效链：ext_wr_mode=1 冻结 BMP 通路（bmp_load_req = load_req && !ext_wr_mode），
+        //   img_scaler 的 scale_* 从此不再更新，停在最后一张 BMP 的 letterbox 矩形上；
+        //   而 rle_decoder 走 ext_wr_valid/addr/data/dm 直写帧缓存，一帧写满 WIDTH×HEIGHT。
+        //   若 display_* 直接取 scale_*，视频就会被裁进那张 BMP 的窗口。
+        //   本 tb 前面的 CASE 源图全等于容器尺寸，scale_* 恰好 = 满屏，缺陷看不出来 ——
+        //   与上板「6 张素材全 640×480」是同构掩盖。这里先用半幅图把 scale_* 打成
+        //   320×240@(160,120)，再进 ext 模式，断言 out_* 必须跳回满帧。
+        $display("CASE 17: ext (video) mode forces the full-frame window geometry");
+        begin : ext_geom
+            integer gb, gk;
+            // 先把 scale_* 打成"上一张 BMP 的 letterbox 矩形"（半幅图）。
+            build_bmp(W/2, H/2, 54, 0); build_image(W/2, H/2, 54, 0, 4, 0);
+            request_image(1); terminal;
+            chk(image_ready && !failed,"CASE17 precondition: half-size BMP committed");
+            chk(dut.scale_w === (W/2),"CASE17 precondition: scale_w is the half-size window");
+            // 进 ext（科普）模式：写口切给 rle_decoder，BMP 通路冻结。
+            gb = disp_geom_bad; gk = disp_geom_ok;
+            @(negedge clk); ext_wr_mode_r = 1'b1; ext_no_fade_r = 1'b1;
+            repeat(8) @(negedge clk);
+            // 注入一次"视频帧写完"的 done，走消隐期硬切换翻帧。
+            @(negedge clk); ext_wr_done_r = 1'b1;
+            @(negedge clk); ext_wr_done_r = 1'b0;
+            begin : wait_flip
+                integer g;
+                g = 0;
+                while ((dut.front_sel === 1'b0 || !ext_ever_framed) && g < 20000) begin
+                    @(negedge clk); g = g + 1;
+                end
+            end
+            chk(out_w === W[15:0],"CASE17 ext mode publishes the full frame width");
+            chk(out_h === H[15:0],"CASE17 ext mode publishes the full frame height");
+            chk(out_off_x === 16'd0,"CASE17 ext mode publishes zero x offset");
+            chk(out_off_y === 16'd0,"CASE17 ext mode publishes zero y offset");
+            chk(dut.display_w === W[15:0],"CASE17 display_w is the full frame, not the stale BMP window");
+            chk(dut.display_h === H[15:0],"CASE17 display_h is the full frame, not the stale BMP window");
+            chk(dut.display_off_x === 16'd0,"CASE17 display_off_x is zero in ext mode");
+            chk(dut.display_off_y === 16'd0,"CASE17 display_off_y is zero in ext mode");
+            if (SEAMLESS) chk(disp_geom_ok > gk,"CASE17 the ext flip path really ran");
+            chk(disp_geom_bad == gb,"CASE17 no stale display geometry on the ext flip path");
+            // 退出 ext 模式，还原满幅 BMP，保证收尾状态干净。
+            @(negedge clk); ext_wr_mode_r = 1'b0; ext_no_fade_r = 1'b0;
+            repeat(4) @(negedge clk);
+            build_bmp(W,H,54,0); build_image(W,H,54,0,4,0);
+            request_image(1); terminal;
+            chk(image_ready && !failed,"CASE17 restore the full-size frame");
         end
         $display("SEAMLESS: mode=%0d front_flips=%0d overlap_cycles=%0d starve_cycles=%0d",
             SEAMLESS, front_changes, seam_checked, seam_gaps);

@@ -627,16 +627,39 @@ module tb_wav_stream_player;
     reg [87:0] NAME_NARR;
 
     // ------------------------------------------------------------------
-    //  第 i 个样本的期望值（16 位有符号，再符号扩展到 24 位）
+    //  第 i 个样本的期望值（16 位有符号，**左对齐**到 24 位）
     //    build_image 写的是 (i*100) & 16'hFFFF；i >= 328 时该值超过
-    //    32767，落进负数区间，DUT 会按 $signed 扩展成 24 位负数。
+    //    32767，落进负数区间，DUT 会按 $signed 解释成负数。
     //    判据必须复现同一语义，否则会误判成 RTL 错。
+    //
+    //  ★ t6 起本函数的语义变了：RTL 从「符号扩展到 24 位」改成
+    //    「**左移 8 位对齐**到 24 位满幅」（见 rtl/audio/wav_stream_player.v
+    //    采样节拍块里的长注释）。原因是 16bit 满幅只占 24bit 满幅的 1/256
+    //    （-48.16 dB），符号扩展会让 HDMI 侧的音量低到听不见。
+    //
+    //    所以这里必须跟着改成 `{{8{raw[15]}}, raw[15:0], 8'h00}`：
+    //    高 8 位是符号、中间 16 位是原样本、低 8 位补 0 —— 即 raw * 256。
+    //    这不是"把 tb 改成迎合 RTL"，而是规格变了、期望值必须同步；
+    //    若不同步，C03/C04/L01e/D02h 会集体 fail，反倒掩盖真问题。
     // ------------------------------------------------------------------
     function signed [23:0] exp_samp(input integer i);
         reg [15:0] raw;
         begin
             raw = (i * 100) & 16'hFFFF;
-            exp_samp = {{8{raw[15]}}, raw};
+            exp_samp = {{8{raw[15]}}, raw[15:0], 8'h00};
+        end
+    endfunction
+
+    // ------------------------------------------------------------------
+    //  NARR 素材的期望样本值：build_image 写的是 (i*7+3) & 16'hFFFF，
+    //  同样要左对齐到 24 位。单独写一个函数是因为 D02 要拿它比首两个样本，
+    //  而 exp_samp 硬编码了 BGM 的 i*100 公式。
+    // ------------------------------------------------------------------
+    function signed [23:0] exp_samp_narr(input integer i);
+        reg [15:0] raw;
+        begin
+            raw = ((i * 7) + 3) & 16'hFFFF;
+            exp_samp_narr = {{8{raw[15]}}, raw[15:0], 8'h00};
         end
     endfunction
 
@@ -690,15 +713,17 @@ module tb_wav_stream_player;
         chk(s_cnt >= 500,        "C02g collected at least 500 samples");
 
         // ---- C03 —— 样本值顺序正确（前 200 个逐个比对，i*100）----
+        //   ★ t6：期望值统一走 exp_samp()，不要再写裸整数 k*100 ——
+        //     左对齐后 24 位域里的数值是 k*100*256，裸整数必然失配。
         mism = 0;
         for (k = 0; k < 200; k = k + 1) begin
-            if (s_val[k] !== (k * 100)) begin
+            if (s_val[k] !== exp_samp(k)) begin
                 if (mism < 5)
-                    $display("     sample[%0d] = %0d, expect %0d", k, s_val[k], k * 100);
+                    $display("     sample[%0d] = %0d, expect %0d", k, s_val[k], exp_samp(k));
                 mism = mism + 1;
             end
         end
-        chk(mism == 0, "C03 first 200 samples identical to i*100 (order + value)");
+        chk(mism == 0, "C03 first 200 samples identical to i*100 left-aligned (order + value)");
 
         // ---- C04 —— 尾部样本也正确（证明跨簇拼接无错位）----
         //   ★ 期望值必须按 **16 位有符号** 算，不能直接比 k*100：
@@ -852,7 +877,7 @@ module tb_wav_stream_player;
             end
         end
         chk(mism == 0, "L01d second pass samples identical to first pass (wrapped to PCM start, not file start)");
-        chk(s_val[500] == 24'sd0 && s_val[501] === 24'sd100,
+        chk(s_val[500] === exp_samp(0) && s_val[501] === exp_samp(1),
             "L01e wraparound starts exactly at PCM sample 0 (no WAV header leaked into FIFO)");
 
         // ---- L02 —— loop=0：跑完必须停（保持既有行为，不能改坏）----
@@ -914,8 +939,8 @@ module tb_wav_stream_player;
         chk(u_dut.wav_size == NARR_BYTES[31:0],
             "D02f locator returned NARR size 244 (not the stale 1044)");
         chk(s_cnt >= 90 && s_cnt <= 120,    "D02g second source played ~100 samples, not BGM's 500");
-        chk(s_val[0] == 24'sd3 && s_val[1] === 24'sd10,
-            "D02h first samples come from NARR PCM (i*7+3), not BGM (i*100)");
+        chk(s_val[0] === exp_samp_narr(0) && s_val[1] === exp_samp_narr(1),
+            "D02h first samples come from NARR PCM (i*7+3 left-aligned), not BGM (i*100)");
         g_add_narr = 0;
 
         // ====================================================================

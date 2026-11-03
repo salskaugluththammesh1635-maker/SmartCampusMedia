@@ -107,6 +107,27 @@ module tb_rle_decoder;
 	// would leave the "blk_start is only raised while granted" property untested.
 	reg         sd_grant = 1'b1;
 
+	// ---- foreign block-completion injection (t9, ownership gate) -----------
+	// blk_done / blk_err are a BROADCAST in the real top level: five consumers
+	// OR their requests into sd_arb_start and the card answers with a single
+	// done/err. Before t9 the decoder's R_NEXT_BLK consumed that broadcast
+	// unconditionally, so a WAV block finishing while this decoder was parked
+	// waiting for the grant looked like "my block is here": blk_index advanced,
+	// the next block was fetched with the wrong index, and the frame decoded to
+	// garbage until err_code 4 parked the FSM in R_ERR forever.
+	// These two registers let this bench raise such a foreign pulse on demand.
+	// They are ORed into the DUT ports only - the card model keeps its own
+	// blk_done, and the grant model must keep following the real one.
+	reg         inject_done = 1'b0;
+	reg         inject_err  = 1'b0;
+	// While card_mute is high the card model ignores blk_start, so a case can
+	// drive req_sent=1 and then decide for itself when (and whether) the block
+	// completes. Without it the model would answer every request and the
+	// injected pulse could not be distinguished from the real one.
+	reg         card_mute   = 1'b0;
+	wire        blk_done_bus = blk_done | inject_done;
+	wire        blk_err_bus  = blk_err  | inject_err;
+
 	// ---- SD card model -----------------------------------------------------
 	// The vector files hold one byte per line in hex. A "sector" is 512 of them.
 	// The card only answers when asked; it raises blk_busy for a realistic number
@@ -165,6 +186,9 @@ module tb_rle_decoder;
 	integer i;
 	integer gi = 0;
 	integer grant_latency = -1;
+	// t9 ownership-gate cases: blk_index sampled just before an injected pulse.
+	integer own_idx_snapshot = 0;
+	reg [2:0] own_state_snapshot = 3'd0;
 
 	// -----------------------------------------------------------------------
 	// DUT
@@ -183,8 +207,10 @@ module tb_rle_decoder;
 		.blk_start(blk_start),
 		.blk_addr(blk_addr),
 		.blk_busy(blk_busy),
-		.blk_done(blk_done),
-		.blk_err(blk_err),
+		// t9: the DUT sees the shared broadcast - real card pulses OR the
+		// deliberately foreign ones injected by the ownership-gate cases.
+		.blk_done(blk_done_bus),
+		.blk_err(blk_err_bus),
 		.data_byte(data_byte),
 		.data_valid(data_valid),
 		.sd_grant(sd_grant),
@@ -313,7 +339,7 @@ module tb_rle_decoder;
 					blk_busy   <= 1'b0;
 					card_busy_r<= 1'b0;
 				end
-			end else if (blk_start && !card_busy_r) begin
+			end else if (blk_start && !card_busy_r && !card_mute) begin
 				if (card_cycle == BLK_LATENCY) begin
 					card_busy_r    <= 1'b1;
 					blk_busy       <= 1'b1;
@@ -881,6 +907,91 @@ module tb_rle_decoder;
 		// meta assertion: if the generator were tied to 1'b1 the property above
 		// would hold vacuously, so the low time itself has to be non-trivial.
 		chk(grant_low_cycles > 100, "the grant really does go low (generator is not tied to 1)");
+
+		// ---------------------------------------------------------------
+		// CASE 6: block ownership - a FOREIGN blk_done/blk_err must be ignored
+		// ---------------------------------------------------------------
+		// This is the case that would have caught the v2 on-board failure. In the
+		// real top level blk_done/blk_err are one broadcast wire shared by five
+		// consumers, so "some block finished" is NOT "my block finished". Before
+		// t9 the R_NEXT_BLK completion branch had no ownership gate at all, and
+		// every case above still passed because this bench had no second
+		// consumer that could complete a block behind the decoder's back.
+		//
+		// 6A: req_sent=0 (parked, waiting for the grant) -> a foreign pulse must
+		//     change nothing at all.
+		// 6B: req_sent=1 (request issued, waiting for the block) -> a pulse must
+		//     complete the block exactly as before, i.e. blk_index advances and
+		//     the FSM leaves R_NEXT_BLK.
+		// Without 6A the gate could be removed; without 6B the gate could be
+		// over-tightened into a deadlock. Both directions have to be pinned.
+		$display("CASE: a foreign blk_done must not advance the block index");
+		load_bytes("../testbench/vectors/sci_f0_640x480.hex", card_len);
+		grant_force_low = 1'b1;
+		card_mute       = 1'b1;
+		inject_done     = 1'b0;
+		inject_err      = 1'b0;
+		reset_dut;
+		file_size = card_len;
+		play_en   = 1'b1;
+		gi = 0;
+		while ((dut.state !== 3'd5) && (gi < 5000)) begin
+			@(negedge clk);
+			gi = gi + 1;
+		end
+		chk(dut.state === 3'd5, "6A: parked in R_NEXT_BLK before the foreign pulse");
+		chk(dut.req_sent === 1'b0, "6A: nothing was requested yet");
+		own_idx_snapshot   = dut.blk_index;
+		own_state_snapshot = dut.state;
+		// one foreign done pulse on the broadcast, while this decoder owns no block
+		@(negedge clk); inject_done = 1'b1;
+		@(negedge clk); inject_done = 1'b0;
+		repeat (3) @(negedge clk);
+		chk(dut.blk_index === own_idx_snapshot,
+			"6A: a foreign blk_done must not advance blk_index");
+		chk(dut.state === own_state_snapshot,
+			"6A: a foreign blk_done must not move the FSM");
+		chk(dut.req_sent === 1'b0, "6A: a foreign blk_done must not touch req_sent");
+		chk(err_code === 4'd0, "6A: a foreign blk_done is not an error");
+		// the same has to hold for a foreign ERROR: gating only the done branch
+		// would still let somebody else's failure clear req_sent and park this
+		// decoder in R_ERR for good.
+		@(negedge clk); inject_err = 1'b1;
+		@(negedge clk); inject_err = 1'b0;
+		repeat (3) @(negedge clk);
+		chk(dut.state === own_state_snapshot,
+			"6A: a foreign blk_err must not push the FSM into R_ERR");
+		chk(dut.blk_index === own_idx_snapshot,
+			"6A: a foreign blk_err must not advance blk_index");
+		chk(err_code === 4'd0, "6A: a foreign blk_err must not raise err_code");
+		$display("OWNERSHIP: idx=%0d state=%0d after foreign done+err",
+			dut.blk_index, dut.state);
+
+		// 6B: the same pulse, but this time the block really is ours.
+		$display("CASE: our own blk_done still completes the block");
+		grant_force_low = 1'b0;
+		gi = 0;
+		while ((dut.req_sent !== 1'b1) && (gi < 5000)) begin
+			@(negedge clk);
+			gi = gi + 1;
+		end
+		chk(dut.req_sent === 1'b1,
+			"6B: the decoder issues a request once the grant arrives");
+		chk(dut.state === 3'd5, "6B: it is still in R_NEXT_BLK waiting for the block");
+		own_idx_snapshot = dut.blk_index;
+		@(negedge clk); inject_done = 1'b1;
+		@(negedge clk); inject_done = 1'b0;
+		repeat (3) @(negedge clk);
+		chk(dut.req_sent === 1'b0, "6B: our blk_done clears req_sent");
+		chk(dut.blk_index === (own_idx_snapshot + 1),
+			"6B: our blk_done advances blk_index by exactly one");
+		chk(dut.state !== 3'd5, "6B: our blk_done moves the FSM out of R_NEXT_BLK");
+		$display("OWNERSHIP: own done -> idx=%0d state=%0d", dut.blk_index, dut.state);
+		card_mute   = 1'b0;
+		inject_done = 1'b0;
+		inject_err  = 1'b0;
+		play_en     = 1'b0;
+		reset_dut;
 
 		// ---------------------------------------------------------------
 		// summary
