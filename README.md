@@ -44,38 +44,41 @@
 
 ---
 
-## 二、当前状态（截至 2026-11-01）
+## 二、当前状态（截至 2026-11-04）
 
-**一句话**：正式顶层已在板上出图；**KEY1 切图的写 FIFO 扇区中途溢出问题已修复并生成新的可烧录候选位流**。真实核双图像素回归通过，2026-11-01 的综合、布局布线和 bitgen 通过，最终时序 setup +1.935 ns、hold +0.003 ns、0 违例端点；仍待上板确认黑带/白线是否消失，详见[诊断记录](docs/diag_key1_fifo_backpressure_2026-10-31.md)。
+**一句话**：用户报的 6 个上板问题已全部定位到代码级根因并修复，七套回归 911,909 断言全绿，TD 四趟后出位流 `AA65465E…`（Setup WNS **+109 ps** / Hold WNS **+19 ps** / 0 违例）。**这版位流尚未上板**，所以「已修复」目前只到「仿真 + 综合布线」为止。详细交接见[六项修复交接](docs/handover_2026-11-04_six_issues_fixed.md)。
 
 ### 位流
 
-位流体积 **629,640 B**，不随 Git 发布（`ip/local/` 下的官方加密核亦需自备），新环境请按[第七节](#七开发与复现)重建。
+位流体积 **648,264 B**，不随 Git 发布（`ip/local/` 下的官方加密核亦需自备），新环境请按[第七节](#七开发与复现)重建。
 
-| 版本 | 本地位流 | 生成时间 | 时序 | 状态 |
-|---|---|---|---|---|
-| **最新烧录候选：FIFO 背压修复版** | [smartcampus_media_fifo_backpressure_20261101.bit](reports/diag_key1_fifo_backpressure_20261101/smartcampus_media_fifo_backpressure_20261101.bit) | 2026-11-01 | setup **+1.935 ns** / hold **+0.003 ns**，0 违例端点 | 综合、布线、bitgen 完成；待上板连续 KEY1 验证 |
-| 上一版：切图加固版（已证伪） | [smartcampus_media_key1fix_20261031.bit](reports/key1_fix_20261031/) | 2026-10-31 20:23 | setup **+1.935 ns** / hold **+0.003 ns** | 写组首间隔保护上板完全无缓解，详见[切图交接记录 §4.5](docs/handover_2026-10-31_key1_switch_glitch.md) |
-| 上一版：`d810` 加固版 | [smartcampus_media_d810fix_20261031.bit](reports/d810_fix_20261031/) | 2026-10-31 17:24 | setup **+1.935 ns** / hold **+0.011 ns** | 综合布线 bitgen 全过、0 违例端点；单元 18 模块 + 前端 20 用例 + 图像 5 档回归全过；**2026-10-31 晚上板：`d810` 消失、图片正常出图**；遗留 KEY1 切图横带/细碎线条/约 2 s，见[切图交接记录](docs/handover_2026-10-31_key1_switch_glitch.md) |
-| 看门狗与启动交接加固版 | [smartcampus_media_watchdog_20261030.bit](reports/watchdog_20261030/) | 2026-10-30 22:50 | setup **+1.935 ns** / hold **+0.003 ns** | 综合、布线、bitgen 与七套回归全过；**2026-10-31 16:09 上板：字幕/彩条正常，图片未出图，数码管 `d810`（见[交接记录](docs/handover_2026-10-31_d810_after_watchdog.md)）** |
-| 烧录候选：图片防护版 | [smartcampus_media_20261030.bit](reports/flashable_20261030/) | 2026-10-30 15:39 | setup **+1.935 ns** / hold **+0.011 ns** | [验证报告](reports/flashable_20261030/verification.md) 完整；尚未单独上板复验 |
-| 已烧录：显示选择与科普页版 | [hdmi_noise_sci_fix.bit](reports/noise_sci_fix_20261029/) | 2026-10-29 20:51 | setup +1.935 / hold +0.003 | 已上板；切图白条问题当时仍复现，后于 10-30 定位根因 |
-| HDMI 低音量试听版 | [hdmi_audio_quiet.bit](reports/hdmi_audio_quiet_20261029/) | 2026-10-29 17:17 | setup +1.935 / hold +0.003 | 已烧录；音量是否合适**待试听确认** |
-| 显示修复版 | [hdmi_display_fix.bit](reports/display_fix_20261029/) | 2026-10-29 08:14 | setup +1.935 / hold +0.035 | 已上板，**用户确认深色区白条问题解决** |
+> ⚠️ 该器件的位流输出尺寸是固定的，**不同版本的 `.bit` 文件大小完全相同**。判别版本只能看 MD5，不能看大小或时间戳。
 
-> ⚠️ **最新 FIFO 背压修复版尚未上板。** 已知的 `key1fix` 位流只验证了写组首间隔假设无效；新的真实核回归和本次综合布线已通过，下一步是烧录最新候选并连续按 KEY1 做板端确认。缩放、转场、参数面板、看门狗的部分子功能仍只有**仿真 + 综合布线**证据。
+| 版本 | 本地位流 | 生成时间 | MD5 前 8 位 | 时序 | 状态 |
+|---|---|---|---|---|---|
+| **最新烧录候选：六项修复版** | [hdmi_td_r2_hfn_AA65465E.bit](reports/t10_r2_verify_build_20261103_PASS/hdmi_td_r2_hfn_AA65465E.bit) | 2026-11-03 23:35 | `AA65465E` | setup **+0.109 ns** / hold **+0.019 ns**，0 违例端点 | 综合、布线、bitgen 完成，七套回归 911,909 断言全过；**待上板**，按[上板检查表](reports/board_check_20261103.md)逐条验证 |
+| t7-B 签收版（**修复前，别烧**） | [hdmi_td_v3_seed7.bit](reports/t7b_bit_v3_seed7_PASS/) | 2026-11-03 00:31 | `59A6BACC` | setup +0.113 ns / hold +0.011 ns | 六项修复全都不在里面 |
+| FIFO 背压修复版 | [smartcampus_media_fifo_backpressure_20261101.bit](reports/diag_key1_fifo_backpressure_20261101/smartcampus_media_fifo_backpressure_20261101.bit) | 2026-11-01 | — | setup +1.935 ns / hold +0.003 ns | 已上板，KEY1 切图问题见[诊断记录](docs/diag_key1_fifo_backpressure_2026-10-31.md) |
+| 切图加固版（已证伪） | [smartcampus_media_key1fix_20261031.bit](reports/key1_fix_20261031/) | 2026-10-31 20:23 | — | setup +1.935 ns / hold +0.003 ns | 写组首间隔保护上板完全无缓解，详见[切图交接记录 §4.5](docs/handover_2026-10-31_key1_switch_glitch.md) |
+| `d810` 加固版 | [smartcampus_media_d810fix_20261031.bit](reports/d810_fix_20261031/) | 2026-10-31 17:24 | — | setup +1.935 ns / hold +0.011 ns | **2026-10-31 晚上板：`d810` 消失、图片正常出图** |
+| 看门狗与启动交接加固版 | [smartcampus_media_watchdog_20261030.bit](reports/watchdog_20261030/) | 2026-10-30 22:50 | — | setup +1.935 ns / hold +0.003 ns | **2026-10-31 16:09 上板：字幕/彩条正常，图片未出图，数码管 `d810`** |
+| 图片防护版 | [smartcampus_media_20261030.bit](reports/flashable_20261030/) | 2026-10-30 15:39 | — | setup +1.935 ns / hold +0.011 ns | [验证报告](reports/flashable_20261030/verification.md) 完整；未单独上板复验 |
+| 显示选择与科普页版 | [hdmi_noise_sci_fix.bit](reports/noise_sci_fix_20261029/) | 2026-10-29 20:51 | — | setup +1.935 / hold +0.003 | 已上板；切图白条问题当时仍复现，后于 10-30 定位根因 |
+| HDMI 低音量试听版 | [hdmi_audio_quiet.bit](reports/hdmi_audio_quiet_20261029/) | 2026-10-29 17:17 | — | setup +1.935 / hold +0.003 | 已烧录 |
+| 显示修复版 | [hdmi_display_fix.bit](reports/display_fix_20261029/) | 2026-10-29 08:14 | — | setup +1.935 / hold +0.035 | 已上板，**用户确认深色区白条问题解决** |
 
 ### 硬指标
 
 | 指标 | 数值 | 来源 |
 |---|---|---|
-| 时序（40 MHz，最终） | setup WNS **+1.935 ns**、hold WNS **+0.003 ns**、TNS 0、**0 个违例端点**（10,512 端点 / 578,116 路径） | `reports/watchdog_20261030/timing.txt` |
-| 资源 | LUT **15,088 / 19,600（76.98%）**、BRAM9K 17/64、DSP 19/29、PLL 2/4、GCLK 4/16、IO 41/188 | `reports/watchdog_20261030/area.txt` |
-| STA 覆盖率 | 99.89%（未覆盖部分为外部 IO 延迟与 PLL 反馈） | `reports/watchdog_20261030/coverage.txt` |
-| 自动回归 | **七套全过、848,063 条断言、约 25 分钟**（2026-10-31 实跑） | [TEST_COVERAGE.md](TEST_COVERAGE.md) |
-| lint | 103 个源文件，E0/E1/E2 阻断项 **全 0** | `scripts/lint_verilog.py` |
+| 时序（像素时钟 25 MHz） | setup WNS **+0.109 ns**、hold WNS **+0.019 ns**、TNS 0、**0 个违例端点**；STA 覆盖率 99.85%（Routed / Both Slow and Fast / CRPR Enabled） | `reports/t10_r2_verify_build_20261103_PASS/run_r2_hfn/timing.txt` |
+| 资源 | LUT **16,868 / 19,600（86.06%）**、REG 8,709（44.43%）、BRAM9K **37/64**、DSP 24/29、PLL 2/4、GCLK 4/16、IO 43/188、slices 8,778（89.57%） | `reports/t10_r2_verify_build_20261103_PASS/run_r2_hfn/area.txt` |
+| 自动回归 | **七套全过、911,909 条断言、752 秒**（2026-11-03 实跑） | [TEST_COVERAGE.md](TEST_COVERAGE.md) |
+| lint | `rtl` 67 文件、`rtl project/src project/hdmi` 133 文件，E0/E1/E2 阻断项 **全 0** | `scripts/lint_verilog.py` |
 | 视频 | 640×480 @ 59.52 Hz，像素时钟 25 MHz | `video_timing_gen` |
-| 音频 | 48 kHz / 24 bit PCM；HDMI 侧右移 6 位（**1/64 ≈ −36.12 dB**） | `audio_tone_gen` / 顶层 `HDMI_AUDIO_ATTEN_SHIFT` |
+| 音频 | 48 kHz / 24 bit PCM；HDMI 侧右移 **2** 位（1/4 ≈ −12.04 dB），3.5mm 支路不衰减 | `audio_tone_gen` / 顶层 `HDMI_AUDIO_ATTEN_SHIFT` |
+
+> **余量仍是零余量级**（0.109 ns / 40 ns = 0.27%），且 `#lut` 已到 86.06%、`#slices` 89.57%。下一次任何加逻辑的改动都可能重演布线失败 —— 这次能过是因为 `hfn_opt_effort high` 恰好把 hold fix 从高扇出复位网上挪开了，**不是设计有了余量**。详见 [TD 布线失败分析](reports/td_route_fail_analysis_20261103.md)。
 
 ### 最近三天解决了什么
 
@@ -367,23 +370,24 @@ powershell -ExecutionPolicy Bypass -File sim\scripts\run_display_content.ps1
 
 **功能缺口**
 
-- 只支持无压缩 24 bit BMP；PNG/JPEG、视频解码均未实现。
-- OSD 字库是 8×16 ASCII **41 字形**（数字、大写字母、少量符号），**不含汉字与小写字母**；中文 OSD 需要 16×16 点阵（约 40 LUT/字）。
-- 缩放只缩不放；目标宽度须能被 8 整除。
-- 参数（亮度/反色/倍率）只在会话内保持，掉电恢复默认（SD 卡只有读通道，未实现 SPI Flash 写入）。
-- 音频是状态音调，不是音频文件播放；电平柱与波形有，**没有 FFT**。
-- SD 热插拔无自动恢复（可用 KEY10 重扫替代）；拨码开关与 ES8388 同球互斥，未实施。
+- 图片只支持无压缩 24 bit BMP（`img_scaler` 只缩不放，目标宽度须能被 8 整除）；PNG/JPEG 未实现。科普模式的 `.RLE` 视频流是自定义格式（magic `SCMR`、RGB565 + 8 bit 游程），不是通用视频解码。
+- 字体分两套：`osd_font8x16` 是 8×16 ASCII **41 字形**（数字、大写字母、少量符号）；中文用 `cjk16_font` 的 16×16 点阵（随 `cjk16_bitmap.hex` 加载，仅覆盖字幕文案用到的字）。
+- **色深只有 RGB565（16 bit）**，色阶 R32/G64/B32。渐变与暗部容易出现色带，这是通路位宽决定的，不是渲染 bug。若需要更细腻的观感只能换 RGB888 通路（帧缓存从 600 KiB/帧涨到 900 KiB/帧，双缓冲 1.8 MiB）。
+- 音频支持 48 kHz / 16 bit / 单声道 PCM WAV 文件播放（BGM / 旁白 / 警报），但**没有 FFT**；电平柱与波形是时域包络。
+- 参数（亮度/音量/分辨率/屏占比）只在会话内保持，掉电恢复默认（SD 卡只有读通道，未实现 SPI Flash 写入）。
+- SD 热插拔无自动恢复（可用 KEY11 重扫替代，需 `P2_EN=1`）；拨码开关与 ES8388 同球互斥，未实施。
 
 **优先级最高的待办**
 
 | 优先级 | 事项 |
 |---|---|
-| P0 | 烧录 `watchdog_20261030` 位流，逐项复验启动出图、KEY0/KEY1 连按、轮播、科普页、应急页、音频、异常 BMP 恢复 |
+| **P0** | **烧 `AA65465E…`（六项修复版）并按[上板检查表](reports/board_check_20261103.md)逐条回填** —— 六项修复目前只有仿真与综合证据 |
 | P0 | 核定键盘行序与 SD MOSI/MISO 两处引脚来源冲突 |
 | P0 | 用示波器实测 SDRAM_CLK 与 DQ 的相对关系，确认 TD 的 ±5.000 ns 硬核模型是否可信 |
-| P1 | 长时压测 ≥ 2 小时 + 反复复位 + 断电重启；SDRAM 读路径持续压力 |
+| P1 | 长时压测 ≥ 2 小时 + 反复复位 + 断电重启；SDRAM 读路径持续压力（**也是唯一能暴露 0.27% 时序余量的手段**） |
 | P1 | 异常注入（坏 BMP、超大簇链、拔卡瞬间）与 KEY7~KEY14 逐键板上确认 |
-| P2 | 汉字字幕（16×16 点阵）、参数持久化 |
+| P2 | 补 `audio_src_mux` → `wav_stream_player` 的串联 testbench（目前全仓没有，靠顶层接线复核） |
+| P2 | 修 `rle_decoder.v:497` 的 `gap_tick` 撞车（约 6% 帧抖动）；`ST_FAIL` 静音死锁；参数持久化 |
 | P2 | 上板复验 B2 转场与 C2 缩放的真实观感 |
 
 ---

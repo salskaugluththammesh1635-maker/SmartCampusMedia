@@ -22,7 +22,7 @@
 powershell -ExecutionPolicy Bypass -File sim/scripts/run_full_regression.ps1
 ```
 
-只跑本次新增的 18 个模块级 TB：
+只跑模块级 TB 套件（29 个）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File sim/scripts/run_unit_coverage_regression.ps1
@@ -33,7 +33,11 @@ powershell -ExecutionPolicy Bypass -File sim/scripts/run_unit_coverage_regressio
 
 ---
 
-## 二、本轮新增的 18 个 testbench
+## 二、2026-10-31 那轮新增的 18 个 testbench
+
+> **口径说明**：本节是**历史记录**，记的是 2026-10-31 那轮补的 18 个模块级 TB
+> （合计 853 条断言）。`unit` 套件此后继续扩充到 **29 个 TB / 1,240 条断言**
+> （见 §6.2、§6.3 的实测数字）。本节表格保留原样不追改，因为它记的是"那轮做了什么"。
 
 这 18 个 TB 填补的是"RTL 里有模块、`sim/testbench/` 里没有对应用例"的缺口。
 每个 TB 只针对一个模块，全部位于 `sim/testbench/`，共约 6000 行。
@@ -155,7 +159,7 @@ y 轴同理下溢成 960（10 位）。实测 y 轴第 15/16 步、x 轴第 19/2
 
 `rtl/` 下共 54 个 module 定义（含同一文件内的多个 module）。下表是实测的"模块 → 例化它的 testbench"。
 
-### 4.1 本轮新增 TB 覆盖的模块（18 个）
+### 4.1 2026-10-31 那轮新增 TB 覆盖的模块（18 个）
 
 见第二节表格，不再重复。
 
@@ -274,7 +278,7 @@ ALL CHECKS PASSED: <module>        （或 CHECKS FAILED: <module>）
 
 | 套件 | 脚本 | 覆盖 |
 |---|---|---|
-| `unit` | `run_unit_coverage_regression.ps1` | **18 个模块级 TB**（本轮新增，853 断言） |
+| `unit` | `run_unit_coverage_regression.ps1` | **29 个模块级 TB**（1,240 断言） |
 | `frontend` | `run_frontend_regression.ps1` | SD 协议 / FAT32 / BMP / 播控 / 键位 / OSD |
 | `storage` | `run_storage_regression.ps1` | SDRAM / 帧缓存仲裁 / 64ms 保持 |
 | `audio` | `run_audio_regression.ps1` | HDMI 音频通路 / PWM 音频 |
@@ -286,25 +290,34 @@ ALL CHECKS PASSED: <module>        （或 CHECKS FAILED: <module>）
 结果汇总到 `$ReportRoot\summary.json`。默认报告目录在 `$env:TEMP` 下
 （`scm_full_regression`），用 `-ReportRoot` 指定别处。
 
-### 6.3 最近一次全量实跑结果（2026-10-31）
+### 6.3 最近一次全量实跑结果（2026-11-03）
 
 ```
-unit       PASSED   exit=0        677s  asserts=853     18 module unit testbenches
-frontend   PASSED   exit=0        195s  asserts=829     SD/FAT32/BMP/player/OSD
-storage    PASSED   exit=0          5s  asserts=220642  SDRAM / framebuf / retention
-audio      PASSED   exit=0        311s  asserts=24      audio tone / PWM / waveform path
-startup    PASSED   exit=0          2s  asserts=12      startup ownership handoff
-display    PASSED   exit=0        172s  asserts=614405  display content verification
-image      PASSED   exit=0        142s  asserts=11298   image path regression
+unit       PASSED   exit=0        337s  asserts=1240    29 module unit testbenches
+frontend   PASSED   exit=0        106s  asserts=56457   SD/FAT32/BMP/player/OSD
+storage    PASSED   exit=0          6s  asserts=226360  SDRAM / framebuf / retention
+audio      PASSED   exit=0        158s  asserts=24      audio tone / PWM / waveform path
+startup    PASSED   exit=0          2s  asserts=19      startup ownership handoff
+display    PASSED   exit=0         85s  asserts=614406  display content verification
+image      PASSED   exit=0         57s  asserts=13403   image path regression
 --------------------------------------------------------
-suites: passed=7 failed=0 total=7  asserts=848063  elapsed=1505s
-FULL REGRESSION PASSED
+suites: passed=7 failed=0 total=7  asserts=911909  elapsed=752s
 ```
 
-`unit` 套件的耗时几乎全在 `sdram_frame_diag_top` 上：17 个 TB 时整套只要 72 秒，
-加上它（385k 拍、约 10 分钟）后变成约 680 秒。其余 17 个 TB 都压在千拍量级。
-`audio` 套件的 24 条是真实值——它只有 `tb_hdmi_audio_path`（19 条）与
-`tb_pwm_audio_out`（5 条）两个用例，不是统计漏算。
+**上一版可核查基线**：847,962 断言 / 857 秒（`summary.json`，2026-10-31 10:37:38）。
+本次比它多 **+63,947 条**，没有任何一套的 ran/passed 下降。
+
+> ⚠️ **这是两段证据拼接，不是一次跑完**：第 1 轮 22:10–22:22 跑七套（当时 storage 4/4、
+> image 3/3），第 2 轮 23:21–23:23 补跑 storage 5/5、image 4/4 —— 因为把
+> `tb_rle_decoder`（72 checks）与 `tb_image_window_mask`（52 checks）加进了套件，
+> 这两个原本**不在任何套件里**。11 个 `.v` + 9 个 tb 的 MD5 与第 1 轮逐一比对
+> `diff=0/20 IDENTICAL`，所以复用合法。详见
+> [verify_build_20261103.md §10.1.1](reports/verify_build_20261103.md)。
+
+**本轮新增的变异验证**（证明断言不是写空的）：三个变异全部 KILLED ——
+fade 分支四行注释掉 → 6 错、`disp_*_sel` 恒取 `scale_*` → 10 错、`in_image` 恒 1 → 14 错。
+其中 m1 第一轮**没被杀死**（11376 全绿），因为当时所有用例源图尺寸都等于容器尺寸，
+**与上板「6 张素材全 640×480」是同构掩盖**；CASE16 就是为杀它补的。
 
 ### 6.4 三档验证口径
 
@@ -387,7 +400,7 @@ FULL REGRESSION PASSED
 # 全套（7 个套件）
 powershell -ExecutionPolicy Bypass -File sim/scripts/run_full_regression.ps1
 
-# 只跑 18 个模块级 TB
+# 只跑 29 个模块级 TB
 powershell -ExecutionPolicy Bypass -File sim/scripts/run_unit_coverage_regression.ps1
 
 # 指定 ModelSim 与官方库路径
