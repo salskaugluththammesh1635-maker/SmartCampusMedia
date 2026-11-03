@@ -72,6 +72,14 @@ module image_player #(
 	output wire ext_wr_ack,              // 单拍：本次写已被 arbiter 接受
 	output wire ext_wr_busy,             // 高：尚未回 ack，外部不得推进地址
 	output wire ext_frame_ready,         // 单拍：本帧已提交（vblank 翻页完成）
+	// v2（t9 修复 P0-B）：电平——本 ext_wr_mode 会话内是否已经真正翻过至少一帧。
+	// 为什么必须新增这个电平：ext_frame_ready 是每帧 1 个像素时钟的单拍脉冲，
+	// 把它当"有帧了"的持续条件用（顶层 v2 早期就是这么接 narr_en 的）占用率约
+	// 1/416800，且置位点在 vblank 期间（de=0、overlay 输出被门掉的区间），
+	// 字幕层会一像素都不出现。在顶层做边沿检测没用：拿到的还是单拍。
+	// 语义：ext_wr_mode=1 期间有过 ext_frame_ready → 1；ext_wr_mode 落下（退出
+	// 视频/科普）→ 0。必须先翻帧再开字幕，否则会出现"字幕在跑、画面还是上一张图"。
+	output wire ext_ever_framed,
 	output wire [1:0] ext_frame_sel,     // 当前前台缓冲（0=A 1=B）
 	input wire ext_no_fade,              // 1=禁用淡入淡出（视频模式必须为 1）
 	output wire ext_loader_want_blk,     // 高：u_loader 正在请求 SD 块
@@ -104,6 +112,15 @@ module image_player #(
 	localparam FRAME_WORDS = WIDTH*HEIGHT/2;
 	localparam FRAME_PIXELS = WIDTH*HEIGHT;
 	localparam [20:0] FRAME_SPAN = FRAME_WORDS; // 一帧占用的 32 位字数，双缓冲的缓冲跨度
+	// 【v2 t7】满帧几何常量。ext（视频）写口一帧写满 WIDTH×HEIGHT@(0,0)，
+	//   但 img_scaler 的 scale_* 只由 BMP 头（bmp_parser 的 hdr_ok）驱动，
+	//   科普模式下 bmp_load_req = load_req && !ext_wr_mode 把 BMP 通路冻结，
+	//   scale_* 会一直停在最后一张 BMP 算出的 letterbox 矩形上。
+	//   若 display_* 直接取 scale_*，视频帧就会被裁进那张 BMP 的窗口里。
+	//   这里用 [15:0] 的 localparam 而不是 WIDTH[15:0]：parameter 无位宽声明，
+	//   部分选择在部分工具里非法；转成显式位宽后既安全又保持"改分辨率不漏改"。
+	localparam [15:0] FRAME_W16 = WIDTH;
+	localparam [15:0] FRAME_H16 = HEIGHT;
 	// 转场：整帧恒定的亮度系数，只在垂直消隐推进，翻帧首发生在全黑那一拍。
 	localparam [1:0] F_IDLE = 0, F_OUT = 1, F_IN = 2;
 	localparam FADE_ON = FADE_EN && (FADE_FRAMES > 1);
@@ -176,12 +193,24 @@ module image_player #(
 	wire [15:0] bmp_img_w, bmp_img_h, scale565, scale_x, scale_y;
 	wire [15:0] scale_w, scale_h, scale_off_x, scale_off_y;
 	wire [31:0] scale_pixels;
+	// 【v2 t7】display_* 的赋值源：ext（视频）模式下写口一帧写满 WIDTH×HEIGHT@(0,0)，
+	//   与 BMP 的 letterbox 无关，必须取满帧几何；只有 BMP 路径才取 scale_*。
+	//   不加这一层时，科普模式会沿用最后一张 BMP 的窗口：6 张素材全 640×480 时
+	//   恰好相同、看不出来，换成 RES400（400×300@(120,90)）就会把视频裁成中间
+	//   一块 400×300、四周 120/90 像素黑框 —— 正是用户报的"一堆黑边"。
+	//   只影响 ext_wr_mode=1，日常模式（ext_wr_mode=0）逐拍不变。
+	//   声明必须放在 scale_* 之后：Verilog 的 wire 引用要求先声明（部分工具不预扫描）。
+	wire [15:0] disp_w_sel = ext_wr_mode ? FRAME_W16 : scale_w;
+	wire [15:0] disp_h_sel = ext_wr_mode ? FRAME_H16 : scale_h;
+	wire [15:0] disp_x_sel = ext_wr_mode ? 16'd0     : scale_off_x;
+	wire [15:0] disp_y_sel = ext_wr_mode ? 16'd0     : scale_off_y;
 	// v2 external write port: all of these are declared up here because the
 	// commit_pending block below references them long before the write-port mux
 	// section; late declarations would only compile on tools that pre-scan.
 	reg ext_wr_done_d;
 	wire ext_wr_done_sync;
 	reg ext_frame_ready_r;
+	reg ext_ever_framed_r;   // t9：本 ext_wr_mode 会话内已翻过帧的粘滞位（见端口注释）
 	wire [15:0] reader_src_y;
 	wire reader_row_hold;
 	wire reader_map_ident;
@@ -253,9 +282,15 @@ module image_player #(
 			fade_state <= F_IDLE;
 			fade_alpha <= 8'hFF;
 			ext_frame_ready_r <= 1'b0;
+			ext_ever_framed_r <= 1'b0;   // t9：复位后"本次会话还没翻过帧"
 		end else begin
 			vblank_d <= ext_vblank;
 			ext_frame_ready_r <= 1'b0; // 单拍脉冲，下面三处翻帧点置位
+			// 【t9 P0-B】粘滞位清零点：ext_wr_mode 落下（退出视频/科普）就清，这样
+			// 下次再进科普时必须重新翻过一帧才允许开字幕。不清的话，从科普退回
+			// 日常再回科普，粘滞位还留着 1，第一帧真正上屏之前字幕就会先亮 ——
+			// 正是 ext_frame_ready 原本要防的「字幕在跑、画面还是上一张图」。
+			if (!ext_wr_mode) ext_ever_framed_r <= 1'b0;
 			if (bmp_load_req) begin
 				pending <= 1'b1;
 				pending_index <= image_index;
@@ -274,26 +309,29 @@ module image_player #(
 				if (!image_ready) begin
 					// 首帧没有可淡出的上一帧，直接提交并全亮。
 					front_sel <= back_sel;
-					display_w <= scale_w;
-					display_h <= scale_h;
-					display_off_x <= scale_off_x;
-					display_off_y <= scale_off_y;
+					display_w <= disp_w_sel;
+					display_h <= disp_h_sel;
+					display_off_x <= disp_x_sel;
+					display_off_y <= disp_y_sel;
 					image_ready <= 1'b1;
 					commit_pending <= 1'b0;
 					fade_alpha <= 8'hFF;
 					fade_state <= F_IDLE;
 					ext_frame_ready_r <= 1'b1;
+					// t9：首帧（此前无有效帧）已真正上屏，置"有过帧"粘滞位。
+					ext_ever_framed_r <= 1'b1;
 				end else if (!FADE_ON || ext_no_fade) begin
 					// 视频模式（ext_no_fade=1）走消隐期硬切换，不淡出到黑：
 					// 否则每一帧都要额外花 FADE_FRAMES 帧淡出+淡入，帧率被压成 1/8。
 					if (vblank_rise) begin
 						front_sel <= back_sel;
-						display_w <= scale_w;
-						display_h <= scale_h;
-						display_off_x <= scale_off_x;
-						display_off_y <= scale_off_y;
+						display_w <= disp_w_sel;
+						display_h <= disp_h_sel;
+						display_off_x <= disp_x_sel;
+						display_off_y <= disp_y_sel;
 						commit_pending <= 1'b0;
 						ext_frame_ready_r <= 1'b1;
+						ext_ever_framed_r <= 1'b1;   // t9：消隐期硬切换翻帧完成
 					end
 				end else begin
 					if (vblank_rise) begin
@@ -303,9 +341,24 @@ module image_player #(
 					// 上一拍已把系数压到 0，这一次消隐就是全黑换帧点。
 					if ((fade_alpha == 8'h00) && vblank_rise) begin
 						front_sel <= back_sel;
+						// 【v2 t7】窗口几何必须与 front_sel 同拍提交，三处翻帧点
+						//   缺一不可。此处原缺这一组赋值：日常模式（FADE_ON=1 且
+						//   ext_no_fade=0）走的就是这条 fade 路径，display_* 会永远
+						//   停在首帧的值上。6 张素材全 640×480 时首帧就是
+						//   640/480/0/0，与之后任何一帧算出的几何相同，缺陷被素材
+						//   掩盖；一旦换成非 640×480 的图（RES400/512/576 等），
+						//   out_* 与前台帧内容就会错配 —— 表现为「只错日常模式、
+						//   切到科普模式就好了」，是最难查的一类形态。
+						//   scale_* 在翻帧这一拍仍然稳定：新装载要等 commit_pending
+						//   清零（本拍）之后才可能发起，中间不会覆盖它。
+						display_w <= disp_w_sel;
+						display_h <= disp_h_sel;
+						display_off_x <= disp_x_sel;
+						display_off_y <= disp_y_sel;
 						commit_pending <= 1'b0;
 						fade_state <= F_IN;
 						ext_frame_ready_r <= 1'b1;
+						ext_ever_framed_r <= 1'b1;   // t9：淡出到黑后翻帧完成
 					end else begin
 						fade_state <= F_OUT;
 					end
@@ -574,6 +627,9 @@ module image_player #(
 	// 已经上屏、可以开始写下一帧的后台缓冲。三个翻帧点（首帧/无淡入淡出/
 	// 全黑点）都在主状态机里置位。
 	assign ext_frame_ready = ext_frame_ready_r;
+	// t9：把"本会话已翻过帧"的粘滞位引到端口。顶层用它做字幕层的使能电平，
+	// 代替原来把单拍脉冲 ext_frame_ready 当电平用的错误接法。
+	assign ext_ever_framed = ext_ever_framed_r;
 	// 显示侧帧首跨到 sdr 域后采样，rd_restart 那拍必须稳定。
 	assign rd_base = front_sync_sdr[1] ? FRAME_SPAN : 21'd0;
 	framebuf_arbiter #(.WR_ADDR_FROM_FIFO(1), .FRAME_WORDS(FRAME_WORDS),

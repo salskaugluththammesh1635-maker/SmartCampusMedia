@@ -493,16 +493,27 @@ module dmz_eg4s20_hdmi_top (
     //    被同一条件门控，否则会把别人的扇区当自己的数据解码（静默错帧）。
     //    sd_grant_rle 就是上面仲裁段那个组合式 sd_owner_rle，中间不能插寄存器。
     //
-    //  【已知风险（不在本层修，登记备查）】
-    //    blk_done / blk_err 是 sd_spi_ctrl 对所有消费者的**广播**。rle_decoder 在
-    //    R_NEXT_BLK 等 grant 时若别人的块恰好完成，`if (blk_done)` 没有 req_sent
-    //    门控（rle_decoder.v:681），会误认为自己的块到了。tb_rle_decoder 把
-    //    sd_grant 恒接 1，所以没暴露。真正多路并发时理论上存在这个窗口。
-    //    缓解：rle_play_en 只在科普模式为 1，而科普模式下 WAV 仍在播 BGM，
-    //    所以 wav 抢到总线的机会是存在的 —— 这条要靠 t9 上板跑视频 + BGM 复核。
+    //  【blk_done / blk_err 广播问题的处理（2026-11-03 t9 已修，原风险登记作废）】
+    //    sd_spi_ctrl 只回一个 blk_done/blk_err，而本层把五路消费者的块请求 OR 成
+    //    sd_arb_start 喂给它 —— 这条广播线如果被消费者当成"我的块好了"就是错的。
+    //    原登记的两点现在都已处理：
+    //      1) rle_decoder 的 R_NEXT_BLK 已加 req_sent 归属门控（rle_decoder.v:689/696
+    //         `if (req_sent && blk_done)` / `else if (req_sent && blk_err)`），别人的
+    //         块完成/失败不再能推进本模块的 blk_index、也不会把它打进 R_ERR。
+    //         其余四路（wav_stream_player 的 my_blk_active、img_loader 与
+    //         gallery_probe 的状态机门控）原本就有归属判据。
+    //      2) 原注释写的缓解理由是**错的，已删除**：「科普模式下 WAV 仍在播 BGM」不成立。
+    //         audio_src_mux.v:70 是 `MODE_SCIENCE: sel_c = SRC_NARR` —— 科普模式播的是
+    //         NARR.WAV（旁白），比 BGM 短得多、循环更频繁，抢总线只会更凶。正是这条
+    //         错误的事实前提，让这个 P0 被当成"理论窗口"低估了整整一个版本：
+    //         实测第一帧（255 块）内几乎必然撞车，随后的 R_ERR 又永不自愈，于是
+    //         科普模式从第一帧起就再也出不了画面。
     // ------------------------------------------------------------------
     wire [15:0] rle_frame_idx;
     wire        rle_frame_ready;
+    // 【t9】"科普期间翻过至少一帧"的电平（image_player 内的 ext_ever_framed）。
+    //   与上面 rle_frame_ready（单拍）的区别见 u_player 例化处的长注释。
+    wire        rle_ever_framed;
     wire        rle_ext_wr_valid, rle_ext_wr_done, rle_ext_wr_ack, rle_ext_wr_busy;
     wire [20:0] rle_ext_wr_addr;
     wire [31:0] rle_ext_wr_data;
@@ -527,6 +538,52 @@ module dmz_eg4s20_hdmi_top (
         .ext_wr_ack(rle_ext_wr_ack), .ext_wr_busy(rle_ext_wr_busy),
         .err_code(rle_err_code), .underrun(rle_underrun),
         .want_blk(rle_want_blk));
+
+    // ------------------------------------------------------------------
+    //  科普视频通路的可观测性（t9 P1-a：让失败在数码管上可见）
+    // ------------------------------------------------------------------
+    //  【为什么必须补这一层】
+    //   改造前 `rle_err_code` / `rle_underrun` 在本层**只声明、只接输出、零消费者**，
+    //   err_prompt 也没有任何 rle_* 端口。后果是：解码器一旦进 R_ERR（永不自愈），
+    //   屏幕上什么都不放，而数码管照常显示 playback_state=4(PLAY)、蜂鸣器不响、
+    //   LED 不亮 —— 从用户视角看就是"设备正常但科普模式什么都没有"。
+    //   这正是问题③"只剩一条蓝条"能被误判成"视频素材没拷进去"而拖了一个版本的
+    //   根本原因：**失败完全没有出口**。这条可观测性比修 bug 本身更重要 ——
+    //   下次再出问题，用户能自己从数码管读出来。
+    //
+    //  【为什么用组合而不是再打一拍粘滞寄存器】
+    //   rle_decoder 的 err_code **本身就是粘滞的**：①只有 R_ERR 态写它（magic/
+    //   geometry/run 表/读卡失败），R_ERR 里没有回到 R_IDLE 的路径；
+    //   ②`!play_en` 时 err_code 清 0（rle_decoder.v:492）。也就是说它天然满足
+    //   "科普期间一旦出错就一直保持、退出科普自动清除、日常/应急模式绝不误报"。
+    //   再加一级寄存器只会多一个"两级不同步"的失效模式，没有收益。
+    //
+    //  【为什么把"卡上没有 SCI.RLE / SCI.RLE 不合法"也算进来】
+    //   这两件事在 gallery_probe 里是**正常返回值**（rle_found=0 且 rle_fail=0
+    //   表示用户没放视频，属设计允许的退化：静态科普页 + 滚动字幕），本层
+    //   **不改那个语义**（gallery_probe 依然不报 fail、依然不中断扫描）。
+    //   但"设计允许"不等于"用户不需要知道"：本次现场最可能的成因正是
+    //   assets/v2/sdcard/RES640/ 里根本没有 SCI.RLE（只有 6 张 BMP），
+    //   而 RES640 与 BURN640 是互斥装配方式。若继续静默，用户会一直以为
+    //   是设备坏了。所以这里**只在科普模式下**把它显示为一个提示性错误码，
+    //   日常/应急模式完全不受影响（条件里带 m_science）。
+    //
+    //  【三档来源 → 一个错误码】
+    //   ① rle_err_code != 0        → 直接透传 1..4（解码/读卡真故障）
+    //   ② gallery_rle_fail         → 5（找到了 SCI.RLE 但簇链不连续/尺寸超限）
+    //   ③ 两者都没有且 rle_found=0 → 6（卡上没有视频文件，属素材装配问题）
+    wire rle_scan_settled = (gallery_done || gallery_fail);
+    wire rle_meta_fault   = m_science && rle_scan_settled && gallery_rle_fail;
+    wire rle_absent       = m_science && rle_scan_settled
+                            && !gallery_rle_found && !gallery_rle_fail;
+    wire rle_bad          = (rle_err_code != 4'd0) || rle_meta_fault || rle_absent;
+    wire [3:0] rle_err_view = (rle_err_code != 4'd0) ? rle_err_code
+                            : (rle_meta_fault ? 4'd5 : 4'd6);
+    //  note: rle_underrun 刻意**不**接进 err_prompt。它的语义是"这一帧没按时
+    //        显示"（JITTER_FRAMES=3 帧 ≈ 600 ms 没起新帧），属性能抖动而非故障；
+    //        接进来会让数码管整组切换成错误显示、把播放状态盖掉，用户会以为
+    //        设备一直在报错。抖动问题（gap_tick 单拍撞 WAV 事务）见诊断报告
+    //        P2，留待后续单独处理。
 
     wire [15:0] image565;
     wire image_pixel_valid, image_ready, image_loading, image_failed;
@@ -582,6 +639,24 @@ module dmz_eg4s20_hdmi_top (
     wire [15:0] k9_win_h     = {6'd0, rm_win_h};
     wire [15:0] k9_win_off_x = {5'd0, rm_win_off_x};
     wire [15:0] k9_win_off_y = {6'd0, rm_win_off_y};
+    // ------------------------------------------------------------------
+    //  写入侧几何：img_scaler 本次真正写进帧缓存的矩形（v2 t7 补回）
+    // ------------------------------------------------------------------
+    //  【为什么这一组必须单独存在，不能只靠上面的 k9_win_*】
+    //    k9_win_* 回答「Key9 这一档允许显示屏幕上的哪一块」——它是**显示侧**的
+    //    裁切范围，与帧缓存里到底写了什么无关。
+    //    img_win_* 回答「帧缓存里哪一块真被写过像素」——它是**写入侧**的几何，
+    //    由 img_scaler 按源图尺寸算出、经 image_player 的 display_* 与 front_sel
+    //    同拍提交。源图小于 640×480 时它比屏幕小，四周是上一张图的旧数据。
+    //    两者取交集才是「这一拍该放行还是该补黑」，见 image_window_mask 文件头。
+    //  【为什么接 out_* 而不是 scale_*】
+    //    scale_* 是**正在装载的后台帧**的几何，装载期会被清零；直接用它会把仍在
+    //    显示的旧前台帧整幅判成 letterbox。display_*（= out_*）只在翻 front_sel
+    //    的同一拍更新，与前台帧内容严格同步，正是这里需要的语义。
+    //  【为什么四根都从 image_player 取，而不是从 img_scaler 直连】
+    //    img_scaler 是 image_player 内部例化的，顶层拿不到它的端口；而且只有
+    //    image_player 知道「哪一帧现在是前台」。
+    wire [15:0] img_win_w, img_win_h, img_win_off_x, img_win_off_y;
     wire sdram_clk_w, sdram_cke_w, sdram_cs_n_w, sdram_ras_n_w, sdram_cas_n_w, sdram_we_n_w;
     wire [1:0] sdram_ba_w; wire [10:0] sdram_addr_w;
     wire [3:0] sdram_dm_w; wire [31:0] sdram_dq_w;
@@ -633,12 +708,16 @@ module dmz_eg4s20_hdmi_top (
         .load_req(player_load_req), .image_index(loader_index), .blk_start(player_start), .blk_addr(player_addr),
         .blk_done(sd_blk_done), .blk_err(sd_blk_err), .data_byte(sd_dbyte), .data_valid(sd_dvalid),
         .de(de), .scan_y(vblank ? 10'd480 : active_y), .rgb565(image565), .pixel_valid(image_pixel_valid),
-        // 【t7-B】out_* 四个端口在本层已无消费者（Key9 改由 ratio_map 驱动
-        //   image_window_mask 与 pix_reader），按 T1_TO_T7_WIRING.md §1.3 的裁定
-        //   保留端口、本层空连接 —— 不删端口（那是 t4/storage 的域）。
-        //   这四处空连接已登记进 scripts/check_port_names.py 的 EXPECTED_EMPTY，
-        //   理由必须写在这里：将来若有人把它们接回去，白名单与代码会同时提醒。
-        .out_w(), .out_h(), .out_off_x(), .out_off_y(),
+        // 【v2 t7】out_* 四根接回真信号：它们描述「本次装载的图像实际写进了
+        //   帧缓存的哪一块」（image_player.v:452-455 直接透传 display_*，而
+        //   display_* 与 front_sel 同拍提交，因此与当前前台帧的内容严格同步）。
+        //   t7-B 把它们空连接、mask 只吃 ratio_map 的 Key9 档位窗口，等于只保留了
+        //   「允许显示哪一块」，丢掉了「帧缓存里哪一块真被写过」——源图小于
+        //   640×480 时 Key9 满屏档放行全屏，于是四周露出上一张图的残影。
+        //   本版把这两组几何同时喂给 u_image_mask，由它取交集（见该模块文件头）。
+        //   ★ 不是回退 t7-B：win_* 仍然接 k9_win_*，Key9 五档照常生效。
+        .out_w(img_win_w), .out_h(img_win_h),
+        .out_off_x(img_win_off_x), .out_off_y(img_win_off_y),
         // 【t7-B】Key9 五根：窗口矩形 + 本拍列坐标。
         //   ★ 这四根与上面 u_image_mask 的 win_* 是**同一组 wire**（k9_win_*）。
         //   ★ active_x 必须接 video_timing_gen 的 active_x（与 de 同拍的真列号），
@@ -668,6 +747,18 @@ module dmz_eg4s20_hdmi_top (
         .ext_wr_done(rle_ext_wr_done), .ext_no_fade(rle_play_en),
         .ext_wr_ack(rle_ext_wr_ack), .ext_wr_busy(rle_ext_wr_busy),
         .ext_frame_ready(rle_frame_ready),
+        // 【t9 新增】ext_ever_framed = "科普期间真的翻过至少一帧"的**电平**。
+        //   为什么要这条新端口，而不是在顶层对 rle_frame_ready 做边沿检测：
+        //   ext_frame_ready 本身就是 1 个 40 ns 的单拍脉冲（image_player.v 里
+        //   `ext_frame_ready_r` 每拍默认清 0、只在三处翻帧点置位）。在顶层做
+        //   posedge 检测，拿到的仍然只是一个脉冲，只不过把"单拍"换了个地方生成，
+        //   占空比依旧是 1/416800 数量级 —— 用它当 video_overlay.narr_en 的
+        //   门控，字幕照样一个像素都不出（且该脉冲正好落在 vblank、de=0 的区间，
+        //   连"闪一下"都看不到）。要的是"有过帧"到"退出科普"之间的一条持续电平，
+        //   只能在脉冲的源头加一个寄存器粘住，所以加在 image_player 内。
+        //   清零条件也做在 image_player 内：ext_wr_mode 落下（退出科普）即清 0，
+        //   这样"退回日常再进科普"时不会残留上一次的 1。
+        .ext_ever_framed(rle_ever_framed),
         .ext_frame_sel(),                   // 2 位 output，本层无消费者，有意空连接
         .ext_loader_want_blk());
     // SiP SDRAM 在 FPGA 封装内部，不增加板级 SDRAM IO。
@@ -732,16 +823,25 @@ module dmz_eg4s20_hdmi_top (
     //  正好是当前像素的绝对坐标；vblank 期 scan_y 已被顶层钳到 480，
     //  image_pixel_valid 此时必为 0，无需额外处理。
     //  屏蔽逻辑单独成模块，便于在 tb_image_window_mask 里逐点验证边界。
+    //  【v2 t7：两组几何取交集，缺一都会漏残影】
+    //    win_*     = Key9 档位窗口（显示侧：允许显示哪一块）
+    //    img_win_* = 本次装载图像的写入矩形（写入侧：帧缓存哪一块真被写过）
+    //  只留 win_*：源图小于 640×480 时四周残影（t7-B 留下的缺口，本版补回）。
+    //  只留 img_win_*：Key9 五档失效。
+    //  ★ 不是回退 t7-B：win_* 仍接 k9_win_*，与 pix_reader 的采样范围同源。
     wire image_pixel_shown;
     image_window_mask u_image_mask (
         .de(de), .active_x(active_x), .active_y(active_y),
-        // 【t7-B】改接 Key9 的 ratio_map 档位窗口（原来接 img_scaler 的 out_*）。
+        // 【t7-B 裁定保留】Key9 的 ratio_map 档位窗口（原来接 img_scaler 的 out_*）。
         //   语义变化是**有意的**：原来是「每张 BMP 按自身尺寸居中 letterbox」，
         //   现在是「Key9 五档固定窗口」。t1 裁决把 Key9 落在 pix_reader 消费侧
         //   降采样（而不是在 img_scaler 里预缩放），所以位置门控必须跟采样范围
         //   用同一组档位值，否则两者错位（见上方 ratio_map 注释块）。
         .win_w(k9_win_w), .win_h(k9_win_h),
         .win_off_x(k9_win_off_x), .win_off_y(k9_win_off_y),
+        // 【v2 t7 补回】写入侧矩形：与上面 k9_win_* 取交集。
+        .img_w(img_win_w), .img_h(img_win_h),
+        .img_off_x(img_win_off_x), .img_off_y(img_win_off_y),
         .pixel_valid(image_pixel_valid), .pixel_valid_out(image_pixel_shown));
     wire [23:0] video_base;
     video_content_mux u_content_mux (
@@ -907,6 +1007,16 @@ module dmz_eg4s20_hdmi_top (
     wire        wav_playing, wav_busy, wav_underrun;
     wire        wav_sample_valid;
     wire signed [23:0] wav_sample_l, wav_sample_r;
+    // 【v2 修复 T2：把 WAV 的失败原因接出来】
+    //   旧版这两根是**空连接**（`.err_code()` / `.fifo_level()`），后果是：上板时
+    //   "WAV 有没有在播、为什么没播" 在整机层面完全不可观测 —— LED 只有 err_active
+    //   一根，数码管只在 err_prompt 判错时才显示字母，而 WAV 出错根本走不到 err_prompt。
+    //   本次修好 F1（8.3 短名字节序）后 WAV 正常，但用户卡上若真的缺 BGM.WAV / 卡格式
+    //   不对，仍然会"没声音且无任何提示"。所以把 err_code 接进 err_prompt 显示，
+    //   第 2 位（wav_bad）与 rle_bad 同级、但优先级更低（见 err_prompt 里的分支顺序）：
+    //   视频不出比没音乐严重，且 rle_bad 只带 m_science，两者不会互相掩盖。
+    wire [3:0]  wav_err_code;
+    wire [9:0]  wav_fifo_level;
     wav_stream_player #(
         .CLK_FREQ_HZ(25_000_000), .SAMPLE_RATE(48_000), .FIFO_AW(10),
         .LOW_WM(256), .BLK_TIMEOUT(2_097_152), .CHAIN_MAX(4096)
@@ -914,14 +1024,33 @@ module dmz_eg4s20_hdmi_top (
         .clk(clk_pixel), .rst_n(rst_n),
         .start(audio_src_start), .target_name(audio_src_name),
         .play_en(audio_en_eff), .loop(1'b1),
-        .busy(wav_busy), .playing(wav_playing), .err_code(), .underrun(wav_underrun),
-        .fifo_level(),
+        .busy(wav_busy), .playing(wav_playing), .err_code(wav_err_code),
+        .underrun(wav_underrun),
+        .fifo_level(wav_fifo_level),
         .sd_grant(sd_grant_wav), .blk_start(wav_blk_start), .blk_addr(wav_blk_addr),
         .want_blk(wav_want_blk),
         .blk_busy(sd_busy), .blk_done(sd_blk_done), .blk_err(sd_blk_err),
         .data_byte(sd_dbyte), .data_valid(sd_dvalid),
         .sample_valid(wav_sample_valid),
         .sample_l(wav_sample_l), .sample_r(wav_sample_r));
+
+    // ---- WAV 故障上报（与 rle_bad 同构，故意不接 underrun）------------------
+    //   wav_stream_player 的 err_code 是非零粘滞：只要 FAT 定位 / 读块 / fmt 校验
+    //   任一步失败就停在 W_FAIL 等上层重新 start（`wav_stream_player.v` 的 W_FAIL 注释
+    //   「停在 W_FAIL 等上层重新 start。不自动重试」），因此 err_code != 0 本身就是
+    //   "这条音轨当前是哑的"的可靠判据，不需要额外的粘滞逻辑。
+    //
+    //   underrun **刻意不接 err_prompt**（同 rle_underrun 的取舍）：SD 卡偶发慢块
+    //   造成的静音抖动是性能问题，不是"故障"，接进来会让数码管在正常播放时闪错误码，
+    //   反而掩盖真正的错误。underrun 仍保留在 wav_underrun 上，供将来接 LED 用。
+    //
+    //   助记字母只用 err_prompt.v 里已有的 5 个（CH_CARD/CH_FORMAT/CH_NONE/CH_BMP/
+    //   CH_DATA），**不新增字母** —— seg_decoder 与 osd_font8x16 只实现了那 41 个字形，
+    //   加字母要同时改两张表并重新生成字库。映射见 err_prompt.v 的 wav_bad 分支。
+    wire wav_bad = (wav_err_code != 4'd0);
+    // 诊断用：把 err_code 直接透传给 err_prompt（0..9 已在 wav_stream_player.v:53-63 定义）
+    wire [3:0] wav_err_view = wav_err_code;
+
 
     // ---- 音调发生器（WAV 不可用时的兜底，也是按键/告警音的来源）-------------
     wire               tone_valid;
@@ -960,9 +1089,39 @@ module dmz_eg4s20_hdmi_top (
     //   若将来接入真立体声，这里要再例化一个 vol_apply，而不是直接复制。
     wire signed [23:0] audio_right_unused = audio_left;
 
-    // HDMI 试听音量：有符号 PCM 再衰减 6 bit，幅度为原来的 1/64（约 -36 dB）。
-    // 这一步是**接收端音量对齐**，与 vol_apply 的 10 档用户音量是两回事，不能合并。
-    localparam HDMI_AUDIO_ATTEN_SHIFT = 6;
+    // HDMI 侧安全垫：有符号 PCM 再算术右移 2 位，幅度为原来的 1/4（约 -12.04 dB）。
+    //
+    // 【v2 修复：6 → 2，为什么必须改】
+    //   这个参数原本是 6（1/64 ≈ -36.12 dB），来历是 2026-10-29 的一次"用户要求 HDMI
+    //   音量调到很小"的试听调试（见 docs/hdmi_audio_2026-10-26.md 与
+    //   reports/hdmi_audio_quiet_20261029/）。当时只验证了"有声/无声"这一件事，没有
+    //   验证"音量是否可闻"，之后这个临时值就被当成正式参数留下来，并一路带进了 v2。
+    //
+    //   它和另外两层衰减串联叠加，量级已经离谱（以 BGM 素材 RMS -15.30 dBFS 为例）：
+    //     ① 位深未对齐（wav_stream_player.v:462-465，16 bit 当 24 bit 用）   -48.16 dB
+    //     ② vol_apply 复位档 6（23/32）                                      - 2.87 dB
+    //     ③ 本参数 >>> 6                                                     -36.12 dB
+    //                                                                      合计 -87 dB
+    //   即"音频数据完全正确、时序完全正确，但耳机/显示器上什么也听不到"。
+    //   ① 已在本次修复中改为左移 8 位对齐；② 是用户可调的音量档（保留）；③ 就是这里。
+    //
+    // 【为什么是 2，不是 0】
+    //   HDMI 发射核（ip/local/hdmi/enc/hdmi_1_4b_transmitter_core_wrapper.enc.v）是
+    //   加密 IP，无法从源码确认 I_audio_left_data[23:0] 的满幅容忍度与内部钳位行为；
+    //   docs/ 下也没有官方 APUG092 可查。改成 0（直通）等于用一个**未知的削波风险**
+    //   去换响度，一旦核内部按 -6 dBFS 或别的阈值处理，满幅 WAV 会削顶失真，
+    //   而这类失真只有上板试听才能发现。取 2 仍留 4 倍（+12 dB）余量，配合
+    //   vol_apply 档 9（32/32 直通）时峰值也只到核输入的 25%，安全。
+    //   **上板实测若发现音量偏小，再降到 1（-6.02 dB）或 0；若发现削波，往上加。**
+    //
+    // 【设计判断：HDMI_AUDIO_ATTEN_SHIFT 不该是音量权威】
+    //   这里真正的设计问题是"音量权威被拆成了两处"：vol_apply 提供 10 档可调音量
+    //   （档 0 最轻 → 档 9 直通），而本参数是编译期硬编码、用户按不到、面板也不显示。
+    //   用户调大音量到档 9 却仍然小声时，现场没有任何线索能指向这里。
+    //   因此本参数的定位只能是"接收端安全垫"，数值应当尽量小、尽量不参与听感；
+    //   音量调节一律交给 vol_apply。以后若要改，请同时更新
+    //   docs/hdmi_audio_2026-10-26.md 里"HDMI 为编译期固定低音量"那段结论。
+    localparam HDMI_AUDIO_ATTEN_SHIFT = 2;
     wire signed [23:0] hdmi_audio_left  = audio_left  >>> HDMI_AUDIO_ATTEN_SHIFT;
     wire signed [23:0] hdmi_audio_right = audio_right_unused >>> HDMI_AUDIO_ATTEN_SHIFT;
 
@@ -997,16 +1156,33 @@ module dmz_eg4s20_hdmi_top (
     //     标题没了、状态行没了、字幕也还没有。用户看到的是"进科普就黑一下"。
     //     所以 narr_en 必须与「帧号已经进入有效区间」同时成立。
     //
-    //   ★ 为什么还要 `rle_frame_ready`：
+    //   ★ 为什么还要「真的翻过一帧」这条门控（v2 缺陷修复，2026-11-03 t9）：
     //     frame_idx 由 u_rle 维护，但**第一帧提交之前**它已经是 0（复位值），
-    //     而 rle_play_en 可能在帧号还没动时就已经为 1。没有 rle_frame_ready
-    //     门控的话，上面那条 frame_idx 判据挡得住（0..3 判假），但一旦 rle 开始
-    //     推进帧号而帧还没真正上屏（前几帧在写后台缓冲），就会出现「字幕在跑、
-    //     画面还是上一张图」。rle_frame_ready 是 image_player 真正翻完一帧的
-    //     单拍脉冲（ext_frame_ready），用它把三者绑在一起。
+    //     而 rle_play_en 可能在帧号还没动时就已经为 1。没有这条门控，一旦 rle
+    //     开始推进帧号而帧还没真正上屏（前几帧在写后台缓冲），就会出现
+    //     「字幕在跑、画面还是上一张图」。
+    //
+    //     ★★ 原实现用 `rle_frame_ready`（= image_player.ext_frame_ready）当这条
+    //        门控，是**接口语义误用，等价于字幕永远不显示**：
+    //        ext_frame_ready 是每帧 1 个 40 ns 的单拍脉冲（image_player.v 里
+    //        `ext_frame_ready_r` 每拍默认清 0、只在三处翻帧点置位），占空比
+    //        ≈ 1/416800；而且它只在 vblank（scan_y>=480，de=0）时置位，
+    //        video_overlay.v 的输出级是 `rgb_out = de ? rgb_mixed : 24'd0` ——
+    //        脉冲落在消隐期，即使字幕层被点亮也**一个像素都送不出去**。
+    //        结果：科普模式的视频通路和中文字幕通路各自死在自己的缺陷上，
+    //        即使把视频修好，字幕仍然全无（这就是"只剩一条蓝条"的第二半）。
+    //     ★★ 现在改用 `rle_ever_framed`（image_player.ext_ever_framed）：
+    //        语义是「本次 ext_wr_mode 期间至少翻过一帧」，是一条**持续电平**，
+    //        从第一次真正上屏一直保持到退出科普模式为止。两条关键约束都保留：
+    //          ① `frame_idx >= 4`：刚进科普那 4 帧不开字幕，否则标题/状态行被
+    //             `!narr_en` 关掉、字幕还没开始 → 整层全黑（"进科普黑一下"）；
+    //          ② `frame_idx <= 624`：SCI.RLE 共 631 帧，后 7 帧留余量；循环
+    //             播放时 frame_idx 回绕到 0，判据自然变假，避免末帧字幕与首帧
+    //             重叠 —— 这是现有设计意图，不是缺陷。
+    //        电平化只放宽了"何时开始"的时机（从单拍改为持续），没有放宽这两条。
     // ------------------------------------------------------------------
     wire narr_frame_ok = (rle_frame_idx >= 16'd4) && (rle_frame_idx <= 16'd624);
-    wire narr_on       = m_science && rle_frame_ready && narr_frame_ok;
+    wire narr_on       = m_science && rle_ever_framed && narr_frame_ok;
     video_overlay u_overlay (
         .pixel_clk(clk_pixel), .rst_n(rst_n),
         .de(de), .active_x(active_x), .active_y(active_y), .rgb_in(video_base),
@@ -1177,6 +1353,20 @@ module dmz_eg4s20_hdmi_top (
     //      00 卡是好的但没有图片，请放入 IMG001.BMP 起的连续文件
     //      b1 图片格式不对（BMP 头解析失败）  b2 图片尺寸不是 640x480
     //      d1~d8 数据通路/存储故障（接触不良、读块失败、SDRAM、超时等）
+    //      【t9 新增 视频层】科普模式下视频通路的失败现在也会显示：
+    //      bE  SCI.RLE 魔数不符（不是 SCMR 格式 / 拷贝时被截断）
+    //      dE  视频几何不符（文件里的宽高不是 640x480）
+    //      d0  视频 run 表异常（runs=0 或像素数不足，文件损坏）
+    //      d1  视频读卡失败 / 文件提前结束（素材没拷全 / 未物理连续）
+    //      d5  SCI.RLE 找到了但簇链不连续或尺寸超限（需重新格式化拷贝）
+    //      d6  卡上根本没有 SCI.RLE（素材装配问题：拷的是 RES640 这类只含
+    //          BMP 的互斥目录；正确做法是整目录拷 BURN640）
+    //      ↑ 这一档是本次现场最可能的成因。改造前它完全静默（gallery_probe
+    //        按设计把"没找到"当正常返回），用户只能看到"科普模式没有视频"。
+    //      注：d5/d6 只在**科普模式**下出现（顶层条件里带 m_science），
+    //          日常/应急模式不受影响；d0 与 image_player 的 d4/d5/d6 数字
+    //          重复不冲突 —— 首位助记与上层分支不同，用户按"当前在哪一层
+    //          出的错"读即可（图片层失败优先显示）。
     //   普通用户只需认**第一位字母**就知道该做什么；第二位留给维修人员细分。
     //
     // 【为什么错误提示优先于播放状态显示】
@@ -1195,6 +1385,14 @@ module dmz_eg4s20_hdmi_top (
         .gallery_fail(gallery_fail), .gallery_err(gallery_err),
         .gallery_done(gallery_done), .gallery_count(gallery_count),
         .image_failed(image_failed), .image_err(image_error),
+        // 【t9 新增】视频通路的失败出口，见 u_rle 例化后的长注释。
+        //   接成组合而不是打拍：rle_decoder.err_code 本身粘滞到退出科普为止，
+        //   且 !play_en 时自动清 0 —— 正好是"科普期间一直显示、退出即消失"。
+        .rle_bad(rle_bad), .rle_err(rle_err_view),
+        // 【v2 修复 T2】WAV 失败也上报。插在 rle_bad 之后是有意的优先级选择：
+        //   视频不出比没音乐严重，而 rle_bad 只在科普模式（m_science）成立、
+        //   日常模式恒 0，所以日常的 WAV 故障不会被它挡住。
+        .wav_bad(wav_bad), .wav_err(wav_err_view),
         .err_active(err_active), .prompt_hi(prompt_hi), .prompt_lo(prompt_lo),
         .alarm_req(alarm_req));
 

@@ -82,10 +82,13 @@
 //           的像素侧逻辑同域，无需跨域同步（sd_cd 为外部异步信号，已同步）。
 //
 // -----------------------------------------------------------------------------
-// 【优先级】高 → 低：sd_fail > gallery_fail > image_failed > 无图 > 无卡
+// 【优先级】高 → 低：
+//     sd_fail > gallery_fail > image_failed > rle_bad > wav_bad > 无图 > 无卡
 //   与顶层 playback FSM 的"故障 > 应急 > ..."口径一致；
 //   注：image_error==6 是 image_player 对 sd_failed 的透传，此时 sd_fail 必为 1，
 //       会被更高优先级接住，保留细分仅为防御性兜底。
+//   排位理由：视频不出（rle_bad）比没音乐严重，音频故障（wav_bad）又比"卡上零张图"
+//   和"没插卡"更直接解释"没声音"，所以 wav_bad 夹在两者之间。
 //
 //   赋值规范：时序块只用 <=，组合块只用 =，同一变量只由一个 always 块驱动
 //   （脚本 scripts/lint_verilog.py 的 E1/E2 规则零容忍）。
@@ -113,6 +116,27 @@ module err_prompt #(
     // ---- 图片层（来自 image_player）----
     input  wire        image_failed,
     input  wire [3:0]  image_err,
+
+    // ---- 视频层（来自 rle_decoder，t9 新增）----
+    // 为什么必须加这两个输入：rle_decoder 的 err_code / underrun 在 v2 早期是
+    // **零消费者**（顶层只声明、只接输出，没人读），科普模式整条视频通路死掉时
+    // 数码管仍然显示 playback_state=4（PLAY），看起来一切正常，故障完全静默。
+    // 这是"仿真全过、上板全死且查不出原因"的根源，所以把视频解码失败接进
+    // 这层用户可见的提示里，优先级排在图片层之后、零张图之前。
+    input  wire        rle_bad,         // 高：视频通路有需要用户知道的故障
+    input  wire [3:0]  rle_err,         // 1..4=rle_decoder.err_code，5=簇链坏，6=卡上无 SCI.RLE
+
+    // ---- 音频层（来自 wav_stream_player，t6 新增）----
+    // 为什么必须加：v2 早期 wav_stream_player 的 err_code 在顶层是**空连接**
+    //   （`.err_code()`），WAV 找不到 / 读到坏块 / 格式不符时它安静地停在 W_FAIL，
+    //   整机没有任何提示 —— 用户只看到"日常模式没声音"，而数码管显示 PLAY、LED 全灭，
+    //   现场无法区分"卡上没这个文件"和"RTL 有 bug"。
+    //   修好 8.3 短名字节序（audio_src_mux.v）后 WAV 能正常定位，但**卡内容问题依然
+    //   存在**（比如用户只拷了 RES640 那套图，里面一个 WAV 都没有），所以必须让
+    //   "WAV 为什么哑了"变成用户可见的信息。优先级排在 rle_bad 之后：
+    //   视频不出比没音乐严重；且 rle_bad 只在科普模式成立，不会挡住日常模式的 WAV 故障。
+    input  wire        wav_bad,         // 高：WAV 通路有需要用户知道的故障
+    input  wire [3:0]  wav_err,         // wav_stream_player.err_code 原值（0..9，0=正常）
 
     // ---- 输出 ----
     output reg         err_active,
@@ -340,8 +364,132 @@ module err_prompt #(
                     prompt_lo = 4'd9;
                 end
             endcase
+        end else if (rle_bad) begin
+            // ===== 第 4 优先: 视频解码通路故障（t9 新增）=====
+            // 放在图片层之后：图片装载失败更能直接解释"屏幕上什么都没有"，
+            // 优先给用户看。用 d 类（数据通路）与 b/"E" 两种助记，因为 seg_decoder
+            // 只实现 0~9/A/b/C/d/E/F，没有 r/P/n 这些字母。
+            //   rle_err=1 → b/E  魔数不符（SCI.RLE 不是 SCMR 格式 / 文件被截断）
+            //   rle_err=2 → d/E  几何不符（文件里的宽高不是 640x480）
+            //   rle_err=3 → d/0  run 表异常（runs=0 或像素数不足，文件损坏）
+            //   rle_err=4 → d/1  读卡失败/文件提前结束（素材没拷全 / 未物理连续）
+            //   rle_err=5 → d/5  SCI.RLE 簇链不连续 / 尺寸超限（gallery_probe.rle_fail）
+            //   rle_err=6 → d/6  卡上没有 SCI.RLE（素材装配问题，非硬件故障）
+            // 为什么 4 用 d/1 而不是 d/4：image_player 已占用 d4/d5/d6 表示
+            // 各自的超时，SD 层用 "d1 = 数据通路" 与 err_prompt 既有的
+            // sd_err 5/6/7→d1 语义一致，用户看到的读法与卡类故障相同。
+            // （t9 新增的 d5/d6 与 image_player 的 d5/d6 数字重复但语义不同：
+            //   本分支只在科普模式的视频层出现，且图片层失败时会被上面的
+            //   image_failed 分支抢先显示，用户不会同时看到两个 d5。）
+            err_active = 1'b1;
+            case (rle_err)
+                4'd1: begin   // 魔数错：文件不是 RLE 格式，或拷贝时被截断
+                    prompt_hi = CH_BMP;
+                    prompt_lo = 4'hE;
+                end
+                4'd2: begin   // 宽高不符：素材分辨率与 RTL 的 640x480 不匹配
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'hE;
+                end
+                4'd3: begin   // run 表异常：文件内容损坏
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd0;
+                end
+                4'd4: begin   // 读卡失败 / 文件提前结束
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd1;
+                end
+                4'd5: begin
+                    // 找到了 SCI.RLE 但簇链不连续 / 尺寸超限（gallery_probe 的
+                    // rle_fail）。用户动作 = 重新格式化后整目录拷贝，别用碎片卡。
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd5;
+                end
+                4'd6: begin
+                    // 卡上根本没有 SCI.RLE（rle_found=0 且 rle_fail=0）。
+                    // 注意这不是"故障"：gallery_probe 按设计把它当正常返回，
+                    // 科普模式退化成静态页 + 滚动字幕是允许的。这里显示只是为了
+                    // 让用户知道"视频没放是因为卡里没这个文件"，而不是设备坏了。
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd6;
+                end
+                default: begin
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd9;
+                end
+            endcase
+        end else if (wav_bad) begin
+            // ===== 第 5 优先（t6 新增）: WAV 音频通路故障 =====
+            //   来源 = wav_stream_player.err_code（非零粘滞，见该文件 :53-63 的错误码表）。
+            //   为什么排在这里：视频（rle）不出比没音乐严重，所以让位给 rle_bad；
+            //   但它比"零张图"和"无卡"更直接解释"没有声音"，所以排在两者之前。
+            //
+            //   为什么**不新增助记字母**：seg_decoder / osd_font8x16 只实现 0~9/A/b/C/d/E/F
+            //   共 41 个字形，加字母要同时改两张表并重新生成字库，收益远小于成本。
+            //   这里复用既有五类的语义（C=卡类、F=格式类、d=数据通路类、b=文件格式类），
+            //   让用户看到的读法与 SD 层 / 图库层 / 图片层完全一致。
+            //
+            //   下表**逐条对应 wav_stream_player.v 的真实编码**（不是按 FAT 层猜的）：
+            //     err=1  RIFF/WAVE 标识不符      → F1  文件不是 WAV 或拷贝被截断
+            //     err=2  fmt 缺失或 audio_format≠1 → F2  非 PCM（MP3 改名 / 带压缩的 WAV）
+            //     err=3  bits_per_sample ≠ 16    → F3  位深不支持（8/24/32 bit）
+            //     err=4  sample_rate ≠ 48000     → F4  采样率不支持（44.1k / 22.05k）
+            //     err=5  数据被截断              → F5  文件不完整
+            //     err=6  文件未找到 / FAT32 定位失败 → C1  卡上没这个文件（最常见）
+            //     err=7  读块失败（SD 层 blk_err）  → d7  卡接触不良 / 坏块
+            //     err=8  等 blk_done 握手超时     → d8  卡响应超时
+            //     err=9  声道数 ≠ 1              → F6  立体声 WAV（本设计只支持单声道）
+            //   用户最常遇到的是 C1（只拷了 RES640 那套图，里面一个 WAV 都没有）。
+            err_active = 1'b1;
+            case (wav_err)
+                4'd1: begin   // RIFF / WAVE 标识不符
+                    prompt_hi = CH_FORMAT;
+                    prompt_lo = 4'd1;
+                end
+                4'd2: begin   // fmt chunk 缺失，或 audio_format != 1（非 PCM）
+                    prompt_hi = CH_FORMAT;
+                    prompt_lo = 4'd2;
+                end
+                4'd3: begin   // bits_per_sample != 16
+                    prompt_hi = CH_FORMAT;
+                    prompt_lo = 4'd3;
+                end
+                4'd4: begin   // sample_rate != 48000
+                    prompt_hi = CH_FORMAT;
+                    prompt_lo = 4'd4;
+                end
+                4'd5: begin   // 数据截断
+                    prompt_hi = CH_FORMAT;
+                    prompt_lo = 4'd5;
+                end
+                4'd6: begin
+                    // 卡上找不到这个 WAV。与 t9 给 RLE 的 d6（卡上无 SCI.RLE）语义并列：
+                    //   两者都是"素材没拷全"，不是硬件故障。用 C1 是因为 SD 层的
+                    //   sd_err=1 也是 C1（"卡上没这个文件"），读法一致。
+                    prompt_hi = CH_CARD;
+                    prompt_lo = 4'd1;
+                end
+                4'd7: begin   // 读块失败（SD 层 blk_err）
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd7;
+                end
+                4'd8: begin   // 等 blk_done 握手超时
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd8;
+                end
+                4'd9: begin   // 声道数 != 1
+                    prompt_hi = CH_FORMAT;
+                    prompt_lo = 4'd6;
+                end
+                default: begin
+                    prompt_hi = CH_DATA;
+                    prompt_lo = 4'd9;
+                end
+            endcase
         end else if (gallery_done && (gallery_count == 5'd0)) begin
-            // ===== 第 4 优先: 卡是好的，但一张图都没有 =====
+            // ===== 第 5 优先: 卡是好的，但一张图都没有 =====
+            //   （t9 起让位给视频层：图片装载失败/视频解码失败都比"零张图"
+            //     更能直接解释用户看到的现象，所以本支从第 4 顺延到第 5。）
             // 改造前这是**最严重的用户交互盲区**: 三个 fail 标志全为 0，
             // playback FSM 停在 ST_IDLE，数码管显示 "0000"，屏幕放测试图，
             // 蜂鸣器不响 —— 用户完全不知道"卡读通了但里面没图片"，
@@ -350,7 +498,7 @@ module err_prompt #(
             prompt_hi  = CH_NONE;
             prompt_lo  = 4'd0;
         end else if (cd_sync[1]) begin
-            // ===== 第 5 优先: 探测还没跑完，但卡座已报告无卡 =====
+            // ===== 第 6 优先: 探测还没跑完，但卡座已报告无卡 =====
             // 纯抢先提示: sd_probe 要等 PROBE_DELAY_CYCLES(200_000 拍 ≈8ms)
             // 才开始，初始化失败还有重试，用户要等数秒才有反馈；
             // 而 sd_cd 是硬件电平，上电即有，可立刻提示 "C0 请插卡"。

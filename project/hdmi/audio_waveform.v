@@ -9,23 +9,40 @@
 //
 // 【为什么单独成模块】
 //   电平条是纯组合的（只要看当前样本幅度），波形必须有历史状态。
-//   把 64×16 bit 的移位历史收在本模块里，video_overlay 仍然保持
+//   把 64×24 bit 的移位历史收在本模块里，video_overlay 仍然保持
 //   "输入坐标 → 输出像素"的组合语义，便于测试台逐像素断言。
+//   （v2 修复前是 64×16 bit 且只存 sample[23:8]，那是"波形看不见"的根因之一。）
 //
 // 【显示映射】
 //   - x 方向: 每 8 像素对应一个历史样本，共 64 样本 = 512 像素；
 //     左边是较旧样本，右边是最新样本（hist[0] 为最新）。
-//   - y 方向: y = Y_CENTER + (sample[23:8] >>> Y_SHIFT)。
-//     默认 Y_CENTER=408、Y_SHIFT=10 → 满幅范围 y ∈ [376, 439]（64 行，占屏高 13.3%），
+//   - y 方向: y = Y_CENTER + (sample[23:0] >>> Y_SHIFT)，样本**全 24 位**参与。
+//     默认 Y_CENTER=408、Y_SHIFT=18 → 满幅范围 y ∈ [376, 439]（64 行，占屏高 13.3%），
 //     位于下方滚动字幕带（y=448..463）**上方**、且留 8 行硬间隙。
 //     这一版几何是 v2 按用户需求「滚动字幕的上方有做舒缓音乐的音频可视化」定的；
 //     屏占比（Key9）不裁 OSD，所以波形在任一窗口档下都完整可见。
 //   - 连续线: 同时读当前样本与相邻旧样本，把两者 y 之间的像素全部点亮，
 //     避免出现一条断点很多的"点阵"。
 //
+// 【★ v2 修复：为什么必须是 sample[23:0] >>> 18，而不是 sample[23:8] >>> 10 】
+//   旧实现把 24 bit 样本**先右移 8 位**存进 16 bit 历史，再 >>> 10 落到 y，
+//   两级右移合计 18 位 = 幅度被压到 1/262144。后果（t2 报告 §3.2 有实测）：
+//     · 16 bit WAV 样本满幅 ±32767，符号扩展进 24 bit 后 [23:8] 只有 7 bit
+//       有效（±127），再 >>>10 恒为 0 → **波形退化成 y=408 的一条 1 像素直线**；
+//     · 即使把 WAV 左对齐（±8 388 352），两级右移后也只有 ±19..28 行；
+//     · 连幅度 ±2.1e6 的 tone_gen 兜底音也只有 ±8 行（实测 6..10 行，见
+//       tb_audio_chain_diag 的 S1..S4）。
+//   用户看到的"全程没有音频可视化"，根因就是这两级右移叠加，而不是
+//   wave_en 关掉、也不是被别的图层盖住（那两条已排除）。
+//   现在改成 **24 bit 全精度存史 + 单级 >>>18**：24 bit 满幅 8 388 607 >>> 18
+//   = 31 行，y 落在 408±31 = [377, 439]，与几何上承诺的 y∈[376,439] 吻合。
+//   负向满幅 -8 388 608 >>> 18 = -32 行 → y=376，正好压在下沿，一格不越界。
+//   实测（tb_audio_waveform ⑩-1）：满幅三角波扫过，帧内 y from 376 to 439。
+//
 // 【资源量级】
-//   64×16 bit 历史 = 1024 个寄存器；变量索引读会综合成分布式 RAM/多路选择。
-//   在 EG4S20 当前余量下（REG 16k 空闲、LUT 12k 空闲）可以忽略。
+//   64×24 bit 历史 = 1536 个寄存器（旧版 1024）；变量索引读会综合成分布式
+//   RAM/多路选择。在 EG4S20 当前余量下（REG 16k 空闲、LUT 12k 空闲）可以忽略，
+//   增量 +512 REG 远小于余量。
 //
 // 【时钟/复位】
 //   - 只在 audio_valid 单拍时移位，48 kHz 下每秒 48000 次；
@@ -38,7 +55,23 @@ module audio_waveform #(
     parameter [10:0] X0       = 11'd64,    // 波形窗口左边界（含）
     parameter [10:0] X1       = 11'd576,   // 波形窗口右边界（不含）
     parameter [9:0]  Y_CENTER = 10'd408,   // 波形中心线
-    parameter integer Y_SHIFT = 10,        // 幅度缩放: 样本 >>> Y_SHIFT
+    // 幅度缩放：y = Y_CENTER + (sample >>> Y_SHIFT)。
+    //   ★ 为什么是 18 而不是 10（旧值）也不是 17：
+    //     本模块的可见窗口是 y ∈ [Y_CENTER-32, Y_CENTER+31]，
+    //     即 video_overlay 注释里写的「满幅 y∈[376,439]、共 64 行」。
+    //     24 bit 满幅是 ±8 388 608（-2^23 .. 2^23-1）。
+    //       >>> 18  →  ±32 行  →  y ∈ [376, 439]  ← 正好填满窗口，不越界
+    //       >>> 17  →  ±64 行  →  y ∈ [344, 471]  ← **越界**：下沿 471 会
+    //                 压到下方滚动字幕带（y=448..463），而 px_wave 在
+    //                 video_overlay 的优先级链里**高于** px_caption，
+    //                 满幅时会把字幕糊掉。
+    //     所以 Y_SHIFT 必须按"窗口半高 32 行"反推：2^23 / 32 = 2^18。
+    //     （t6 实施时按 ±63.9 行算过 17，那是把"64 行"当成了半高，
+    //       属算术口径错误；以本模块的实际窗口几何为准，取 18。）
+    //   ★ 旧值 10 是配合"历史只存 sample[23:8]"的，两者叠加把幅度压掉
+    //     256 倍，是"波形看不见"的根因 —— 改这个参数必须同时确认 hist
+    //     的位宽，不能只改一边。
+    parameter integer Y_SHIFT = 18,        // 幅度缩放: 样本 >>> Y_SHIFT
     parameter integer HISTORY = 64         // 历史样本数（本实现固定 64）
 ) (
     input  wire        clk,
@@ -58,21 +91,27 @@ module audio_waveform #(
     // 有符号中心线常量，避免 unsigned + signed 的宽度/符号歧义
     localparam signed [15:0] Y_CENTER_S = Y_CENTER;
 
-    // 16 bit 有符号历史；取 24 bit 样本的高 16 位保留符号。
-    reg signed [15:0] hist [0:HISTORY-1];
+    // ★ 24 bit 有符号历史，存**全精度样本**（t6 修复）。
+    //   旧版是 reg signed [15:0] 且只存 audio_sample[23:8]，等于预先砍掉 8 位，
+    //   再叠 Y_SHIFT 就变成 256 倍额外衰减，波形塌成一条线（详见文件头）。
+    reg signed [23:0] hist [0:HISTORY-1];
     integer i;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (i = 0; i < HISTORY; i = i + 1)
-                hist[i] <= 16'sd0;
+                hist[i] <= 24'sd0;
         end
         else if (audio_valid) begin
             for (i = HISTORY-1; i > 0; i = i - 1)
                 hist[i] <= hist[i-1];
-            // 只保留高 16 位：低 8 位对 64 像素高的波形没有可见贡献，
-            // 省一半寄存器；TD 会对 audio_sample[7:0] 报 SYN-5014 未连接警告，属预期。
-            hist[0] <= audio_sample[23:8];
+            // 全 24 位入史：低 8 位虽然只对应 1/256 的电压分辨率，但对
+            // "16bit WAV 左对齐到 24bit" 的样本来说，**那 8 位是 0**，
+            // 真正承载信息的是中间 16 位；而对 tone_gen 的 ±2.1e6 来说
+            // 低 8 位在满幅 64 行窗口里等于 0.004 行，本来也看不见。
+            // 之所以不做"省寄存器"的截位：一旦截位，Y_SHIFT 就必须跟着改回去，
+            // 两个参数容易改漏一个 —— 本工程已经因为这两处不同步踩过一次。
+            hist[0] <= audio_sample;
         end
     end
 
@@ -86,12 +125,20 @@ module audio_waveform #(
     // 相邻旧样本用于连线；最左端没有更旧样本时退化为自身。
     wire [IDX_W-1:0] idx_prev = (idx == (HISTORY-1)) ? idx : (idx + 1'b1);
 
-    wire signed [15:0] s_curr = hist[idx];
-    wire signed [15:0] s_prev = hist[idx_prev];
+    wire signed [23:0] s_curr = hist[idx];
+    wire signed [23:0] s_prev = hist[idx_prev];
 
     // 以 Y_CENTER 为中心的纵向位置（Y_CENTER_S 为有符号常量，避免无符号加法）
-    wire signed [15:0] y_curr_s = Y_CENTER_S + (s_curr >>> Y_SHIFT);
-    wire signed [15:0] y_prev_s = Y_CENTER_S + (s_prev >>> Y_SHIFT);
+    //   ★ 中间位宽必须跟着提到 24 bit：历史是 24 bit，>>>18 之后的有效范围是
+    //     ±32 行，用 16 bit 存 y 偏移本身够；但若把 `hist[idx]`（24 bit）
+    //     直接赋给 16 bit 的 s_curr，会**截掉低 16 位**——对左对齐的
+    //     16bit WAV 样本来说，低 16 位恰好全是 0，剩下的高 8 位只有符号，
+    //     等于把波形又压回去。这是方案 4b 最容易漏的一处。
+    //   y_curr_s 用 24 bit 而不是 16 bit：Y_CENTER_S(408) + 32 位有符号偏移，
+    //     y 的最终范围是 376..439（10 bit 无符号足够），这里与 s_* 同宽
+    //     可以省掉一次隐式符号扩展，读代码时不必再推位宽。
+    wire signed [23:0] y_curr_s = Y_CENTER_S + (s_curr >>> Y_SHIFT);
+    wire signed [23:0] y_prev_s = Y_CENTER_S + (s_prev >>> Y_SHIFT);
     wire [9:0] y_curr = y_curr_s[9:0];
     wire [9:0] y_prev = y_prev_s[9:0];
 

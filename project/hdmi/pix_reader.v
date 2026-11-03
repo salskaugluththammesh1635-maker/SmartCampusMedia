@@ -62,9 +62,9 @@ module pix_reader #(
 	input wire [15:0] src_w,            // 当前档源宽（v2：仅用于映射有效性判定）
 	input wire [15:0] src_h,            // 当前档源高：240/300/384/432/480
 	input wire [15:0] win_w,            // Key9 窗口宽：本步唯一驱动水平降采样的参数
-	input wire [15:0] win_h,            // Key9 窗口高：本步只参与满屏判据，垂直留待第 2 步
+	input wire [15:0] win_h,            // Key9 窗口高：只参与满屏判据；纵向 1:1 裁剪，不缩放
 	input wire [15:0] win_off_x,        // Key9 窗口左上角列号
-	input wire [15:0] win_off_y,        // Key9 窗口左上角行号：本步只参与满屏判据
+	input wire [15:0] win_off_y,        // Key9 窗口左上角行号：只参与满屏判据；纵向不缩放
 	output wire [15:0] src_y,           // 本行对应的源行号，行首边沿寄存
 	output wire src_row_hold,           // 高：本行不推进源行（重复上一源行）
 	output wire map_ident,              // 高：src_h==480，映射为恒等旁路
@@ -234,10 +234,12 @@ module pix_reader #(
 	end
 
 	// -----------------------------------------------------------------------
-	// v3 Key9 第 1 步：水平窗口降采样（只做水平，垂直留待第 2 步）
+	// v3 Key9：水平窗口降采样（纵向 1:1 裁剪，不做垂直缩放 —— 见 KEY9_RULING.md）
 	// -----------------------------------------------------------------------
-	// 语义：输出恒 PIX_PER_LINE x FRAME_LINES；完整画面等比缩小后居中显示在
-	// win_w x win_h 的黑边窗口内，**不是裁剪**。本步只驱动水平方向：窗口内第 j
+	// 语义：输出恒 PIX_PER_LINE x FRAME_LINES。窗口 win_w x win_h 内显示的是
+	// 「横向压满 + 纵向 1:1 截取」：横向把整条源行压缩进 win_w 列（等比），
+	// 纵向按源行号 1:1 取中间 win_h 行（**是裁剪，纵向不缩放**，见 KEY9_RULING.md）。
+	// 本步只驱动水平方向：窗口内第 j
 	// 列显示源列 floor(j * 640 / win_w)，即窗口 win_w 拍内取完整个源行的 320 字
 	// （一字 = 两相邻像素，取低半字 = 偶列像素），一行总消耗仍 320 字，SDRAM 读
 	// 带宽零增加。窗口外（active_x < win_off_x 或 >= win_off_x + win_w）
@@ -263,7 +265,6 @@ module pix_reader #(
 	assign h_ident = (win_w >= LINE_PIX16) && (win_off_x == 16'd0);
 	assign win_bad = (win_w == 16'd0) || (win_w < WORDS_LINE16) ||
 		((win_off_x + win_w) > LINE_PIX16);
-	assign map_key9_ident = h_ident && (win_h == FRAME_LINES16);
 	assign use_key9 = !h_ident && !win_bad;
 	assign win_w_eff = use_key9 ? win_w : LINE_PIX16;
 	assign active_x16 = {5'd0, active_x};

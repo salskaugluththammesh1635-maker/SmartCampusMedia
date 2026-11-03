@@ -686,14 +686,30 @@ module rle_decoder #(
                     end else if (blk_busy) begin
                         blk_start_int <= 1'b0;
                     end
-                    if (blk_done) begin
+                    // 【归属门控（2026-11-03, t9 修复 P0-A2）】
+                    // blk_done / blk_err 是 sd_spi_ctrl 对所有消费者的一条**广播**线，
+                    // 顶层把五路消费者的块请求 OR 成 sd_arb_start 喂给同一张卡，卡只回
+                    // 一个 done/err，谁都不能假定"它一定是给我的"。本模块发出的请求
+                    // 记在 req_sent 上（上面那个 if 置位，done/err/帧结束/复位清），
+                    // 语义正好是"这块是我发的、我还在等它完成"，所以用 req_sent 做门控
+                    // 即可，不需要再引入第二套 my_blk_active 标志（两个标志反而多一个
+                    // 不同步的失效模式；wav_stream_player 之所以要 my_blk_active，
+                    // 是因为它的 blk_start 是电平持续型、且要在好几个状态里识别归属）。
+                    // 不加门控的后果（实测会 100% 复现）：科普模式下 NARR.WAV 同时在流，
+                    // WAV 的块完成会在这里被误认成自己那块 → blk_index 自增 → 后续按
+                    // 错误的块号读 → 解错字节 → err_code 1/2/4 → R_ERR 且永不自愈。
+                    // blk_err 必须一起加门控：只挡 done 不挡 err 的话，别人的块失败
+                    // 仍会把我们的 req_sent 清掉并把 FSM 打进 R_ERR。
+                    // req_sent=0 期间收到的 done/err 被安全忽略，FSM 停在原地继续等 grant
+                    // （上面的停车语义不变），不会因此死锁。
+                    if (req_sent && blk_done) begin
                         blk_ready <= 1'b1;
                         rd_ptr    <= 10'd0;
                         blk_index <= blk_index + 32'd1;
                         req_sent  <= 1'b0;
                         blk_start_int <= 1'b0;
                         state     <= resume_state;
-                    end else if (blk_err) begin
+                    end else if (req_sent && blk_err) begin
                         blk_start_int <= 1'b0;
                         req_sent  <= 1'b0;
                         err_code  <= 4'd4;
