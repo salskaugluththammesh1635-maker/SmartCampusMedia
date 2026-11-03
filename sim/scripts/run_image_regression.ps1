@@ -16,7 +16,11 @@ $sources = @(
     'rtl/storage/pix_reader.v', 'rtl/storage/fade_mixer.v', 'rtl/storage/fat32_reader.v',
     'rtl/storage/bmp_parser.v', 'rtl/storage/img_loader.v', 'rtl/storage/img_scaler.v',
     'rtl/storage/image_player.v',
-    'sim/testbench/tb_image_player.v', 'sim/testbench/tb_img_scaler.v'
+    'sim/testbench/tb_image_player.v', 'sim/testbench/tb_img_scaler.v',
+    # t10 补覆盖：image_window_mask 是 t7 修的"窗口外漏旧帧"判决器。此前没有
+    # 任何回归套件引用 tb_image_window_mask.v（78 个 tb 里 10 个孤儿之一）。
+    # 它验证 in_window 与 in_image 的交集判决、以及 img_w=0 的全屏蔽语义。
+    'sim/testbench/tb_image_window_mask.v'
 )
 $hashes = @($sources | ForEach-Object {
     $file = Join-Path $root $_
@@ -35,8 +39,9 @@ $failed = $false
 # 外层判据会永远看到 0 → 照样打印 PASS（scripts\run_tb_baseline.ps1 头注记着这坑）。
 # 期望数是**硬编码**的、刻意不用 @($cases).Count：后者是同源自证，case 表被误删
 # 时期望值会跟着一起变小，断言永远成立、永远抓不到。
-# image 默认 3 个 case，-FullVga 再追加 2 个。期望数独立算，不读 \$cases。
-$ExpCaseCount = 3 + $(if ($FullVga) { 2 } else { 0 })
+# image 默认 4 个 case，-FullVga 再追加 2 个。期望数独立算，不读 \$cases。
+# t10 把孤儿 TB tb_image_window_mask 补进套件，默认 case 数 3 -> 4。
+$ExpCaseCount = 4 + $(if ($FullVga) { 2 } else { 0 })
 $script:A4Ran    = 0
 $script:A4Passed = 0
 
@@ -54,7 +59,9 @@ try {
     $cases = @(
         @{name='img_scaler'; top='tb_img_scaler'; marker='img_scaler'; arguments=@()},
         @{name='image_player'; arguments=@(); marker='image_player'},
-        @{name='image_player_scaled'; arguments=@('-gSCALE=1'); marker='image_player_scaled'}
+        @{name='image_player_scaled'; arguments=@('-gSCALE=1'); marker='image_player_scaled'},
+        # t10 补覆盖：t7 的交集判决器（窗口外不再漏出上一帧残影）
+        @{name='image_window_mask'; top='tb_image_window_mask'; marker='image_window_mask'; arguments=@()}
     )
     if ($FullVga) {
         $cases += @{name='image_player_full'; arguments=@('-gFULL=1'); marker='image_player_full'}

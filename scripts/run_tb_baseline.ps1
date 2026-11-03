@@ -6,8 +6,12 @@
 # 判据必须来自 tb 自己打印的 SUMMARY/ALL CHECKS，不能靠人看日志。
 #
 # 判据（脚本自己判）：
-#   tb_pix_reader      ALL CHECKS PASSED + checks=194 errors=0 cases=13
-#   tb_image_player    ALL CHECKS PASSED + checks=11365 errors=0
+#   tb_pix_reader      ALL CHECKS PASSED + checks=542 errors=0 cases=39
+#   tb_image_player    ALL CHECKS PASSED + checks=11405 errors=0
+#
+# 期望值变更史（改这里必须同步改下面的 -ExpectLine，否则会误报 FAIL）：
+#   tb_pix_reader   194/13 → 542/39   946f74f 提交 v2 新 tb 时脚本未同步（历史遗留）
+#   tb_image_player 11365  → 11405    2026-11-03 t7 补 CASE16/CASE17 与 disp_geom 断言
 #   tb_display_content ALL CHECKS PASSED + checks=614406 errors=0
 #   tb_fifo_fwft       ALL CHECKS PASSED + errors=0
 #
@@ -151,7 +155,7 @@ if ($Only.Count -eq 0 -or $Only -contains 'pix_reader') {
                    'rtl\video\video_timing_gen.v',
                    'sim\testbench\tb_pix_reader.v',
                    'ip\local\sdram\global_def.v') `
-        -PlusArgs @() -ExpectLine 'checks=194 errors=0'
+        -PlusArgs @() -ExpectLine 'checks=542 errors=0'
 }
 
 if ($Only.Count -eq 0 -or $Only -contains 'image_player') {
@@ -171,7 +175,7 @@ if ($Only.Count -eq 0 -or $Only -contains 'image_player') {
                    'rtl\video\video_timing_gen.v',
                    'sim\testbench\tb_image_player.v',
                    'ip\local\sdram\global_def.v') `
-        -PlusArgs @() -ExpectLine 'checks=11365 errors=0'
+        -PlusArgs @() -ExpectLine 'checks=11405 errors=0'
 }
 
 if ($Only.Count -eq 0 -or $Only -contains 'display_content') {

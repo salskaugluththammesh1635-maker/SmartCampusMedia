@@ -26,10 +26,15 @@ $sources = @(
     'rtl\storage\framebuf_arbiter.v',
     'rtl\storage\sdram_ctrl_wrap.v',
     'rtl\storage\pix_reader.v',
+    # t10 补覆盖：rle_decoder 是科普模式视频通路的核心模块，此前没有任何回归
+    # 套件引用 tb_rle_decoder.v（sim/testbench 下 78 个 tb 里 10 个孤儿之一）。
+    # 它验证的正是 t9 修的 P0-A2 归属门控（外来 blk_done 不得推进块计数）。
+    'rtl\storage\rle_decoder.v',
     'sim\testbench\tb_async_fifo.v',
     'sim\testbench\tb_framebuf_arbiter.v',
     'sim\testbench\tb_sdram_ctrl_wrap.v',
-    'sim\testbench\tb_pix_reader.v'
+    'sim\testbench\tb_pix_reader.v',
+    'sim\testbench\tb_rle_decoder.v'
 )
 $sourceHashes = foreach ($source in $sources) {
     $sourcePath = Join-Path $root $source
@@ -56,7 +61,8 @@ $failed = $false
 # 时期望值会跟着一起变小，断言永远成立、永远抓不到。
 # storage 的 case 数由 -Suite / -FullVga 两个参数决定。这里**独立**
 # 重算期望数（不读 $tests），所以 tests 表被误删一条时期望数不变 → 断言红。
-$ExpCaseCount = $(if ($Suite -eq 'All') { 4 } else { 1 }) + $(if ($FullVga) { 1 } else { 0 })
+# t10：把孤儿 TB tb_rle_decoder 补进套件，All 的 case 数 4 -> 5。
+$ExpCaseCount = $(if ($Suite -eq 'All') { 5 } else { 1 }) + $(if ($FullVga) { 1 } else { 0 })
 $script:A4Ran    = 0
 $script:A4Passed = 0
 
@@ -83,6 +89,20 @@ try {
     if ($Suite -in @('All', 'Pixels')) {
         $tests += @{ name = 'tb_pix_reader'; top = 'tb_pix_reader'; arguments = @() }
     }
+    # tb_rle_decoder 的向量用相对路径 ../testbench/vectors/*.hex，只有 cwd 落在
+    # sim/ 的下一层目录时才能解析。故单独给它一个 cwd（sim/_regression_rle），
+    # 并用绝对 work 映射（vmap + -modelsimini）把编译好的库接回来 ——
+    # 直接把 cwd 改成 sim/testbench 反而找不到 work 库（vsim-19）。
+    # 它的收尾行是 "RESULT: PASS"（不是 "ALL CHECKS PASSED: ..."），且 summary
+    # 不带 cases= 字段，故显式给 marker 与硬编码的 casesFallback=8。
+    if ($Suite -in @('All', 'Pixels')) {
+        $tests += @{
+            name = 'tb_rle_decoder'; top = 'tb_rle_decoder'; arguments = @()
+            workCwd = (Join-Path $root 'sim\_regression_rle')
+            marker = 'RESULT: PASS'
+            casesFallback = 8
+        }
+    }
     if ($FullVga) {
         $tests += @{
             name = 'tb_pix_reader_vga'; top = 'tb_pix_reader'
@@ -97,24 +117,53 @@ try {
         $logPath = Join-Path $out ($test.name + '.log')
         $do = 'onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0'
         $simArgs = @('-c', '-quiet', '-onfinish', 'stop') + $test.arguments + @('-do', $do, ('work.' + $test.top))
-        & $tools.vsim @simArgs *> $logPath
+        # 需要专用 cwd 的用例（当前只有 tb_rle_decoder）：在它的目录里跑，并用
+        # -modelsimini 指回绝对 work 映射。路径必须用正斜杠：反斜杠会被 -do 里的
+        # Tcl 当转义吃掉（实测变成 "D:FPGA_Compelate..."，报 vsim-7）。
+        $runCwd = $out
+        if ($test.ContainsKey('workCwd')) {
+            $runCwd = $test.workCwd
+            New-Item -ItemType Directory -Path $runCwd -Force | Out-Null
+            # vmap fixed output name: <cwd>/modelsim.ini
+            Push-Location $out
+            try { & (Join-Path $ModelSimPath 'vmap.exe') work (Join-Path $out 'work') *> vmap.log }
+            finally { Pop-Location }
+            if ($LASTEXITCODE -ne 0) { throw "vmap 失败，退出码 $LASTEXITCODE；详见 vmap.log。" }
+            $simArgs = @('-c', '-quiet', '-onfinish', 'stop') + $test.arguments + @(
+                '-modelsimini', (Join-Path $out 'modelsim.ini').Replace('\', '/'),
+                '-do', $do, ('work.' + $test.top))
+        }
+        Push-Location $runCwd
+        try { & $tools.vsim @simArgs *> $logPath } finally { Pop-Location }
         $exit = $LASTEXITCODE
         $clock.Stop()
         $logText = [IO.File]::ReadAllText($logPath)
         $marker = 'ALL CHECKS PASSED: ' + $test.top
         if ($test.ContainsKey('marker')) { $marker = $test.marker }
         $summary = [regex]::Match($logText, 'SUMMARY:\s*checks=(\d+)\s+errors=(\d+)\s+cases=(\d+)')
+        # 部分 TB（如 tb_rle_decoder）的 summary 不带 cases= 字段，此时退回两段式
+        # 正则并用硬编码的 casesFallback 兜底；兜底值不随 case 表变化，仍能抓到
+        # "少跑了" 这种情况（同 A4 分母断言的思路）。
+        $hasCases = $summary.Success
+        if (-not $hasCases -and $test.ContainsKey('casesFallback')) {
+            $summary = [regex]::Match($logText, 'SUMMARY:\s*checks=(\d+)\s+errors=(\d+)')
+        }
+        $casesSeen = 0
+        if ($summary.Success) {
+            if ($hasCases) { $casesSeen = [int]$summary.Groups[3].Value }
+            elseif ($test.ContainsKey('casesFallback')) { $casesSeen = [int]$test.casesFallback }
+        }
         $bad = $logText -match '(?m)^\s*(?:#\s*)?(?:FAIL(?:ED)?\b|.*GLOBAL TIMEOUT|.*CHECKS FAILED)' -or
             $logText -match '\*\*\s+(?:Error|Fatal)\b'
         $passed = $exit -eq 0 -and $logText.Contains($marker) -and -not $bad -and
             $summary.Success -and [int]$summary.Groups[1].Value -gt 0 -and
-            [int]$summary.Groups[2].Value -eq 0 -and [int]$summary.Groups[3].Value -gt 0
+            [int]$summary.Groups[2].Value -eq 0 -and $casesSeen -gt 0
         $result = [ordered]@{
             name = $test.name; status = $(if ($passed) { 'passed' } else { 'failed' })
             exitCode = $exit; log = $logPath; seconds = [math]::Round($clock.Elapsed.TotalSeconds, 3)
             checks = $(if ($summary.Success) { [int]$summary.Groups[1].Value } else { 0 })
             errors = $(if ($summary.Success) { [int]$summary.Groups[2].Value } else { $null })
-            cases = $(if ($summary.Success) { [int]$summary.Groups[3].Value } else { 0 })
+            cases = $casesSeen
             arguments = @($simArgs)
         }
         $manifest.tests += $result

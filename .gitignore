@@ -43,6 +43,10 @@ project/.stop.f
 sim/msim_work/
 sim/work_audio/
 work/
+# Out-of-tree ModelSim build dirs created by ad-hoc verification tasks
+# (t7/t10 etc. build here to keep the repo clean; 15+ MB of work/ data).
+build_t7/
+build_t*/
 transcript
 *.wlf
 *.vcd
