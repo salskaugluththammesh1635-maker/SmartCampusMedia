@@ -44,9 +44,9 @@
 
 ---
 
-## 二、当前状态（截至 2026-10-31）
+## 二、当前状态（截至 2026-11-01）
 
-**一句话**：正式顶层曾经在板上稳定出图、显示卡内图片并可自动轮播（2026-10-29 的 `hdmi_display_fix.bit`）；**2026-10-31 烧录含缩放/转场/字幕/看门狗的新位流后，字幕与彩条正常但图片通路未出图，数码管报 `d810`**，详见[交接记录](docs/handover_2026-10-31_d810_after_watchdog.md)。时序在 40 MHz 下全组收敛且余量可解释。
+**一句话**：正式顶层已在板上出图；**KEY1 切图的写 FIFO 扇区中途溢出问题已修复并生成新的可烧录候选位流**。真实核双图像素回归通过，2026-11-01 的综合、布局布线和 bitgen 通过，最终时序 setup +1.935 ns、hold +0.003 ns、0 违例端点；仍待上板确认黑带/白线是否消失，详见[诊断记录](docs/diag_key1_fifo_backpressure_2026-10-31.md)。
 
 ### 位流
 
@@ -54,13 +54,16 @@
 
 | 版本 | 本地位流 | 生成时间 | 时序 | 状态 |
 |---|---|---|---|---|
-| **最新候选：看门狗与启动交接加固版** | [smartcampus_media_watchdog_20261030.bit](reports/watchdog_20261030/) | 2026-10-30 22:50 | setup **+1.935 ns** / hold **+0.003 ns** | 综合、布线、bitgen 与七套回归全过；**2026-10-31 16:09 上板：字幕/彩条正常，图片未出图，数码管 `d810`（见[交接记录](docs/handover_2026-10-31_d810_after_watchdog.md)）** |
+| **最新烧录候选：FIFO 背压修复版** | [smartcampus_media_fifo_backpressure_20261101.bit](reports/diag_key1_fifo_backpressure_20261101/smartcampus_media_fifo_backpressure_20261101.bit) | 2026-11-01 | setup **+1.935 ns** / hold **+0.003 ns**，0 违例端点 | 综合、布线、bitgen 完成；待上板连续 KEY1 验证 |
+| 上一版：切图加固版（已证伪） | [smartcampus_media_key1fix_20261031.bit](reports/key1_fix_20261031/) | 2026-10-31 20:23 | setup **+1.935 ns** / hold **+0.003 ns** | 写组首间隔保护上板完全无缓解，详见[切图交接记录 §4.5](docs/handover_2026-10-31_key1_switch_glitch.md) |
+| 上一版：`d810` 加固版 | [smartcampus_media_d810fix_20261031.bit](reports/d810_fix_20261031/) | 2026-10-31 17:24 | setup **+1.935 ns** / hold **+0.011 ns** | 综合布线 bitgen 全过、0 违例端点；单元 18 模块 + 前端 20 用例 + 图像 5 档回归全过；**2026-10-31 晚上板：`d810` 消失、图片正常出图**；遗留 KEY1 切图横带/细碎线条/约 2 s，见[切图交接记录](docs/handover_2026-10-31_key1_switch_glitch.md) |
+| 看门狗与启动交接加固版 | [smartcampus_media_watchdog_20261030.bit](reports/watchdog_20261030/) | 2026-10-30 22:50 | setup **+1.935 ns** / hold **+0.003 ns** | 综合、布线、bitgen 与七套回归全过；**2026-10-31 16:09 上板：字幕/彩条正常，图片未出图，数码管 `d810`（见[交接记录](docs/handover_2026-10-31_d810_after_watchdog.md)）** |
 | 烧录候选：图片防护版 | [smartcampus_media_20261030.bit](reports/flashable_20261030/) | 2026-10-30 15:39 | setup **+1.935 ns** / hold **+0.011 ns** | [验证报告](reports/flashable_20261030/verification.md) 完整；尚未单独上板复验 |
 | 已烧录：显示选择与科普页版 | [hdmi_noise_sci_fix.bit](reports/noise_sci_fix_20261029/) | 2026-10-29 20:51 | setup +1.935 / hold +0.003 | 已上板；切图白条问题当时仍复现，后于 10-30 定位根因 |
 | HDMI 低音量试听版 | [hdmi_audio_quiet.bit](reports/hdmi_audio_quiet_20261029/) | 2026-10-29 17:17 | setup +1.935 / hold +0.003 | 已烧录；音量是否合适**待试听确认** |
 | 显示修复版 | [hdmi_display_fix.bit](reports/display_fix_20261029/) | 2026-10-29 08:14 | setup +1.935 / hold +0.035 | 已上板，**用户确认深色区白条问题解决** |
 
-> ⚠️ **能力表里的「✅ 已上板」指的是 2026-10-29 的 `hdmi_display_fix.bit`。** 2026-10-31 16:09 烧录 10-30 的新位流后，**字幕已首次在实板确认工作**（标题、`FAIL` 状态、滚动标语、`IMG` 序号全部正确），但**图片通路未出图**（数码管 `d810`），原因与待办见[交接记录](docs/handover_2026-10-31_d810_after_watchdog.md)。缩放、转场、参数面板、看门狗仍只有**仿真 + 综合布线**证据。
+> ⚠️ **最新 FIFO 背压修复版尚未上板。** 已知的 `key1fix` 位流只验证了写组首间隔假设无效；新的真实核回归和本次综合布线已通过，下一步是烧录最新候选并连续按 KEY1 做板端确认。缩放、转场、参数面板、看门狗的部分子功能仍只有**仿真 + 综合布线**证据。
 
 ### 硬指标
 
@@ -222,8 +225,10 @@ powershell -ExecutionPolicy Bypass -File scripts\prepare_board_verify_assets.ps1
 | `b1` / `b2` / `b9` | BMP 头非法 / 宽高不是 640×480 / 其他 BMP 错误 | 换一张合规的图 |
 | `d1` ~ `d7` | SD 内部失败 / 读块失败 / 簇链异常 / FIFO 无空间 / SDRAM 仲裁或不在线 | 多为数据通路问题，先复位 |
 | `d8` | 装载无进度（看门狗超时） | 卡太慢或总线异常，换卡试 |
-| `dA` | 等 `blk_done` 握手超时（`img_loader` 84 ms 超时） | 控制器无响应，复位 |
+| `dA` | 等 `blk_done` 握手超时（请求发出后既无完成也无错误返回） | 控制器无响应或总线归属异常，复位 |
 | `dB` / `dC` | 等 SDRAM 初始化超时 / 等写完成超时 | 复位；反复出现说明 SDRAM 侧有故障 |
+| `dd` | `img_loader` 未接收 start（进 `C_LOAD` 后 16 拍内既不 busy 也无结果） | 10-31 新增；出现即说明 start 丢失路径真实存在 |
+| `dE` | FAT 定位段无进度（`2×BLK_TIMEOUT` 内无任何扇区完成） | 10-31 新增；查 SD 卡响应与 SPI 时序 |
 | `d9` | 未归类的数据通路故障 | — |
 
 出错后约 **1.5 秒静默观察期**（先让你看见数码管），再鸣响 3 秒。
@@ -312,7 +317,11 @@ powershell -ExecutionPolicy Bypass -File sim\scripts\run_display_content.ps1
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 数码管 `d810`，屏幕不出图 | 播放器抢了图库的 SD 总线，请求被丢弃 | 已修；确认 `sd_ready` 接的是 `sd_owner_player` |
+| 数码管 `d810`，屏幕不出图 | 播放器抢了图库的 SD 总线，请求被丢弃 / loader 被毛刺复位 | 10-28 修 `sd_ready` 接线；**10-31 四处加固后已不再复现**（`dd`/`dE`/`dA` 可区分后续同类故障），见[d810 加固记录](docs/d810_fix_2026-10-31.md) |
+| 按 KEY1 切图时出现随机黑带 | 写 FIFO 扇区中途溢出已在真实核探针复现并修复；最新反馈为黑带仍在、白色碎线未见、LED2 未亮、切图约 1 秒。当前源码双重载真核回归没有复现黑带，根因仍未定位；先核对板上位流并记录黑带期间读侧诊断状态 | 见[最新板端交接](docs/board_feedback_2026-11-01_black_band.md)与[写 FIFO 修复记录](docs/diag_key1_fifo_backpressure_2026-10-31.md) |
+| 数码管 `dd` | `image_player` 进了 `C_LOAD`，但 `img_loader` 连续 16 拍既不 busy 也没 done/fail：start 没被接收或 loader 被意外复位 | 10-31 新增码 13；若上板出现，说明现场确有 start 丢失路径 |
+| 数码管 `dE` | FAT 定位段连续 `2×BLK_TIMEOUT` 无任何扇区完成 | 10-31 新增码 14；检查 SD 卡响应与 SPI 时序 |
+| 数码管 `dA` | 块请求发出后既无 `blk_done` 也无 `blk_err`，握手超时 | 10-31 起 `fat32_reader` 用码 7 上报并被映射为 `dA`；多为 SD 总线归属/仲裁问题 |
 | 切图瞬间竖向白条 | 显示优先级在欠载拍回落到 `pattern_sel=0`（纯白彩条） | 已修；确认 `video_content_mux` 接了 `image_ever_ready` |
 | 慢卡被误判超时 | 看门狗按整帧计时 | 已修；看门狗改按扇区进度喂狗 |
 | ModelSim `vlog` 挂死、只打印 `in protected region` | 加密 HDMI 核在 ASE 10.1d 下无法仿真 | 整链仿真的替代方案见 [TEST_COVERAGE.md §4.4](TEST_COVERAGE.md) |

@@ -1,9 +1,9 @@
 ﻿{
-    "startedAt":  "2026-10-27T00:55:06.3177919+08:00",
+    "startedAt":  "2026-11-02T18:19:45.3147997+08:00",
     "status":  "passed",
     "sources":  [
                     {
-                        "sha256":  "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0",
+                        "sha256":  "08C0D49B152E100CD16A6EE5F0C9FD03D7DE2895FF967EA4B985F9428CC3A2A8",
                         "path":  "rtl/common/async_fifo.v"
                     },
                     {
@@ -11,60 +11,76 @@
                         "path":  "rtl/video/video_timing_gen.v"
                     },
                     {
-                        "sha256":  "38F2D7AF2A3FDD850D5F3A536609AA0B452D8A01F3B4E12F7FBCDCB805C1A730",
+                        "sha256":  "FBDC9D4915238D186BD38D00879EF1F8D551588552FB072F14AAE7E69217AB39",
+                        "path":  "rtl/video/image_window_mask.v"
+                    },
+                    {
+                        "sha256":  "0D20790A05881786105B8CC629F519620D9589055343C7FDA14C2CFE76701C29",
                         "path":  "rtl/storage/framebuf_arbiter.v"
                     },
                     {
-                        "sha256":  "6435BD47F74A33D2A94690CAED8492311B4436C6783CA00F4045F34F14F30EEF",
+                        "sha256":  "19E7727FBA24BE0EA24C33B5DB4D6BE0FCD253C1F6684667E6EBBCE3BEAEF091",
                         "path":  "rtl/storage/sdram_ctrl_wrap.v"
                     },
                     {
-                        "sha256":  "01B64F20E1731EB6A28E4C595E0E2800AA6408A82355AEA8258A7AD9BBBD66CE",
+                        "sha256":  "D1EC2E8D3179D51E00147ECE73F4079092923452AFC49BD933382375876B4FB9",
                         "path":  "rtl/storage/pix_reader.v"
                     },
                     {
-                        "sha256":  "D6E77072253A610394B45177E4A535F44EC8B56B4ADEA8A37C26C2D5EA66AFE4",
+                        "sha256":  "E67C435B016A5B84AF3522AD2D2CA0BE75A08C5452BA8B10496C1AF37D03DCC3",
+                        "path":  "rtl/storage/fade_mixer.v"
+                    },
+                    {
+                        "sha256":  "F8E4F3E947DEF117894A3D24F2D0BEECF6DAA7950EC85DD84A3DBCFC865313DB",
                         "path":  "rtl/storage/fat32_reader.v"
                     },
                     {
-                        "sha256":  "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB",
+                        "sha256":  "5254F4ACD6D1AEBC3A89623DB0D8443A875D5F86ABF45C70029E8A27D360BA4A",
                         "path":  "rtl/storage/bmp_parser.v"
                     },
                     {
-                        "sha256":  "2CF9190F637075F17F73B9DB33B29278D14E131EDA89E7AF09B470E4633E9DAA",
+                        "sha256":  "3E9E13253A068003A2E6718A35F06E154C50D0051282F689E98F974EAAE6C636",
                         "path":  "rtl/storage/img_loader.v"
                     },
                     {
-                        "sha256":  "3FC785A32B9934BAFB87BFC4FB22C53077884139A765C411B3A9A946AF27BF68",
+                        "sha256":  "D1BA590F4AD7EC0C23C18777FC11DEE7C17AAE66A80B2E44CAE4A893BA6DBF50",
+                        "path":  "rtl/storage/img_scaler.v"
+                    },
+                    {
+                        "sha256":  "411E30DF46F375611BE98FE618228465C678E435CB2EC195C9F1CBE1B886B1F7",
                         "path":  "rtl/storage/image_player.v"
                     },
                     {
-                        "sha256":  "35D7D472762EC3AB3EF7B7458400361A8BFC73BE2B8675B6E8FB2A576667ECC8",
+                        "sha256":  "CA6032112BC9E7E535284360FC89771227381D60E1000BA290795E5B80069884",
                         "path":  "sim/testbench/tb_image_player.v"
+                    },
+                    {
+                        "sha256":  "F0AFD62A48F3716799FCBE51A33DE79C55281A3714CBA0137EA95B5E73F918A9",
+                        "path":  "sim/testbench/tb_img_scaler.v"
                     }
                 ],
     "tests":  [
                   {
+                      "log":  "img_scaler.txt",
+                      "exitCode":  0,
+                      "name":  "img_scaler",
+                      "checks":  187,
+                      "passed":  true
+                  },
+                  {
                       "log":  "image_player.txt",
                       "exitCode":  0,
                       "name":  "image_player",
-                      "checks":  6205,
+                      "checks":  11365,
                       "passed":  true
                   },
                   {
-                      "log":  "image_player_full.txt",
+                      "log":  "image_player_scaled.txt",
                       "exitCode":  0,
-                      "name":  "image_player_full",
-                      "checks":  1228812,
-                      "passed":  true
-                  },
-                  {
-                      "log":  "image_player_single.txt",
-                      "exitCode":  0,
-                      "name":  "image_player_single",
-                      "checks":  6203,
+                      "name":  "image_player_scaled",
+                      "checks":  1811,
                       "passed":  true
                   }
               ],
-    "finishedAt":  "2026-10-27T01:09:34.4871113+08:00"
+    "finishedAt":  "2026-11-02T18:21:27.9545528+08:00"
 }

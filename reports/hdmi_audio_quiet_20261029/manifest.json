@@ -1,0 +1,233 @@
+{
+  "status": "passed",
+  "generatedAt": "2026-10-29T17:20:14.330679+08:00",
+  "gitHead": "e1fae5b479b7f1a0bb19735837eab2fcceac2f60",
+  "workingTreeChangesIncluded": true,
+  "change": {
+    "path": "rtl/top/dmz_eg4s20_hdmi_top.v",
+    "hdmiSignedPcmRightShift": 6,
+    "amplitudeRatio": 0.015625,
+    "changeDb": -36.12359947967774,
+    "nominalPeak24Bit": 32768,
+    "sampleRateHz": 48000
+  },
+  "bitstream": {
+    "path": "reports/hdmi_audio_quiet_20261029/hdmi_audio_quiet.bit",
+    "bytes": 629640,
+    "sha256": "F6F3F44E61095492738BEA635F69C238CC5CFD6CFC39AF939538C9B5A2FC1863",
+    "modifiedAt": "2026-10-29T17:17:54.715667+08:00"
+  },
+  "build": {
+    "tool": "Tang Dynasty v6.2.168116",
+    "entry": "project/flow_hdmi_audio_quiet.tcl",
+    "exitCode": 0,
+    "setupWnsNs": 1.935,
+    "holdWnsNs": 0.003,
+    "setupTnsNs": 0,
+    "holdTnsNs": 0,
+    "staCoveragePercent": 99.87,
+    "sourcesStable": true,
+    "snapshotAt": "2026-10-29T17:15:32.633372+08:00"
+  },
+  "sources": [
+    {
+      "path": "ip/config/sdram/global_def.v",
+      "sha256": "9F18FC3098012A885815615215B97889714EB251AD711CAE2AB5F41468DBFBEA"
+    },
+    {
+      "path": "ip/local/sdram/sdr_as_ram.enc.v",
+      "sha256": "A3555C3D2A6675DA55055651F00CB60102239042ED3E5DF06970BFEE88FFD7F1"
+    },
+    {
+      "path": "ip/local/sdram/sdr_init_ref.enc.v",
+      "sha256": "622432952E6838AAD5A10BC8092FDF2C89E60173E04310ABFE442EF98AD52F7D"
+    },
+    {
+      "path": "ip/local/sdram/sdr_wrrd.enc.v",
+      "sha256": "C7D7FE07D75F66AA88D9F986B3006319C995162434F104F9990664B374CDFDD2"
+    },
+    {
+      "path": "project/flow_hdmi_audio_quiet.tcl",
+      "sha256": "37D85ED0FD80A98B9D16D3B2A9660A84B91385809722451058AD7EECB170D6BF"
+    },
+    {
+      "path": "project/hdmi/async_fifo.v",
+      "sha256": "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0"
+    },
+    {
+      "path": "project/hdmi/audio_arc.v",
+      "sha256": "692E5A782D4E1705F276A86FEF0F863ED59301CE7673A11849C2B0705C11CE2D"
+    },
+    {
+      "path": "project/hdmi/audio_tone_gen.v",
+      "sha256": "5E046D2C2383B61A5F55A0FC18888586ECE5D20741DA3E9169BC53024D9235CE"
+    },
+    {
+      "path": "project/hdmi/audio_waveform.v",
+      "sha256": "BD2C44D0517C1D62AA60D20DFB575EA44D6B47B72D3B42F1E1518678C5A5153E"
+    },
+    {
+      "path": "project/hdmi/bmp_parser.v",
+      "sha256": "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB"
+    },
+    {
+      "path": "project/hdmi/buzzer_tone.v",
+      "sha256": "A46279B066EBDF6D84AE607A5152CB49AE18A85E8B8AF5D2BA8571C5B75D8198"
+    },
+    {
+      "path": "project/hdmi/dmz_eg4s20_hdmi.adc",
+      "sha256": "7E8BE80E064B8CC8CEFA251F81F384FE51A8DC8786354E2CE260D14A4ED52368"
+    },
+    {
+      "path": "project/hdmi/dmz_eg4s20_hdmi.sdc",
+      "sha256": "08E2101FC834F93F0AA5D5407ECAA78BC17974AB4679DE2C637118C80240A8CC"
+    },
+    {
+      "path": "project/hdmi/dmz_eg4s20_hdmi_top.v",
+      "sha256": "AA916B7176D500F2DFCC78FFDDBB34ED8250F08147C5CDEBE38E3636EDB2CB28"
+    },
+    {
+      "path": "project/hdmi/enc/hdmi_1_4b_transmitter_core_wrapper.enc.v",
+      "sha256": "867E0B0BDD874BC383D00918C9E1BE3FE01EDF41F343B6A0D73E262776596A63"
+    },
+    {
+      "path": "project/hdmi/err_prompt.v",
+      "sha256": "A5BBC3007C5DFB897E7EBF4F56C1C9799B3FE9B4E1DD8588EB8743EE4BAF27EC"
+    },
+    {
+      "path": "project/hdmi/fat32_reader.v",
+      "sha256": "D1258551FCF8A817BD671A8FB58F8A52AF982DE02C3E0FABF4E591F5B7D45AE5"
+    },
+    {
+      "path": "project/hdmi/framebuf_arbiter.v",
+      "sha256": "35C58D6067F65100CE37753AAD22D37BC31F9A7E57C6824A21C77BF39A78513F"
+    },
+    {
+      "path": "project/hdmi/gallery_probe.v",
+      "sha256": "CB5B36A4A09BE1F722A75AEC0B6D90703A2E43704AD7CFFE2716476F5131B184"
+    },
+    {
+      "path": "project/hdmi/hdmi_phy.v",
+      "sha256": "93A0BFFB9E419D113F65752285C7A16A1D1AC346CD2D1D3877FE02FB98D5B7F9"
+    },
+    {
+      "path": "project/hdmi/hdmi_pll.v",
+      "sha256": "7E2D6DC53492DAD0751DAE041358A7E80C040729572C2103B6D66F1BD1914240"
+    },
+    {
+      "path": "project/hdmi/image_player.v",
+      "sha256": "0983F6834110BFFD145C15F29004F89412A699077BBF65CF05F8D4DC30F96029"
+    },
+    {
+      "path": "project/hdmi/img_loader.v",
+      "sha256": "960DB7CCBF802B750B4BF18ED3B13FE4F5E9CECCDE1B429864BF69EE67934C28"
+    },
+    {
+      "path": "project/hdmi/key_action.v",
+      "sha256": "E940CFF6BD6191DCB92C17267CD08B35AC8B1CC24AE13DD0DB594B3484CBA96B"
+    },
+    {
+      "path": "project/hdmi/key_matrix_4x4.v",
+      "sha256": "6681F062E709D25D50718A26A52E3D04EDFB3524D058E13A807B87C6A0A2E43F"
+    },
+    {
+      "path": "project/hdmi/lane_lvds_10_1.v",
+      "sha256": "47570C12E124EB59524FD3D447EC4B99C874CD69B7B330F2EA3E28D31AADEE69"
+    },
+    {
+      "path": "project/hdmi/pcm_to_pwm.v",
+      "sha256": "C69FDC4F18917757C2A61A6E6F8824FA7F250080C57D0D3907DD8569613E9094"
+    },
+    {
+      "path": "project/hdmi/pix_reader.v",
+      "sha256": "01B64F20E1731EB6A28E4C595E0E2800AA6408A82355AEA8258A7AD9BBBD66CE"
+    },
+    {
+      "path": "project/hdmi/player_ctrl.v",
+      "sha256": "EBA65C7CBCC10FA7E9CD99766B6753CD0AB4CD4D59C0E62E7F59BB6894668DC3"
+    },
+    {
+      "path": "project/hdmi/pwm_audio_out.v",
+      "sha256": "524BFBDFEE7D008C66E0A00E7342D830BFFE4969D63EE1428EFBFE4AE5CA5551"
+    },
+    {
+      "path": "project/hdmi/sd_probe.v",
+      "sha256": "D682FDA21D2D674B234629BEA8C81DB1D9B97CF1289DA246AD00F6AEA0497DAF"
+    },
+    {
+      "path": "project/hdmi/sd_spi_ctrl.v",
+      "sha256": "D507BB8ECC9A6F7C9DC968D7F4DF7AD5743887439839DB4DCA07AB41080B28BC"
+    },
+    {
+      "path": "project/hdmi/sdram_ctrl_wrap.v",
+      "sha256": "19E7727FBA24BE0EA24C33B5DB4D6BE0FCD253C1F6684667E6EBBCE3BEAEF091"
+    },
+    {
+      "path": "project/hdmi/sdram_pll.v",
+      "sha256": "67F1E2B59088F32B0AB481C4A60C72322531CC7EF78985D61DC1314116E42E6D"
+    },
+    {
+      "path": "project/hdmi/seg_decoder.v",
+      "sha256": "6F1DA53AB11F98BB21D1702600298B4C4289D90FB2F797C6A34BC9E3AB2BEBBE"
+    },
+    {
+      "path": "project/hdmi/seg_scan4.v",
+      "sha256": "C52400B473FEA87A8F4247A93504704C6D83AECFF583B2F3EBDC8FC3DE66F5DE"
+    },
+    {
+      "path": "project/hdmi/test_pattern_gen.v",
+      "sha256": "E66964539E132C2A4F64D5CF6BFAF049F198900182912A2F999E2B89DD21AA47"
+    },
+    {
+      "path": "project/hdmi/video_overlay.v",
+      "sha256": "D31CF629DA0FCC0E344721C18C0F1DC1F191636B3EE3F8688A060954B199983F"
+    },
+    {
+      "path": "project/hdmi/video_rgb_to_axis.v",
+      "sha256": "DB96DB68829576F81B76203EF5AFC08D87FC3CBFC5B41CC0BA25CD7A3583D25B"
+    },
+    {
+      "path": "project/hdmi/video_timing_gen.v",
+      "sha256": "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78"
+    },
+    {
+      "path": "project/hdmi_td.al",
+      "sha256": "003775EB9C0E832A83573B762DC36B82863928753C989ADD85C440A42857F5BF"
+    },
+    {
+      "path": "rtl/top/dmz_eg4s20_hdmi_top.v",
+      "sha256": "AA916B7176D500F2DFCC78FFDDBB34ED8250F08147C5CDEBE38E3636EDB2CB28"
+    }
+  ],
+  "audioRegression": {
+    "status": "passed",
+    "resultSha256": "B6089CBF85A68B5BDDB788C086A04A5B960545ACF013E99E5B2D2C8F6102301E",
+    "tests": [
+      {
+        "name": "hdmi_audio_path",
+        "passed": true,
+        "passLines": 19
+      },
+      {
+        "name": "pwm_audio_out_legacy",
+        "passed": true,
+        "passLines": 5
+      }
+    ]
+  },
+  "referenceDisplayBit": {
+    "path": "reports/display_fix_20261029/hdmi_display_fix.bit",
+    "bytes": 629640,
+    "modifiedAt": "2026-10-29T08:14:50.337860+08:00",
+    "sha256": "3543915A5DD726293FBC1AF6E49D830F3E9A61E9BDA34551198CBF73A68EFEB1"
+  },
+  "changedCommonBuildInputs": [
+    "project/hdmi/dmz_eg4s20_hdmi_top.v"
+  ],
+  "hardwareDownloaded": false,
+  "listeningValidated": false,
+  "notes": [
+    "The existing audio regression covers the tone source, ACR and PWM; top-level signed HDMI attenuation wiring was reviewed and compiled in the full TD build.",
+    "The display fix was reported resolved on the board by the user before this audio-only change."
+  ]
+}

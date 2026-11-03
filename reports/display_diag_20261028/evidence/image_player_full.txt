@@ -1,0 +1,20 @@
+Reading D:/Quartus_APP/modelsim_ase/tcl/vsim/pref.tcl 
+
+# 10.1d
+
+# vsim -do {onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0} -c -onfinish stop -quiet -gFULL=1 work.tb_image_player 
+# onerror {quit -f -code 2} 
+#  Warning: onerror command for use within macro
+#  onbreak {quit -f -code 3} 
+#  Warning: onbreak command for use within macro
+#  run -all 
+# CASE 1: boot, bottom-up BMP, complete displayed frame
+# CASE 2: top-down BMP reload with different pixel data
+# SEAMLESS: mode=1 front_flips=2 overlap_cycles=2085846 starve_cycles=0
+# SUMMARY: FULL 640x480 checks=1228812 errors=0
+# ALL CHECKS PASSED: image_player_full
+# ** Note: $finish    : D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_image_player.v(476)
+#    Time: 201280360 ns  Iteration: 1  Instance: /tb_image_player
+# Break in Module tb_image_player at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_image_player.v line 476
+# Stopped at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_image_player.v line 476 
+#  quit -f -code 0 

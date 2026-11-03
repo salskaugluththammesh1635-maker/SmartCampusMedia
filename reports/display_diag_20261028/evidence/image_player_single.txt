@@ -1,0 +1,30 @@
+Reading D:/Quartus_APP/modelsim_ase/tcl/vsim/pref.tcl 
+
+# 10.1d
+
+# vsim -do {onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0} -c -onfinish stop -quiet -gSEAMLESS=0 work.tb_image_player 
+# onerror {quit -f -code 2} 
+#  Warning: onerror command for use within macro
+#  onbreak {quit -f -code 3} 
+#  Warning: onbreak command for use within macro
+#  run -all 
+# CASE 1: boot, bottom-up BMP, complete displayed frame
+# CASE 2: top-down BMP reload with different pixel data
+# CASE 3: missing image, then retry without resetting SD
+# CASE 4: malformed BMP header
+# CASE 5: short file cannot publish a partial frame
+# CASE 6: data sector read error
+# CASE 7: latest pending request survives an active load
+# CASE 8a: sticky arbiter fault recovers with one request
+# CASE 8b: sticky refresh fault recovers with one request
+# CASE 9: stalled sector service reaches the load watchdog
+# CASE 10: SD startup failure, then retry after recovery
+# CASE 11: SDRAM clock lock loss resets both sides of the storage path
+# SEAMLESS: mode=0 front_flips=0 overlap_cycles=0 starve_cycles=0
+# SUMMARY: checks=8263 errors=0
+# ALL CHECKS PASSED: image_player
+# ** Note: $finish    : D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_image_player.v(532)
+#    Time: 13271400 ns  Iteration: 1  Instance: /tb_image_player
+# Break in Module tb_image_player at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_image_player.v line 532
+# Stopped at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_image_player.v line 532 
+#  quit -f -code 0 

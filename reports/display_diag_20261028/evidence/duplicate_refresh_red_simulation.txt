@@ -1,0 +1,58 @@
+Reading pref.tcl
+
+# 2022.1
+
+# vsim -c -quiet -onfinish stop -do "run -all; quit -f -code 0" work.tb_refresh_single_group -gINJECT_NS=3309175 -gTIMEOUT_NS=3319175 
+# Start time: 00:26:17 on Oct 29,2026
+# ** Warning: (vsim-8891) All optimizations are disabled because the -novopt option is in effect. This will cause your simulation to run very slowly. If you are using this switch to preserve visibility for Debug or PLI features, please see the User's Manual section on Preserving Object Visibility with vopt. -novopt option is now deprecated and will be removed in future releases.
+# //  ModelSim SE-64 2022.1 Jan 29 2022
+# //
+# //  Copyright 1991-2022 Mentor Graphics Corporation
+# //  All Rights Reserved.
+# //
+# //  ModelSim SE-64 and its associated documentation contain trade
+# //  secrets and commercial or financial information that are the property of
+# //  Mentor Graphics Corporation and are privileged, confidential,
+# //  and exempt from disclosure under the Freedom of Information Act,
+# //  5 U.S.C. Section 552. Furthermore, this information
+# //  is prohibited from disclosure under the Trade Secrets Act,
+# //  18 U.S.C. Section 1905.
+# //
+# run -all
+# SINGLE_TRACE ns=3309137.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309162.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309187.500 init=1 ref=0 wrreq=1 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309212.500 init=1 ref=0 wrreq=1 wrack=1 appwr=1 pin=111 arb=1 beat=0
+# SINGLE_TRACE ns=3309237.500 init=1 ref=0 wrreq=1 wrack=1 appwr=1 pin=111 arb=1 beat=1
+# SINGLE_TRACE ns=3309262.500 init=1 ref=0 wrreq=1 wrack=1 appwr=1 pin=111 arb=1 beat=2
+# SINGLE_TRACE ns=3309287.500 init=1 ref=0 wrreq=1 wrack=1 appwr=1 pin=111 arb=1 beat=3
+# SINGLE_TRACE ns=3309312.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=011 arb=1 beat=0
+# SINGLE_TRACE ns=3309337.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=3 beat=0
+# SINGLE_TRACE ns=3309362.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=3 beat=0
+# SINGLE_TRACE ns=3309387.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=100 arb=3 beat=0
+# SINGLE_TRACE ns=3309412.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309437.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309462.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309487.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309512.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309537.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309562.500 init=1 ref=0 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309587.500 init=1 ref=1 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309612.500 init=1 ref=1 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309637.500 init=1 ref=1 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309662.500 init=1 ref=1 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309687.500 init=1 ref=1 wrreq=0 wrack=0 appwr=0 pin=001 arb=0 beat=0
+# MINIMAL_RED at_ns=3309700.000 previous_ns=3309675.000 gap_ns=25.000 writes=4 refreshes=2
+# tb_refresh_single_group.memory : at time 3309700.0 ns ERROR: tRC violation during Auto Refresh
+# SINGLE_TRACE ns=3309712.500 init=1 ref=1 wrreq=0 wrack=0 appwr=0 pin=001 arb=0 beat=0
+# SINGLE_TRACE ns=3309737.500 init=1 ref=1 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309762.500 init=1 ref=1 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# SINGLE_TRACE ns=3309787.500 init=1 ref=1 wrreq=0 wrack=0 appwr=0 pin=111 arb=0 beat=0
+# EXPECTED RED CONFIRMED: single complete four-word group causes short runtime AREF pair
+# ** Note: $finish    : D:/FPGA_Compelate/SmartCampusMedia/reports/display_diag_20261028/full_frame_40mhz/tb_refresh_single_group.v(51)
+#    Time: 3309800 ns  Iteration: 0  Instance: :tb_refresh_single_group
+# Break in Module tb_refresh_single_group at D:/FPGA_Compelate/SmartCampusMedia/reports/display_diag_20261028/full_frame_40mhz/tb_refresh_single_group.v line 51
+# Stopped at D:/FPGA_Compelate/SmartCampusMedia/reports/display_diag_20261028/full_frame_40mhz/tb_refresh_single_group.v line 51
+#  quit -f -code 0
+# End time: 00:26:18 on Oct 29,2026, Elapsed time: 0:00:01
+# Errors: 0, Warnings: 1

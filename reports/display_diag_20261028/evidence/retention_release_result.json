@@ -1,0 +1,56 @@
+{
+  "startedAt": "2026-10-29T08:12:30.9353195+08:00",
+  "status": "passed",
+  "sources": [
+    {
+      "sha256": "9F18FC3098012A885815615215B97889714EB251AD711CAE2AB5F41468DBFBEA",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\ip\\config\\sdram\\global_def.v"
+    },
+    {
+      "sha256": "C7D7FE07D75F66AA88D9F986B3006319C995162434F104F9990664B374CDFDD2",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\ip\\local\\sdram\\sdr_wrrd.enc.v"
+    },
+    {
+      "sha256": "622432952E6838AAD5A10BC8092FDF2C89E60173E04310ABFE442EF98AD52F7D",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\ip\\local\\sdram\\sdr_init_ref.enc.v"
+    },
+    {
+      "sha256": "A3555C3D2A6675DA55055651F00CB60102239042ED3E5DF06970BFEE88FFD7F1",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\ip\\local\\sdram\\sdr_as_ram.enc.v"
+    },
+    {
+      "sha256": "6AAD09C411B00E319EA6E7FF5A85453EB990532541AE368084406F78A276690B",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\ip\\local\\sdram\\IS42s32200.v"
+    },
+    {
+      "sha256": "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\rtl\\common\\async_fifo.v"
+    },
+    {
+      "sha256": "35C58D6067F65100CE37753AAD22D37BC31F9A7E57C6824A21C77BF39A78513F",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\rtl\\storage\\framebuf_arbiter.v"
+    },
+    {
+      "sha256": "19E7727FBA24BE0EA24C33B5DB4D6BE0FCD253C1F6684667E6EBBCE3BEAEF091",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\rtl\\storage\\sdram_ctrl_wrap.v"
+    },
+    {
+      "sha256": "28C30563F30F971042236EBB6C2D7E89B6FAB77834213D6025C030C750908F4D",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\sim\\testbench\\tb_sdram_frame_retention.v"
+    }
+  ],
+  "clockSdrMHz": 40,
+  "clockProducerMHz": 25,
+  "spiEquivalentMHz": 12.5,
+  "geometry": "640x480",
+  "holdMs": 64,
+  "frames": 2,
+  "expectedWords": 307200,
+  "vendorTimingDefaults": true,
+  "timingChecksEnabled": true,
+  "physicalTimingValidated": false,
+  "exitCode": 0,
+  "seconds": 28.8987013,
+  "summary": "RETENTION_RESULT frames=2 words=307200 errors=0 refresh_error=0",
+  "finishedAt": "2026-10-29T08:13:00.2590070+08:00"
+}

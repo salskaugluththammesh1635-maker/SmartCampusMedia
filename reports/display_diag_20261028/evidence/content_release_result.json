@@ -1,0 +1,85 @@
+{
+  "startedAt": "2026-10-29T08:12:26.7243827+08:00",
+  "status": "passed",
+  "sources": [
+    {
+      "path": "ip/config/sdram/global_def.v",
+      "sha256": "9F18FC3098012A885815615215B97889714EB251AD711CAE2AB5F41468DBFBEA"
+    },
+    {
+      "path": "ip/local/sdram/sdr_wrrd.enc.v",
+      "sha256": "C7D7FE07D75F66AA88D9F986B3006319C995162434F104F9990664B374CDFDD2"
+    },
+    {
+      "path": "ip/local/sdram/sdr_init_ref.enc.v",
+      "sha256": "622432952E6838AAD5A10BC8092FDF2C89E60173E04310ABFE442EF98AD52F7D"
+    },
+    {
+      "path": "ip/local/sdram/sdr_as_ram.enc.v",
+      "sha256": "A3555C3D2A6675DA55055651F00CB60102239042ED3E5DF06970BFEE88FFD7F1"
+    },
+    {
+      "path": "ip/local/sdram/IS42s32200.v",
+      "sha256": "6AAD09C411B00E319EA6E7FF5A85453EB990532541AE368084406F78A276690B"
+    },
+    {
+      "path": "rtl/common/async_fifo.v",
+      "sha256": "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0"
+    },
+    {
+      "path": "rtl/video/video_timing_gen.v",
+      "sha256": "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78"
+    },
+    {
+      "path": "rtl/storage/framebuf_arbiter.v",
+      "sha256": "35C58D6067F65100CE37753AAD22D37BC31F9A7E57C6824A21C77BF39A78513F"
+    },
+    {
+      "path": "rtl/storage/sdram_ctrl_wrap.v",
+      "sha256": "19E7727FBA24BE0EA24C33B5DB4D6BE0FCD253C1F6684667E6EBBCE3BEAEF091"
+    },
+    {
+      "path": "rtl/storage/pix_reader.v",
+      "sha256": "01B64F20E1731EB6A28E4C595E0E2800AA6408A82355AEA8258A7AD9BBBD66CE"
+    },
+    {
+      "path": "rtl/storage/fat32_reader.v",
+      "sha256": "D1258551FCF8A817BD671A8FB58F8A52AF982DE02C3E0FABF4E591F5B7D45AE5"
+    },
+    {
+      "path": "rtl/storage/bmp_parser.v",
+      "sha256": "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB"
+    },
+    {
+      "path": "rtl/storage/img_loader.v",
+      "sha256": "960DB7CCBF802B750B4BF18ED3B13FE4F5E9CECCDE1B429864BF69EE67934C28"
+    },
+    {
+      "path": "rtl/storage/image_player.v",
+      "sha256": "0983F6834110BFFD145C15F29004F89412A699077BBF65CF05F8D4DC30F96029"
+    },
+    {
+      "path": "sim/testbench/tb_display_content.v",
+      "sha256": "3F4A2D383E8F4A2B6E404E2CABC4604985E22E46E19BAA54A97CC84A21F091EE"
+    }
+  ],
+  "bmp": "D:\\FPGA_Compelate\\SmartCampusMedia\\assets\\sd_verify\\good\\IMG001.BMP",
+  "bmpSha256": "F7486BD0E4D7DD3FCC92C0CB2C5CAAD9063BD41E574930DA8F4103DEC9D07A8A",
+  "fixture": "BMP bytes=921654 clusters=226 width=640 height=480",
+  "byteGap": 15,
+  "pixelMHz": 25,
+  "sdramMHz": 40,
+  "seam": "production image_player RTL + APUG011 encrypted core + IS42s32200 pin model; modeled external sector service",
+  "harnessSha256": "CD66BE9A497368FB33F185A46CD9552A2AB9303ACF93A4E5CE4AA4E97BFA61FA",
+  "pinModelWordsPerBank": 524288,
+  "datasheetTiming": true,
+  "exitCode": 0,
+  "pinModelErrors": 0,
+  "checks": 614407,
+  "errors": 0,
+  "missing": 0,
+  "mismatched": 0,
+  "frameIdentical": true,
+  "elapsedSeconds": 141.3660095,
+  "finishedAt": "2026-10-29T08:14:48.0975118+08:00"
+}

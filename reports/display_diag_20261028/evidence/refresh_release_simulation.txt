@@ -1,0 +1,48 @@
+Reading pref.tcl
+
+# 2022.1
+
+# vsim -c -quiet -vopt -onfinish stop -do "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0" work.tb_sdram_refresh_config 
+# Start time: 08:12:27 on Oct 29,2026
+# ** Note: (vsim-3812) Design is being optimized...
+# ** Warning: D:\FPGA_Compelate\SmartCampusMedia\ip\local\sdram\sdr_init_ref.enc.v(206): (vopt-2121) Illegal concatenation of an unsized constant. Will treat it as a 32-bit value.
+# ** Warning: D:\FPGA_Compelate\SmartCampusMedia\ip\local\sdram\sdr_wrrd.enc.v(77): (vopt-2121) Illegal concatenation of an unsized constant. Will treat it as a 32-bit value.
+# ** Warning: D:\FPGA_Compelate\SmartCampusMedia\ip\local\sdram\sdr_init_ref.enc.v(206): (vopt-2121) Illegal concatenation of an unsized constant. Will treat it as a 32-bit value.
+# ** Note: (vsim-12126) Error and warning message counts have been restored: Errors=0, Warnings=3.
+# //  ModelSim SE-64 2022.1 Jan 29 2022
+# //
+# //  Copyright 1991-2022 Mentor Graphics Corporation
+# //  All Rights Reserved.
+# //
+# //  ModelSim SE-64 and its associated documentation contain trade
+# //  secrets and commercial or financial information that are the property of
+# //  Mentor Graphics Corporation and are privileged, confidential,
+# //  and exempt from disclosure under the Freedom of Information Act,
+# //  5 U.S.C. Section 552. Furthermore, this information
+# //  is prohibited from disclosure under the Trade Secrets Act,
+# //  18 U.S.C. Section 1905.
+# //
+# onerror {quit -f -code 2}
+#  Warning: onerror command for use within macro
+#  onbreak {quit -f -code 3}
+#  Warning: onbreak command for use within macro
+#  run -all
+# CASE 1: macro configuration
+# MACRO_CONFIG period_ns=25 interval_cycles=625 minus_ten=615
+# CASE 2: idle 64 ms physical refresh coverage
+# REFRESH_WINDOW duration_ns=64000000 physical_commands=3843 app_edges=3843 min_gap_ns=16650.000 max_gap_ns=16650.000 datasheet_rows=2048
+# CASE 3: pending read returns hold the refresh drain window
+# REFRESH_DRAIN pending_reads=4 blocked_cycles=128 physical_commands=1
+# CASE 4: missing core refresh handshake trips sticky watchdog
+# REFRESH_WATCHDOG threshold_cycles=1024 fault_observed_cycles=1025 sticky_cycles=64
+# CASE 5: reset clears the fault and resumes physical refresh
+# REFRESH_RESET physical_commands=2 app_edges=2
+# SUMMARY: checks=161949 errors=0 cases=5
+# ALL CHECKS PASSED: sdram_refresh_config
+# ** Note: $finish    : D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_sdram_refresh_config.v(199)
+#    Time: 70638725 ns  Iteration: 1  Instance: :tb_sdram_refresh_config
+# Break at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_sdram_refresh_config.v line 199
+# Stopped at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_sdram_refresh_config.v line 199
+#  quit -f -code 0
+# End time: 08:12:30 on Oct 29,2026, Elapsed time: 0:00:03
+# Errors: 0, Warnings: 3

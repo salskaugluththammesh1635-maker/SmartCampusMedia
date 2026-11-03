@@ -1,0 +1,4 @@
+# Keep simulator libraries local; preserve final build identity.
+audio/
+!manifest.json
+!audio_result.json

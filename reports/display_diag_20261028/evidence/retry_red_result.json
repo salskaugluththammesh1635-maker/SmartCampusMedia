@@ -1,0 +1,57 @@
+{
+  "startedAt": "2026-10-29T08:07:17.7064183+08:00",
+  "status": "failed",
+  "sources": [
+    {
+      "path": "rtl/common/async_fifo.v",
+      "sha256": "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0"
+    },
+    {
+      "path": "rtl/video/video_timing_gen.v",
+      "sha256": "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78"
+    },
+    {
+      "path": "rtl/storage/framebuf_arbiter.v",
+      "sha256": "35C58D6067F65100CE37753AAD22D37BC31F9A7E57C6824A21C77BF39A78513F"
+    },
+    {
+      "path": "rtl/storage/sdram_ctrl_wrap.v",
+      "sha256": "516C3BA94D9BAE8F8BA632D5868BD1DA65408353715BCE55A6CB9F7D6714AC0A"
+    },
+    {
+      "path": "rtl/storage/pix_reader.v",
+      "sha256": "01B64F20E1731EB6A28E4C595E0E2800AA6408A82355AEA8258A7AD9BBBD66CE"
+    },
+    {
+      "path": "rtl/storage/fat32_reader.v",
+      "sha256": "D1258551FCF8A817BD671A8FB58F8A52AF982DE02C3E0FABF4E591F5B7D45AE5"
+    },
+    {
+      "path": "rtl/storage/bmp_parser.v",
+      "sha256": "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB"
+    },
+    {
+      "path": "rtl/storage/img_loader.v",
+      "sha256": "960DB7CCBF802B750B4BF18ED3B13FE4F5E9CECCDE1B429864BF69EE67934C28"
+    },
+    {
+      "path": "rtl/storage/image_player.v",
+      "sha256": "E678E98B261CB733020403CE3152D618FB6FD7079A33FDE4735062B1341A7BFC"
+    },
+    {
+      "path": "sim/testbench/tb_image_player.v",
+      "sha256": "46FCD9691F085B9E2B78FD75AD59FC4D4EA96AF21A76539864192586C097E477"
+    }
+  ],
+  "tests": [
+    {
+      "exitCode": 0,
+      "log": "image_player.txt",
+      "passed": false,
+      "checks": 8271,
+      "name": "image_player"
+    }
+  ],
+  "error": "Simulation failed: image_player.txt",
+  "finishedAt": "2026-10-29T08:07:26.4044423+08:00"
+}

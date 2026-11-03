@@ -1,0 +1,39 @@
+Reading pref.tcl
+
+# 2022.1
+
+# vsim -c -quiet -onfinish stop -do "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0" work.tb_display_content -gRD_GAP=15 -gFUNCTIONAL_TIMING=0 
+# Start time: 08:12:28 on Oct 29,2026
+# ** Warning: (vsim-8891) All optimizations are disabled because the -novopt option is in effect. This will cause your simulation to run very slowly. If you are using this switch to preserve visibility for Debug or PLI features, please see the User's Manual section on Preserving Object Visibility with vopt. -novopt option is now deprecated and will be removed in future releases.
+# //  ModelSim SE-64 2022.1 Jan 29 2022
+# //
+# //  Copyright 1991-2022 Mentor Graphics Corporation
+# //  All Rights Reserved.
+# //
+# //  ModelSim SE-64 and its associated documentation contain trade
+# //  secrets and commercial or financial information that are the property of
+# //  Mentor Graphics Corporation and are privileged, confidential,
+# //  and exempt from disclosure under the Freedom of Information Act,
+# //  5 U.S.C. Section 552. Furthermore, this information
+# //  is prohibited from disclosure under the Trade Secrets Act,
+# //  18 U.S.C. Section 1905.
+# //
+# onerror {quit -f -code 2}
+#  Warning: onerror command for use within macro
+#  onbreak {quit -f -code 3}
+#  Warning: onbreak command for use within macro
+#  run -all
+# DISPLAY_CONTENT: pixel_clock=25MHz SDRAM_clock=40MHz RD_GAP=15
+# PIN_MODEL: APUG011 real encrypted core; bank_words=524288 FUNCTIONAL_TIMING=0
+# CONFIG: SDR_CLK_PERIOD=25 SELF_REFRESH_INTERVAL=625
+# LOAD: cycles=16711660 sectors=2029 ready=1 failed=0 error=0
+# PIN_RESULT: app_write_min=153600 app_write_max=307196 pin_writes=38400 pin_reads=38490 mode=032
+# SUMMARY: checks=614407 errors=0 missing=0 mismatched=0
+# ALL CHECKS PASSED: display_content
+# ** Note: $finish    : D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_display_content.v(178)
+#    Time: 688480360 ns  Iteration: 1  Instance: :tb_display_content
+# Break in Module tb_display_content at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_display_content.v line 178
+# Stopped at D:/FPGA_Compelate/SmartCampusMedia/sim/testbench/tb_display_content.v line 178
+#  quit -f -code 0
+# End time: 08:14:47 on Oct 29,2026, Elapsed time: 0:02:19
+# Errors: 0, Warnings: 1

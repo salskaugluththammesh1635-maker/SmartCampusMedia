@@ -1,0 +1,87 @@
+﻿{
+    "startedAt":  "2026-10-29T00:16:39.3825777+08:00",
+    "status":  "passed",
+    "sources":  [
+                    {
+                        "sha256":  "C1F4124E69B7986D2D0689D3B71493DAEA498B124B1FFB54C8D597C3B652EFA2",
+                        "path":  "ip/config/sdram/global_def.v"
+                    },
+                    {
+                        "sha256":  "C7D7FE07D75F66AA88D9F986B3006319C995162434F104F9990664B374CDFDD2",
+                        "path":  "ip/local/sdram/sdr_wrrd.enc.v"
+                    },
+                    {
+                        "sha256":  "622432952E6838AAD5A10BC8092FDF2C89E60173E04310ABFE442EF98AD52F7D",
+                        "path":  "ip/local/sdram/sdr_init_ref.enc.v"
+                    },
+                    {
+                        "sha256":  "A3555C3D2A6675DA55055651F00CB60102239042ED3E5DF06970BFEE88FFD7F1",
+                        "path":  "ip/local/sdram/sdr_as_ram.enc.v"
+                    },
+                    {
+                        "sha256":  "6AAD09C411B00E319EA6E7FF5A85453EB990532541AE368084406F78A276690B",
+                        "path":  "ip/local/sdram/IS42s32200.v"
+                    },
+                    {
+                        "sha256":  "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0",
+                        "path":  "rtl/common/async_fifo.v"
+                    },
+                    {
+                        "sha256":  "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78",
+                        "path":  "rtl/video/video_timing_gen.v"
+                    },
+                    {
+                        "sha256":  "38F2D7AF2A3FDD850D5F3A536609AA0B452D8A01F3B4E12F7FBCDCB805C1A730",
+                        "path":  "rtl/storage/framebuf_arbiter.v"
+                    },
+                    {
+                        "sha256":  "6DE4636F9316E3F412D795B42AF5DA4B5434E55F66337E4A470A774D45C661E1",
+                        "path":  "rtl/storage/sdram_ctrl_wrap.v"
+                    },
+                    {
+                        "sha256":  "01B64F20E1731EB6A28E4C595E0E2800AA6408A82355AEA8258A7AD9BBBD66CE",
+                        "path":  "rtl/storage/pix_reader.v"
+                    },
+                    {
+                        "sha256":  "D1258551FCF8A817BD671A8FB58F8A52AF982DE02C3E0FABF4E591F5B7D45AE5",
+                        "path":  "rtl/storage/fat32_reader.v"
+                    },
+                    {
+                        "sha256":  "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB",
+                        "path":  "rtl/storage/bmp_parser.v"
+                    },
+                    {
+                        "sha256":  "960DB7CCBF802B750B4BF18ED3B13FE4F5E9CECCDE1B429864BF69EE67934C28",
+                        "path":  "rtl/storage/img_loader.v"
+                    },
+                    {
+                        "sha256":  "3FC785A32B9934BAFB87BFC4FB22C53077884139A765C411B3A9A946AF27BF68",
+                        "path":  "rtl/storage/image_player.v"
+                    },
+                    {
+                        "sha256":  "DF4693594340BD87549FCD5537D70CBBAFFDCB130AE814C1FE2D006DA26588F0",
+                        "path":  "sim/testbench/tb_display_content.v"
+                    }
+                ],
+    "bmp":  "D:\\FPGA_Compelate\\SmartCampusMedia\\assets\\sd_verify\\good\\IMG001.BMP",
+    "bmpSha256":  "F7486BD0E4D7DD3FCC92C0CB2C5CAAD9063BD41E574930DA8F4103DEC9D07A8A",
+    "fixture":  "BMP bytes=921654 clusters=226 width=640 height=480",
+    "byteGap":  1,
+    "pixelMHz":  25,
+    "sdramMHz":  40,
+    "seam":  "APUG011 core APP read-group replay; physical model rows seeded independently",
+    "pinModelWordsPerBank":  524288,
+    "datasheetTiming":  true,
+    "replayFirstGroup":  9,
+    "replayGroups":  2,
+    "replayShortGap":  13,
+    "exitCode":  0,
+    "pinModelErrors":  0,
+    "checks":  10,
+    "errors":  0,
+    "missing":  0,
+    "mismatched":  0,
+    "frameIdentical":  null,
+    "elapsedSeconds":  3.0118152,
+    "finishedAt":  "2026-10-29T00:16:42.4027807+08:00"
+}

@@ -1,0 +1,8 @@
+# Keep reproducible tests in sim/ and curate only small evidence files here.
+# Generated fixtures, raw captures, simulator libraries and experimental wrappers
+# remain available locally, but do not belong in source-control changes.
+*
+!.gitignore
+!README.md
+!evidence/
+!evidence/**

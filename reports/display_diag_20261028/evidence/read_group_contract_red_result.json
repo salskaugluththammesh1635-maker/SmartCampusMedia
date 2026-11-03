@@ -1,0 +1,11 @@
+{
+  "oldArbiterGitRef": "HEAD:rtl/storage/framebuf_arbiter.v",
+  "oldArbiterSha256": "38f2d7af2a3fdd850d5f3a536609aa0b452d8a01f3b4e12f7fbcdcb805c1a730",
+  "testbench": "sim/testbench/tb_framebuf_arbiter.v",
+  "testbenchSha256": "2f2d9f625bff78e4df30d3756e93271334d01237cac992c9d10ed48bf23db906",
+  "status": "expected_failure",
+  "checks": 78620,
+  "errors": 1087,
+  "cases": 15,
+  "specificFailure": "accepted read-group starts are at least thirteen clocks apart"
+}

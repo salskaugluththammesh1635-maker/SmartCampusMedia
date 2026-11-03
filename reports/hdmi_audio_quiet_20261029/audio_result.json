@@ -1,0 +1,65 @@
+{
+  "startedAt": "2026-10-29T17:15:32.5654680+08:00",
+  "status": "passed",
+  "sources": [
+    {
+      "path": "rtl/audio/audio_tone_gen.v",
+      "sha256": "5E046D2C2383B61A5F55A0FC18888586ECE5D20741DA3E9169BC53024D9235CE"
+    },
+    {
+      "path": "rtl/video/hdmi/audio_arc.v",
+      "sha256": "692E5A782D4E1705F276A86FEF0F863ED59301CE7673A11849C2B0705C11CE2D"
+    },
+    {
+      "path": "rtl/audio/pcm_to_pwm.v",
+      "sha256": "C69FDC4F18917757C2A61A6E6F8824FA7F250080C57D0D3907DD8569613E9094"
+    },
+    {
+      "path": "rtl/audio/pwm_audio_out.v",
+      "sha256": "524BFBDFEE7D008C66E0A00E7342D830BFFE4969D63EE1428EFBFE4AE5CA5551"
+    },
+    {
+      "path": "sim/testbench/tb_hdmi_audio_path.v",
+      "sha256": "F0FD62AA469573DF80DF3C0884D06F1B31005294B45516675232DD2BB59FB272"
+    },
+    {
+      "path": "sim/testbench/tb_pwm_audio_out.v",
+      "sha256": "A9ECB69C8868EB0D469452245AA653E7C178E98F5698F73BC792323AC7385103"
+    }
+  ],
+  "tests": [
+    {
+      "passLines": 19,
+      "passed": true,
+      "exitCode": 0,
+      "name": "hdmi_audio_path",
+      "arguments": [
+        "-c",
+        "-quiet",
+        "-onfinish",
+        "stop",
+        "-do",
+        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+        "work.tb_hdmi_audio_path"
+      ],
+      "log": "hdmi_audio_path.txt"
+    },
+    {
+      "passLines": 5,
+      "passed": true,
+      "exitCode": 0,
+      "name": "pwm_audio_out_legacy",
+      "arguments": [
+        "-c",
+        "-quiet",
+        "-onfinish",
+        "stop",
+        "-do",
+        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+        "work.tb_pwm_audio_out"
+      ],
+      "log": "pwm_audio_out_legacy.txt"
+    }
+  ],
+  "finishedAt": "2026-10-29T17:18:09.8055539+08:00"
+}

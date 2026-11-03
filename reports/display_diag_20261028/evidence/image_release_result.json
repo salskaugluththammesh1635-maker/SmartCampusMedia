@@ -1,0 +1,70 @@
+{
+  "startedAt": "2026-10-29T08:12:26.1654944+08:00",
+  "status": "passed",
+  "sources": [
+    {
+      "sha256": "ECCF04AD75A63E6DAEA9A0C91B31B78BA75D55D85B0ECD39AD5F912FC0D137F0",
+      "path": "rtl/common/async_fifo.v"
+    },
+    {
+      "sha256": "181147AC3AF2A18396A74FF61AC453F2162F51F215C5FE3D7AE9BF10708F2F78",
+      "path": "rtl/video/video_timing_gen.v"
+    },
+    {
+      "sha256": "35C58D6067F65100CE37753AAD22D37BC31F9A7E57C6824A21C77BF39A78513F",
+      "path": "rtl/storage/framebuf_arbiter.v"
+    },
+    {
+      "sha256": "19E7727FBA24BE0EA24C33B5DB4D6BE0FCD253C1F6684667E6EBBCE3BEAEF091",
+      "path": "rtl/storage/sdram_ctrl_wrap.v"
+    },
+    {
+      "sha256": "01B64F20E1731EB6A28E4C595E0E2800AA6408A82355AEA8258A7AD9BBBD66CE",
+      "path": "rtl/storage/pix_reader.v"
+    },
+    {
+      "sha256": "D1258551FCF8A817BD671A8FB58F8A52AF982DE02C3E0FABF4E591F5B7D45AE5",
+      "path": "rtl/storage/fat32_reader.v"
+    },
+    {
+      "sha256": "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB",
+      "path": "rtl/storage/bmp_parser.v"
+    },
+    {
+      "sha256": "960DB7CCBF802B750B4BF18ED3B13FE4F5E9CECCDE1B429864BF69EE67934C28",
+      "path": "rtl/storage/img_loader.v"
+    },
+    {
+      "sha256": "0983F6834110BFFD145C15F29004F89412A699077BBF65CF05F8D4DC30F96029",
+      "path": "rtl/storage/image_player.v"
+    },
+    {
+      "sha256": "0CFBC3586C101251B3CDCC86AF65D9FA234FB1013A47EA205CC51C67784B409D",
+      "path": "sim/testbench/tb_image_player.v"
+    }
+  ],
+  "tests": [
+    {
+      "log": "image_player.txt",
+      "exitCode": 0,
+      "checks": 8265,
+      "passed": true,
+      "name": "image_player"
+    },
+    {
+      "log": "image_player_full.txt",
+      "exitCode": 0,
+      "checks": 1228812,
+      "passed": true,
+      "name": "image_player_full"
+    },
+    {
+      "log": "image_player_single.txt",
+      "exitCode": 0,
+      "checks": 8263,
+      "passed": true,
+      "name": "image_player_single"
+    }
+  ],
+  "finishedAt": "2026-10-29T08:15:16.3217648+08:00"
+}

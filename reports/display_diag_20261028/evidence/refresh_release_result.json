@@ -1,0 +1,41 @@
+{
+  "startedAt": "2026-10-29T08:12:26.1560244+08:00",
+  "status": "passed",
+  "sources": [
+    {
+      "sha256": "9F18FC3098012A885815615215B97889714EB251AD711CAE2AB5F41468DBFBEA",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\ip\\config\\sdram\\global_def.v"
+    },
+    {
+      "sha256": "C7D7FE07D75F66AA88D9F986B3006319C995162434F104F9990664B374CDFDD2",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\ip\\local\\sdram\\sdr_wrrd.enc.v"
+    },
+    {
+      "sha256": "622432952E6838AAD5A10BC8092FDF2C89E60173E04310ABFE442EF98AD52F7D",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\ip\\local\\sdram\\sdr_init_ref.enc.v"
+    },
+    {
+      "sha256": "A3555C3D2A6675DA55055651F00CB60102239042ED3E5DF06970BFEE88FFD7F1",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\ip\\local\\sdram\\sdr_as_ram.enc.v"
+    },
+    {
+      "sha256": "35C58D6067F65100CE37753AAD22D37BC31F9A7E57C6824A21C77BF39A78513F",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\rtl\\storage\\framebuf_arbiter.v"
+    },
+    {
+      "sha256": "19E7727FBA24BE0EA24C33B5DB4D6BE0FCD253C1F6684667E6EBBCE3BEAEF091",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\rtl\\storage\\sdram_ctrl_wrap.v"
+    },
+    {
+      "sha256": "ADD960C8F9D77693271386E7793E34E6914928F80862F20E6DBD9264FCC4F22C",
+      "path": "D:\\FPGA_Compelate\\SmartCampusMedia\\sim\\testbench\\tb_sdram_refresh_config.v"
+    }
+  ],
+  "physicalTimingValidated": false,
+  "refreshCommandCadenceValidated": true,
+  "checks": 161949,
+  "errors": 0,
+  "cases": 5,
+  "exitCode": 0,
+  "finishedAt": "2026-10-29T08:12:30.8641447+08:00"
+}

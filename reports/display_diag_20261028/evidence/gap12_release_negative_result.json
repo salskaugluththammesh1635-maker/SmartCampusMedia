@@ -1,0 +1,57 @@
+{
+  "startedAt": "2026-10-29T08:18:41.9191322+08:00",
+  "status": "failed",
+  "sources": [
+    {
+      "path": "ip/config/sdram/global_def.v",
+      "sha256": "9F18FC3098012A885815615215B97889714EB251AD711CAE2AB5F41468DBFBEA"
+    },
+    {
+      "path": "ip/local/sdram/sdr_wrrd.enc.v",
+      "sha256": "C7D7FE07D75F66AA88D9F986B3006319C995162434F104F9990664B374CDFDD2"
+    },
+    {
+      "path": "ip/local/sdram/sdr_init_ref.enc.v",
+      "sha256": "622432952E6838AAD5A10BC8092FDF2C89E60173E04310ABFE442EF98AD52F7D"
+    },
+    {
+      "path": "ip/local/sdram/sdr_as_ram.enc.v",
+      "sha256": "A3555C3D2A6675DA55055651F00CB60102239042ED3E5DF06970BFEE88FFD7F1"
+    },
+    {
+      "path": "ip/local/sdram/IS42s32200.v",
+      "sha256": "6AAD09C411B00E319EA6E7FF5A85453EB990532541AE368084406F78A276690B"
+    },
+    {
+      "path": "rtl/storage/sdram_ctrl_wrap.v",
+      "sha256": "19E7727FBA24BE0EA24C33B5DB4D6BE0FCD253C1F6684667E6EBBCE3BEAEF091"
+    },
+    {
+      "path": "sim/testbench/tb_display_content.v",
+      "sha256": "3F4A2D383E8F4A2B6E404E2CABC4604985E22E46E19BAA54A97CC84A21F091EE"
+    }
+  ],
+  "bmp": "D:\\FPGA_Compelate\\SmartCampusMedia\\assets\\sd_verify\\good\\IMG001.BMP",
+  "bmpSha256": "F7486BD0E4D7DD3FCC92C0CB2C5CAAD9063BD41E574930DA8F4103DEC9D07A8A",
+  "fixture": "BMP bytes=921654 clusters=226 width=640 height=480",
+  "byteGap": 1,
+  "pixelMHz": 25,
+  "sdramMHz": 40,
+  "seam": "APUG011 core APP read-group replay; physical model rows seeded independently",
+  "harnessSha256": "CD66BE9A497368FB33F185A46CD9552A2AB9303ACF93A4E5CE4AA4E97BFA61FA",
+  "pinModelWordsPerBank": 524288,
+  "datasheetTiming": false,
+  "replayFirstGroup": 9,
+  "replayGroups": 2,
+  "replayShortGap": 12,
+  "exitCode": 0,
+  "pinModelErrors": 1,
+  "checks": 10,
+  "errors": 5,
+  "missing": 0,
+  "mismatched": 5,
+  "frameIdentical": null,
+  "error": "Display-content regression failed; see simulation.txt",
+  "elapsedSeconds": 2.7573716,
+  "finishedAt": "2026-10-29T08:18:44.6832337+08:00"
+}

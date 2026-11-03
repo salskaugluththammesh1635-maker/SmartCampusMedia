@@ -1,5 +1,5 @@
 ﻿{
-    "startedAt":  "2026-10-27T00:55:37.2216355+08:00",
+    "startedAt":  "2026-11-02T18:45:04.3909345+08:00",
     "status":  "passed",
     "sources":  [
                     {
@@ -11,27 +11,27 @@
                         "path":  "rtl/storage/sd_probe.v"
                     },
                     {
-                        "sha256":  "D6E77072253A610394B45177E4A535F44EC8B56B4ADEA8A37C26C2D5EA66AFE4",
+                        "sha256":  "F8E4F3E947DEF117894A3D24F2D0BEECF6DAA7950EC85DD84A3DBCFC865313DB",
                         "path":  "rtl/storage/fat32_reader.v"
                     },
                     {
-                        "sha256":  "CB5B36A4A09BE1F722A75AEC0B6D90703A2E43704AD7CFFE2716476F5131B184",
+                        "sha256":  "3845E4C1AF6E7B7EA9272D9057AAA2C657F30C13B7A6179DBA23A2BB4465086F",
                         "path":  "rtl/storage/gallery_probe.v"
                     },
                     {
-                        "sha256":  "EE5C578C6AC97D051154EC8294921F0319DA324B732B14118A35203622E4D8EB",
+                        "sha256":  "5254F4ACD6D1AEBC3A89623DB0D8443A875D5F86ABF45C70029E8A27D360BA4A",
                         "path":  "rtl/storage/bmp_parser.v"
                     },
                     {
-                        "sha256":  "2CF9190F637075F17F73B9DB33B29278D14E131EDA89E7AF09B470E4633E9DAA",
+                        "sha256":  "3E9E13253A068003A2E6718A35F06E154C50D0051282F689E98F974EAAE6C636",
                         "path":  "rtl/storage/img_loader.v"
                     },
                     {
-                        "sha256":  "EBA65C7CBCC10FA7E9CD99766B6753CD0AB4CD4D59C0E62E7F59BB6894668DC3",
+                        "sha256":  "48CFBFD6383C6FF314573DABF01AF07B764C93796B0938C2D9DD1630B788694D",
                         "path":  "rtl/control/player_ctrl.v"
                     },
                     {
-                        "sha256":  "B6BC397D2E345D232E33A214F00AAE68D20D066A3EB77151E51D8B6059F31BE9",
+                        "sha256":  "E64BAD34FDFFE59BECF7D8EDB69C27A25FD290EF2F554E0E6FCC1D25D2EFE314",
                         "path":  "rtl/control/err_prompt.v"
                     },
                     {
@@ -39,11 +39,15 @@
                         "path":  "rtl/audio/buzzer_tone.v"
                     },
                     {
-                        "sha256":  "FCE38594D13FD41D4EE8F94FF27509CC09C53BCB5434F9E9CFB35EC35D456C97",
+                        "sha256":  "95FCB8155E3C32C928F9029E8EE14A604F4E41E4376455067F0C096960653FFD",
                         "path":  "rtl/control/key_action.v"
                     },
                     {
-                        "sha256":  "71C752B705C6B4CAF2B152B8613A82ACE68D2E844205D646DC235B4E6C89C754",
+                        "sha256":  "4489F8E6A48315C68A52D26E7D31228B4FD0B4CEC7D9807C67ACEE43088BAA58",
+                        "path":  "rtl/video/audio_waveform.v"
+                    },
+                    {
+                        "sha256":  "EBA2707E1DC1873FC9997537E5214D08601C81ABA4EDBD33B5CF18731378A20D",
                         "path":  "rtl/video/video_overlay.v"
                     },
                     {
@@ -59,11 +63,11 @@
                         "path":  "sim/testbench/tb_sd_probe.v"
                     },
                     {
-                        "sha256":  "46E6664A10EDFDE8BE78ADA1CF3FAC8E36AFAF943764083C2A3A41781D15EC3B",
+                        "sha256":  "A71A00B8CC094C31414315471E955BC57715E73CB9E3FEFE795E01EC753DF958",
                         "path":  "sim/testbench/tb_fat32_reader.v"
                     },
                     {
-                        "sha256":  "BEC17623E083BD25A85A6F8AE0AB3D9CD31423F04CF708615841F580AE1EA104",
+                        "sha256":  "8F2E55236AB941A85DD1542CF536D6AF0B9DF5DB533E3E92A4D10C0DE8B68F44",
                         "path":  "sim/testbench/tb_gallery_probe.v"
                     },
                     {
@@ -71,7 +75,7 @@
                         "path":  "sim/testbench/tb_bmp_parser.v"
                     },
                     {
-                        "sha256":  "C6037B8438A649E4C1C0FB846734A69832771FFBB4E6C24D6FDA1802ACB11008",
+                        "sha256":  "D896A6F5564808337F697FF249530AEC7790E123B38E32FC4359460BB69C7997",
                         "path":  "sim/testbench/tb_img_loader.v"
                     },
                     {
@@ -79,7 +83,7 @@
                         "path":  "sim/testbench/tb_player_ctrl.v"
                     },
                     {
-                        "sha256":  "FEB1D7583733DD9E5CE38DF2DDFEEDF5EF02BAA50F03E6FEAF126456B95FE221",
+                        "sha256":  "D4563FE47BFD3B082D47015D585B3FA2188B9A98A00FBC4431DBB9CADA87701B",
                         "path":  "sim/testbench/tb_err_prompt.v"
                     },
                     {
@@ -87,12 +91,88 @@
                         "path":  "sim/testbench/tb_buzzer_tone.v"
                     },
                     {
-                        "sha256":  "D1B4BC76296C5A2C82E860695F5A9049322FDF19E6ED3BD16597F0ACD3A37EF6",
+                        "sha256":  "AB503F14100C78AE8099664F8F655A6AD450BFD0EAB655584D58787C19D55EF3",
                         "path":  "sim/testbench/tb_key_action.v"
                     },
                     {
-                        "sha256":  "66829000DADAA790A1BEB735921D701C6246085DE59DE8EC737AC12A0024A8C5",
+                        "sha256":  "6FE0F95AA819C15B1343F82F98695E7C840EA50D455EDF2CD5A403379FDE56E2",
                         "path":  "sim/testbench/tb_video_overlay.v"
+                    },
+                    {
+                        "sha256":  "624C64940E3EF6A6EE3E1C94973F902977954A5256370CFE4980D716F5008A20",
+                        "path":  "rtl/video/video_content_mux.v"
+                    },
+                    {
+                        "sha256":  "FC4A4F4B4D62256A3079AB09AE8E24A3F2464E27F56B1441F858BFF1FE064BD6",
+                        "path":  "sim/testbench/tb_video_content_mux.v"
+                    },
+                    {
+                        "sha256":  "24F7386C5AFB2954B16B75EBEF0AE41207E30727C81E4AC4E6C6FB951A3F70B9",
+                        "path":  "rtl/osd/narr_subline.v"
+                    },
+                    {
+                        "sha256":  "CD58685E111AE775C64608ACD803079480D616FEB7C62C9E5996A7DDA801A604",
+                        "path":  "rtl/osd/osd_font8x16.v"
+                    },
+                    {
+                        "sha256":  "895D75336BAE2008FE3EB6B75EBF6C0E5311E74A91071E969A67BD676A78CAF8",
+                        "path":  "rtl/osd/osd_strings.v"
+                    },
+                    {
+                        "sha256":  "BE71E939ECBC16E5421FC6D6B2CC1FC5FCE26D2892FB394F423B6A638E637A73",
+                        "path":  "rtl/osd/osd_caption.v"
+                    },
+                    {
+                        "sha256":  "EE7822C41E4274BE7F24AA88BA96285AC6787314B91CF512E7CA97AE43A06B96",
+                        "path":  "rtl/osd/cjk16_font.v"
+                    },
+                    {
+                        "sha256":  "75CB85D2AAC830290B086725F57459C573FD79F926F12645ACD25AD6EEA20D51",
+                        "path":  "sim/testbench/tb_osd_caption.v"
+                    },
+                    {
+                        "sha256":  "50AF2C4DCC5BFFA13D81D4621359CB5EA49535C8A39EFFB5C52F8283D819A197",
+                        "path":  "sim/testbench/tb_osd_caption_cjk.v"
+                    },
+                    {
+                        "sha256":  "1B7C745807FD675994E6252B598343564763957C67E3692045FE8145B97F0E0F",
+                        "path":  "sim/testbench/tb_narr_subline.v"
+                    },
+                    {
+                        "sha256":  "5975439CC37251F92E1A74020E023F7FA331E4101CF7BFEC87FCF62CDCE564E8",
+                        "path":  "rtl/osd/osd_param_text.v"
+                    },
+                    {
+                        "sha256":  "8C80A39670F9C4E581D3A00AF5C7B170029234EC896FD64D0914FF3437C238F2",
+                        "path":  "rtl/osd/osd_panel.v"
+                    },
+                    {
+                        "sha256":  "1B264A7EEBC9D41E6FFBF3E969C1AF1B7CE670AA6DC926A80CAE20F2E37CF09B",
+                        "path":  "rtl/osd/osd_autopop.v"
+                    },
+                    {
+                        "sha256":  "77F6B6F91EE988D002EB0B20C7DA4719645FAE9D655F2D883060906CCF6D675B",
+                        "path":  "sim/testbench/tb_osd_param_text.v"
+                    },
+                    {
+                        "sha256":  "BB70BC67385FA92DF61BE2EFC8A46E4D37BBC06035C52A861682EFA0306D3A46",
+                        "path":  "sim/testbench/tb_osd_panel.v"
+                    },
+                    {
+                        "sha256":  "5EF18AC3C0B68F1719D150753C54FAC993CFF5DBCAF87270EF8325D798401AE5",
+                        "path":  "sim/testbench/tb_osd_autopop.v"
+                    },
+                    {
+                        "sha256":  "E67C435B016A5B84AF3522AD2D2CA0BE75A08C5452BA8B10496C1AF37D03DCC3",
+                        "path":  "rtl/storage/fade_mixer.v"
+                    },
+                    {
+                        "sha256":  "F14F244C7F2DE6E5DB9FEFE4853D6BD9F3D2A7375375E8D36E220FF4CBBD6F13",
+                        "path":  "sim/testbench/tb_fade_mixer.v"
+                    },
+                    {
+                        "sha256":  "F57337590BF0A3BF3892FA67AF6669C36DA19247B5A8B0870D3A813A5379C02B",
+                        "path":  "rtl/osd/cjk16_bitmap.hex"
                     }
                 ],
     "tests":  [
@@ -168,7 +248,7 @@
                       "passed":  true,
                       "name":  "fat32_reader",
                       "exitCode":  0,
-                      "passLines":  40,
+                      "passLines":  52,
                       "arguments":  [
                                         "-c",
                                         "-quiet",
@@ -184,7 +264,7 @@
                       "passed":  true,
                       "name":  "gallery_probe",
                       "exitCode":  0,
-                      "passLines":  37,
+                      "passLines":  63,
                       "arguments":  [
                                         "-c",
                                         "-quiet",
@@ -216,7 +296,7 @@
                       "passed":  true,
                       "name":  "img_loader",
                       "exitCode":  0,
-                      "passLines":  43,
+                      "passLines":  53,
                       "arguments":  [
                                         "-c",
                                         "-quiet",
@@ -248,7 +328,7 @@
                       "passed":  true,
                       "name":  "err_prompt",
                       "exitCode":  0,
-                      "passLines":  43,
+                      "passLines":  49,
                       "arguments":  [
                                         "-c",
                                         "-quiet",
@@ -280,7 +360,7 @@
                       "passed":  true,
                       "name":  "key_action",
                       "exitCode":  0,
-                      "passLines":  40,
+                      "passLines":  42,
                       "arguments":  [
                                         "-c",
                                         "-quiet",
@@ -296,7 +376,7 @@
                       "passed":  true,
                       "name":  "video_overlay",
                       "exitCode":  0,
-                      "passLines":  64,
+                      "passLines":  106,
                       "arguments":  [
                                         "-c",
                                         "-quiet",
@@ -307,7 +387,135 @@
                                         "work.tb_video_overlay"
                                     ],
                       "log":  "video_overlay.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "video_content_mux",
+                      "exitCode":  0,
+                      "passLines":  18,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_video_content_mux"
+                                    ],
+                      "log":  "video_content_mux.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "osd_caption",
+                      "exitCode":  0,
+                      "passLines":  46,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_osd_caption"
+                                    ],
+                      "log":  "osd_caption.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "osd_param_text",
+                      "exitCode":  0,
+                      "passLines":  78,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_osd_param_text"
+                                    ],
+                      "log":  "osd_param_text.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "osd_panel",
+                      "exitCode":  0,
+                      "passLines":  63,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_osd_panel"
+                                    ],
+                      "log":  "osd_panel.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "osd_autopop",
+                      "exitCode":  0,
+                      "passLines":  38,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_osd_autopop"
+                                    ],
+                      "log":  "osd_autopop.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "osd_caption_cjk",
+                      "exitCode":  0,
+                      "passLines":  54587,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_osd_caption_cjk"
+                                    ],
+                      "log":  "osd_caption_cjk.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "narr_subline",
+                      "exitCode":  0,
+                      "passLines":  895,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_narr_subline"
+                                    ],
+                      "log":  "narr_subline.txt"
+                  },
+                  {
+                      "passed":  true,
+                      "name":  "fade_mixer",
+                      "exitCode":  0,
+                      "passLines":  14,
+                      "arguments":  [
+                                        "-c",
+                                        "-quiet",
+                                        "-onfinish",
+                                        "stop",
+                                        "-do",
+                                        "onerror {quit -f -code 2}; onbreak {quit -f -code 3}; run -all; quit -f -code 0",
+                                        "work.tb_fade_mixer"
+                                    ],
+                      "log":  "fade_mixer.txt"
                   }
               ],
-    "finishedAt":  "2026-10-27T00:58:44.8891689+08:00"
+    "finishedAt":  "2026-11-02T18:48:15.8637991+08:00"
 }
