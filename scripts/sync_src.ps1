@@ -93,6 +93,42 @@ $map = [ordered]@{
     # 但不再同步、不再进 TD 工程（否则会与 hdmi_1_4b 核争同一组 TMDS 引脚定义）。
     'rtl\video\video_timing_gen.v'                     = @('project\hdmi\video_timing_gen.v')
     'rtl\video\test_pattern_gen.v'                     = @('project\hdmi\test_pattern_gen.v')
+    # ===== v2 新增（2026-11-02，t7 顶层集成准备）：控制/视频/传感器/音频四组 =====
+    # 这 14 个 .v 此前只存在于 rtl/，从未进过 $map —— 而 TD 编译的是 project/hdmi/
+    # 下的副本，不在本表里的源文件**永不复制**，症状是 "undefined module" 或更糟：
+    # 编译通过但用的是旧版文件。t7 顶层集成一旦例化它们，必须在表里先有。
+    #   control/  : key_router（键位路由唯一入口）、mode_ctrl（模式状态机）
+    #   video/    : brightness_apply（纯组合亮度，overlay 之后/osd 之前）、
+    #               ratio_map（屏占比 → win_w/h/off_x/y）、pix_mosaic（降采样马赛克）
+    #   sensor/   : aht20_ctrl（AHT20 温湿度）、i2c_master（开漏位时序）、
+    #               thermal_guard（高温应急判定，只认 temp_centi_c/temp_valid）
+    #   storage/  : rle_decoder（应急图/图库 RLE 解码）
+    #   audio/    : audio_src_mux（音源选择）、vol_apply（音量）、
+    #               wav_stream_player（WAV 流播放）
+    #   osd/      : cjk16_font（16×16 中文字模 BRAM，配同目录 .hex）
+    'rtl\control\key_router.v'                         = @('project\hdmi\key_router.v')
+    'rtl\control\mode_ctrl.v'                          = @('project\hdmi\mode_ctrl.v')
+    'rtl\video\brightness_apply.v'                     = @('project\hdmi\brightness_apply.v')
+    'rtl\video\ratio_map.v'                            = @('project\hdmi\ratio_map.v')
+    'rtl\video\pix_mosaic.v'                           = @('project\hdmi\pix_mosaic.v')
+    'rtl\video\emerg_page.v'                           = @('project\hdmi\emerg_page.v')
+    'rtl\sensor\aht20_ctrl.v'                          = @('project\hdmi\aht20_ctrl.v')
+    'rtl\sensor\i2c_master.v'                          = @('project\hdmi\i2c_master.v')
+    'rtl\sensor\thermal_guard.v'                       = @('project\hdmi\thermal_guard.v')
+    'rtl\storage\rle_decoder.v'                        = @('project\hdmi\rle_decoder.v')
+    'rtl\audio\audio_src_mux.v'                        = @('project\hdmi\audio_src_mux.v')
+    'rtl\audio\vol_apply.v'                            = @('project\hdmi\vol_apply.v')
+    'rtl\audio\wav_stream_player.v'                    = @('project\hdmi\wav_stream_player.v')
+    'rtl\osd\cjk16_font.v'                             = @('project\hdmi\cjk16_font.v')
+    # narr_subline.v：科普模式底部视频旁白字幕（帧号驱动的滚动段），由
+    #   osd_caption.v:384 例化。t13 新建，同样从未进过 $map。
+    'rtl\osd\narr_subline.v'                           = @('project\hdmi\narr_subline.v')
+    # cjk16_font.v 用 $readmemh("cjk16_bitmap.hex") 装字模，文件名**不带目录前缀**。
+    # 综合器解析顺序是「① 调用它的源文件所在目录 ② .al 所在目录」，所以这个 .hex
+    # 必须与 cjk16_font.v 同目录落在 project\hdmi\ 里。漏掉它不会报错 —— 综合出的
+    # 是全零 BRAM，现象只是字幕区全空白（另见 FONT_ARCH_RULING.md §5.4）。
+    # .hex 不进 hdmi_td.al 的 Source_Files，只靠同目录查找。
+    'rtl\osd\cjk16_bitmap.hex'                         = @('project\hdmi\cjk16_bitmap.hex')
     # ===== 仅 bringup_td =====
     'rtl\top\dmz_eg4s20_min_top.v'                     = @('project\src\dmz_eg4s20_min_top.v')
     # ===== 约束文件 =====
