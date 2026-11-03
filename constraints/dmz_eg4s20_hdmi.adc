@@ -97,3 +97,35 @@ set_pin_assignment { sd_sck  } { LOCATION = F15; IOSTANDARD = LVCMOS33; DRIVESTR
 set_pin_assignment { sd_mosi } { LOCATION = F14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = PULLUP; }
 set_pin_assignment { sd_miso } { LOCATION = D14; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
 set_pin_assignment { sd_cd   } { LOCATION = E15; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+
+# ---------------------------------------------------------------------------
+# 8. AHT20 温湿度传感器（I2C 主机）【v2 新增 · 项目要求④ 高温联动】
+#    来源: [docs/pending_confirmations.md:46]
+#          「并口屏 / SPI 串口屏 | 已确认（管脚级）|
+#            SPI 屏：SCL=D1, SDA=E1, RES=F1, DC=H2, CS=J1, BLK=K2（本项目不用，仅登记）」
+#
+#    ★★★ 引脚复用声明（务必阅读，否则接线会冲突）★★★
+#    D1 / E1 在原始底板资料里首先是 **SPI 串口屏** 的 SCL / SDA。
+#    该排针本项目**不用作 SPI 显示** —— 本工程只走 HDMI 输出，
+#    从未例化任何 SPI 屏驱动（全工程 grep 无 SPI 屏模块），
+#    因此这两个球可安全复用为 AHT20 的 I2C 总线。
+#    上板接线前请确认排针上没有插 SPI 屏模组，否则两路会争用总线。
+#
+#    电气参数（AHT20 数据手册）:
+#      - 供电 2.2~5.5 V，本板取 3.3 V
+#      - SCL/SDA 均为开漏，**必须外部上拉**（本约束同时打开 FPGA 内部
+#        PULLUP 作为兜底；若外部已有 4.7k 上拉则并联后约 2.35k，
+#        100 kHz 下上升时间仍满足 t_r ≤ 1000 ns，无害）
+#      - 100 kHz 标准模式：t_LOW ≥ 4.7 us、t_HIGH ≥ 4.0 us
+#        （VDD=3.3 V 落在数据手册 Table 11 的 2.2~5.5 V 档，取该档上限值）
+#      - 器件 7 位地址 0x38，写 0x70 / 读 0x71
+#
+#    为什么 DRIVESTRENGTH 只给 8 mA:
+#      I2C 是开漏总线，驱动能力只需把总线拉低到 V_OL ≤ 0.4 V。
+#      总线上拉电阻决定电流（3.3 V / 4.7 kΩ ≈ 0.7 mA），8 mA 已远超，
+#      给更大反而会加剧边沿过冲与串扰。与键盘行扫描保持同一档位。
+#
+#    该排针本项目不用作 SPI 显示。
+# ---------------------------------------------------------------------------
+set_pin_assignment { i2c_scl } { LOCATION = D1; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = PULLUP; }
+set_pin_assignment { i2c_sda } { LOCATION = E1; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = PULLUP; }

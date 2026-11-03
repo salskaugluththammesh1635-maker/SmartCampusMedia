@@ -93,3 +93,36 @@ derive_clocks
 set_clock_groups -asynchronous \
     -group [get_clocks {u_pll/pll_inst.clkc[0] u_pll/pll_inst.clkc[2]}] \
     -group [get_clocks {u_sdram_pll/pll_inst.clkc[1] u_sdram_pll/pll_inst.clkc[2]}]
+
+# =============================================================================
+# I2C（AHT20 温湿度传感器）【v2 新增】
+# =============================================================================
+# 【为什么这里用 set_false_path 而不是 set_input_delay / set_output_delay】
+#
+# I2C 是**异步、准静态**总线，与 FPGA 内部时钟没有固定相位关系：
+#   · SCL 由本机产生，但周期由 rtl/sensor/i2c_master.v 的计数器分频决定
+#     （63 拍/相位 × 4 相位 × 2 = 504 个 25MHz 周期 ≈ 20.16 us ≈ 49.6 kHz 的半周期
+#      预算），远远慢于任何需要分析的建立/保持窗口；
+#   · SDA 是双向开漏，读方向的建立时间由**从机**决定，本机只在 SCL 高电平
+#     中段采样（phase_mid），实际采样点距 SCL 上升沿有 1/4 周期 ≈ 5 us 的余量，
+#     而 AHT20 的 t_VD,DAT 最小只有 0 ns、典型 250 ns。
+#
+# 换成数字：100 kHz 下 SCL 周期 10 us，FPGA 25 MHz 采样一步 40 ns。
+# 采样点误差最多 1 拍 = 40 ns，占半周期的 0.8%。任何用 SDC 描述这种
+# 千倍余量的做法都只是在制造假的违例数字（和本文件头部记录的
+# 「拆组得到假绿」是同一种错误的镜像：这里会得到假红）。
+#
+# 因此按业界惯例对 I2C 这类慢速异步总线声明 false path，
+# 让时序分析专注在真正要紧的 HDMI 像素通路与 SDRAM 接口上。
+# =============================================================================
+set_false_path -from [get_ports {i2c_scl}]
+set_false_path -to   [get_ports {i2c_scl}]
+set_false_path -from [get_ports {i2c_sda}]
+set_false_path -to   [get_ports {i2c_sda}]
+
+# 附带说明：i2c_scl / i2c_sda 两个管脚都是**开漏**接法，
+# 顶层写作 `assign i2c_scl = scl_oe ? 1'bz : 1'b0;`（i2c_sda 同理）。
+# PULLTYPE = PULLUP 已在 .adc 里打开，综合时不会因为"输出一直为 z"
+# 而被裁掉——开漏输出在 TD 里综合成 ODDR + tri-state buffer，
+# 若外部没有上拉而内部上拉又被关掉，总线将永远为低、传感器完全无响应。
+# 这两点必须同时成立，缺一不可。
